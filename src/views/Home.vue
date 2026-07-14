@@ -19,6 +19,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
+  padding: var(--view-padding);
 }
 
 .content-box {
@@ -29,7 +30,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: var(--card-padding);
   text-align: center;
   width: 100%;
   height: 100%;

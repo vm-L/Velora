@@ -6,6 +6,8 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   close: () => electron.ipcRenderer.send("window-close"),
   onWindowMaximized: (callback) => electron.ipcRenderer.on("window-maximized", () => callback()),
   onWindowUnmaximized: (callback) => electron.ipcRenderer.on("window-unmaximized", () => callback()),
+  setSetting: (key, value) => electron.ipcRenderer.send("set-setting", key, value),
+  getSetting: (key) => electron.ipcRenderer.invoke("get-setting", key),
   setCloseBehavior: (behavior) => electron.ipcRenderer.send("set-setting", "closeBehavior", behavior),
   getCloseBehavior: () => electron.ipcRenderer.invoke("get-setting", "closeBehavior")
 });

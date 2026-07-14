@@ -2,8 +2,7 @@
   <div class="sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header" @click="toggleSidebar">
       <div class="sidebar-title">
-        <span v-for="(char, index) in titleText" :key="index"
-          :style="{ '--i': index, '--inv-i': titleText.length - 1 - index }">{{ char }}</span>
+        <AnimatedText text="M3U8 Electron" :isCollapsed="isCollapsed" />
       </div>
       <button class="toggle-btn" title="展开/收起">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -22,6 +21,44 @@
         </svg>
         <span class="menu-text">主页</span>
       </router-link>
+
+      <div class="menu-group" v-if="state.cmsResources.length > 0">
+        <div class="group-title">
+          <AnimatedText text="CMS 资源" :isCollapsed="isCollapsed" />
+        </div>
+        <router-link
+          v-for="item in state.cmsResources"
+          :key="item.id"
+          :to="`/resource/cms/${item.id}`"
+          class="menu-item sub-item"
+          active-class="active"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          </svg>
+          <span class="menu-text">{{ item.name }}</span>
+        </router-link>
+      </div>
+
+      <div class="menu-group" v-if="state.externalSites.length > 0">
+        <div class="group-title">
+          <AnimatedText text="网站资源" :isCollapsed="isCollapsed" />
+        </div>
+        <router-link
+          v-for="item in state.externalSites"
+          :key="item.id"
+          :to="`/resource/ext/${item.id}`"
+          class="menu-item sub-item"
+          active-class="active"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span class="menu-text">{{ item.name }}</span>
+        </router-link>
+      </div>
     </div>
 
     <div class="menu-bottom">
@@ -41,9 +78,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useSettings } from '../composables/useSettings';
+import AnimatedText from './AnimatedText.vue';
 
 const isCollapsed = ref(false);
-const titleText = 'M3U8 Electron'.split('');
+const { state } = useSettings();
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
@@ -89,22 +128,7 @@ const toggleSidebar = () => {
   color: #333;
   font-size: 15px;
   display: flex;
-  white-space: pre;
   pointer-events: none;
-}
-
-.sidebar-title span {
-  opacity: 1;
-  transform: translateX(0);
-  transition: opacity 0.1s ease, transform 0.1s ease;
-  transition-delay: calc(var(--i) * 0.014s);
-}
-
-.sidebar.collapsed .sidebar-title span {
-  opacity: 0;
-  transform: translateX(-5px);
-  transition: opacity 0.1s ease, transform 0.1s ease;
-  transition-delay: calc(var(--inv-i) * 0.014s);
 }
 
 .toggle-btn {
@@ -137,6 +161,29 @@ const toggleSidebar = () => {
 .menu-top {
   flex: 1;
   padding-top: 10px;
+  overflow-y: auto;
+}
+
+.menu-group {
+  margin-top: 16px;
+}
+
+.group-title {
+  padding: 0 22px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  user-select: none;
+  height: 18px; /* Maintain height when collapsed */
+  overflow: hidden;
+}
+
+.sub-item svg {
+  margin-left: 2px;
+  margin-right: 18px;
 }
 
 .menu-bottom {

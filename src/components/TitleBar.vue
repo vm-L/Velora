@@ -3,7 +3,8 @@
     <div class="title-bar-text"></div>
     <div class="title-bar-controls">
       <button class="control-btn" title="最小化" @click="minimize">&#8211;</button>
-      <button class="control-btn" :title="isMaximized ? '向下还原' : '最大化'" @click="maximize" v-html="isMaximized ? '&#10066;' : '&#10064;'">
+      <button class="control-btn" :title="isMaximized ? '还原' : '最大化'" @click="maximize"
+        v-html="isMaximized ? '&#10066;' : '&#10064;'">
       </button>
       <button class="control-btn close" title="关闭" @click="close">&#10006;</button>
     </div>
@@ -11,18 +12,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue';
 
-const isMaximized = ref(false)
+const isMaximized = ref(false);
 
 onMounted(() => {
   window.electronAPI.onWindowMaximized(() => {
-    isMaximized.value = true
-  })
+    isMaximized.value = true;
+  });
   window.electronAPI.onWindowUnmaximized(() => {
-    isMaximized.value = false
-  })
-})
+    isMaximized.value = false;
+  });
+});
 
 const minimize = () => {
   window.electronAPI.minimize();

@@ -13,7 +13,9 @@ class StoreManager {
     const { default: Store } = await import('electron-store')
     this.store = new Store({
       defaults: {
-        closeBehavior: 'tray'
+        closeBehavior: 'tray',
+        cmsResources: [],
+        externalSites: []
       }
     })
   }

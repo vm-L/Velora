@@ -13,6 +13,8 @@ interface Window {
     close: () => void
     onWindowMaximized: (callback: () => void) => void
     onWindowUnmaximized: (callback: () => void) => void
+    setSetting: (key: string, value: any) => void
+    getSetting: (key: string) => Promise<any>
     setCloseBehavior: (behavior: string) => void
     getCloseBehavior: () => Promise<string>
   }

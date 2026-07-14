@@ -13,13 +13,43 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import Sidebar from './components/Sidebar.vue'
+import { useSettings } from './composables/useSettings'
+
+const { loadSettings } = useSettings()
+
+onMounted(() => {
+  loadSettings()
+})
 </script>
 
 <style lang="less">
+:root {
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 40px;
+
+  --view-padding: var(--spacing-lg);
+  --card-padding: var(--spacing-lg);
+  --row-padding-v: var(--spacing-md);
+  --row-padding-h: var(--spacing-lg);
+}
+
 * {
   box-sizing: border-box;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE 10+ */
+}
+
+::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body {
@@ -30,6 +60,13 @@ body {
   font-family: "Segoe UI", Arial, sans-serif;
   background: #f5f7fa;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 #app {
@@ -47,7 +84,7 @@ body {
 
 .main-panel {
   flex: 1;
-  padding: 30px;
+  padding: 0; /* Views will handle their own view-padding */
   background: #f5f7fa;
   container-type: size;
   display: flex;

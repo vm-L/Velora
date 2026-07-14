@@ -7,10 +7,12 @@ class StoreManager {
     this.initPromise = this.init();
   }
   async init() {
-    const { default: Store } = await Promise.resolve().then(() => require("./index-aRtQkzgQ.js"));
+    const { default: Store } = await Promise.resolve().then(() => require("./index-DkEF5WSi.js"));
     this.store = new Store({
       defaults: {
-        closeBehavior: "tray"
+        closeBehavior: "tray",
+        cmsResources: [],
+        externalSites: []
       }
     });
   }
