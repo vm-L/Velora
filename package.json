@@ -1,17 +1,27 @@
 {
-  "name": "hello-electron",
+  "name": "m3u8-electron",
   "version": "1.0.0",
   "description": "this is a electron init",
-  "main": "main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "dev": "vite",
+    "build": "vue-tsc && vite build && electron-builder",
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "JY L",
-  "license": "ISC",
-  "type": "commonjs",
+  "dependencies": {
+    "electron-store": "^11.0.2",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
+  },
   "devDependencies": {
-    "electron": "^43.1.0"
+    "@vitejs/plugin-vue": "^5.0.0",
+    "electron": "^43.1.0",
+    "electron-builder": "^24.9.1",
+    "less": "^4.6.7",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.0",
+    "vite-plugin-electron": "^0.28.0",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vue-tsc": "^2.0.0"
   }
 }
