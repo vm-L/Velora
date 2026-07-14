@@ -82,6 +82,9 @@ function createWindow() {
       electron.app.quit();
     }
   });
+  electron.ipcMain.on("open-external", (_, url) => {
+    electron.shell.openExternal(url);
+  });
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {

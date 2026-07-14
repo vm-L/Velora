@@ -18,7 +18,7 @@ const workspaces = reactive<Record<string, Workspace>>({})
 export const useWorkspaces = () => {
   const generateId = () => Math.random().toString(36).substr(2, 9)
 
-  const initWorkspace = (resourceId: string, defaultUrl: string) => {
+  const initWorkspace = (resourceId: string, defaultUrl: string, favicon?: string) => {
     if (!workspaces[resourceId] || workspaces[resourceId].tabs.length === 0) {
       const tabId = generateId()
       workspaces[resourceId] = {
@@ -27,7 +27,8 @@ export const useWorkspaces = () => {
           id: tabId,
           url: defaultUrl,
           title: 'Loading...',
-          loading: true
+          loading: true,
+          favicon
         }]
       }
     }
@@ -36,7 +37,7 @@ export const useWorkspaces = () => {
 
   const getWorkspace = (resourceId: string) => workspaces[resourceId]
 
-  const addTab = (resourceId: string, url: string) => {
+  const addTab = (resourceId: string, url: string, favicon?: string) => {
     const ws = workspaces[resourceId]
     if (!ws) return null
     const tabId = generateId()
@@ -44,7 +45,8 @@ export const useWorkspaces = () => {
       id: tabId,
       url,
       title: 'Loading...',
-      loading: true
+      loading: true,
+      favicon
     })
     ws.activeTabId = tabId
     return tabId

@@ -111,6 +111,7 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
+              <button class="action-btn edit-btn" @click="openStyleManager(item)">管理样式</button>
               <button class="action-btn edit-btn" @click="startEdit(item)">编辑</button>
               <button class="action-btn delete-btn" @click="removeExternalSite(index)">删除</button>
             </div>
@@ -126,14 +127,49 @@
       </div>
 
     </div>
+
+    <!-- Style Management Modal -->
+    <div v-if="managingStylesFor" class="modal-overlay" @click.self="closeStyleManager">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>管理样式 - {{ managingStylesFor.name }}</h3>
+          <button class="modal-close-btn" @click="closeStyleManager">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!currentStyles || Object.keys(currentStyles).length === 0" class="empty-state">
+            暂无已保存的样式规则。
+          </div>
+          <div v-else class="domain-list">
+            <div v-for="(rules, domain) in currentStyles" :key="domain" class="domain-group">
+              <div class="domain-title">{{ domain }}</div>
+              <div v-if="rules.length === 0" class="empty-rule">无规则</div>
+              <div v-for="(rule, idx) in rules" :key="idx" class="rule-item">
+                <div class="rule-content">
+                  <div class="rule-selector">{{ rule.selector }}</div>
+                  <div class="rule-css">{{ rule.css }}</div>
+                </div>
+                <button class="action-btn delete-btn shrink-0" @click="deleteRule(domain as string, rule.selector)">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettings } from '../composables/useSettings'
+import { useConfirm } from '../composables/useConfirm'
 
-const { state, setCloseBehavior, saveCmsResources, saveExternalSites } = useSettings()
+const { state, setCloseBehavior, saveCmsResources, saveExternalSites, saveCustomStyles } = useSettings()
+const { confirm } = useConfirm()
 
 const newCmsName = ref('')
 const newCmsUrl = ref('https://')
@@ -249,6 +285,43 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
     console.error('Drag and drop error', err)
   }
 }
+
+// Style Management
+const managingStylesFor = ref<any>(null)
+
+const openStyleManager = (item: any) => {
+  managingStylesFor.value = item
+}
+
+const closeStyleManager = () => {
+  managingStylesFor.value = null
+}
+
+const currentStyles = computed(() => {
+  if (!managingStylesFor.value) return null
+  return state.customStyles[managingStylesFor.value.id] || {}
+})
+
+const deleteRule = async (domain: string, selector: string) => {
+  if (!managingStylesFor.value) return
+  const isOk = await confirm({
+    title: '删除规则',
+    message: `确定要删除规则 "${selector}" 吗？此操作无法撤销。`,
+    type: 'danger',
+    confirmText: '删除'
+  })
+  if (!isOk) return
+  
+  const resourceId = managingStylesFor.value.id
+  const newStyles = { ...state.customStyles }
+  if (newStyles[resourceId] && newStyles[resourceId][domain]) {
+    newStyles[resourceId][domain] = newStyles[resourceId][domain].filter((r: any) => r.selector !== selector)
+    if (newStyles[resourceId][domain].length === 0) {
+      delete newStyles[resourceId][domain]
+    }
+    await saveCustomStyles(newStyles)
+  }
+}
 </script>
 
 <style scoped lang="less">
@@ -324,6 +397,10 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.drag-handle svg {
+  display: block;
 }
 
 .settings-info {
@@ -480,5 +557,146 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
 
 .segmented-control.state-quit .selection-pill {
   transform: translateX(106px);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.modal-close-btn svg {
+  display: block;
+}
+
+.modal-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.empty-state {
+  text-align: center;
+  color: #94a3b8;
+  padding: 40px 0;
+  font-size: 14px;
+}
+
+.domain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.domain-group {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.domain-title {
+  background: #f8fafc;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.empty-rule {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.rule-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.rule-item:last-child {
+  border-bottom: none;
+}
+
+.rule-content {
+  flex: 1;
+  min-width: 0;
+  margin-right: 16px;
+}
+
+.rule-selector {
+  font-weight: 600;
+  font-size: 13px;
+  color: #0f172a;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.rule-css {
+  font-size: 12px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.shrink-0 {
+  flex-shrink: 0;
 }
 </style>

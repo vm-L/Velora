@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Need to remove previous listeners if re-mounted to prevent duplicates, but simpler here
     ipcRenderer.removeAllListeners('webview-new-window')
     ipcRenderer.on('webview-new-window', (_event, url) => callback(url))
-  }
+  },
+  openExternal: (url: string) => ipcRenderer.send('open-external', url)
 })

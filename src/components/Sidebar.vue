@@ -34,7 +34,14 @@
           active-class="active"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+            <line x1="7" y1="2" x2="7" y2="22"></line>
+            <line x1="17" y1="2" x2="17" y2="22"></line>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <line x1="2" y1="7" x2="7" y2="7"></line>
+            <line x1="2" y1="17" x2="7" y2="17"></line>
+            <line x1="17" y1="17" x2="22" y2="17"></line>
+            <line x1="17" y1="7" x2="22" y2="7"></line>
           </svg>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
@@ -51,7 +58,8 @@
           class="menu-item sub-item"
           active-class="active"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <img v-if="item.icon" :src="item.icon" class="resource-icon" referrerpolicy="no-referrer" />
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="2" y1="12" x2="22" y2="12"></line>
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
@@ -181,9 +189,18 @@ const toggleSidebar = () => {
   overflow: hidden;
 }
 
-.sub-item svg {
+.sub-item svg,
+.sub-item .resource-icon {
   margin-left: 2px;
   margin-right: 18px;
+}
+
+.resource-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
 }
 
 .menu-bottom {
@@ -204,19 +221,23 @@ const toggleSidebar = () => {
   text-decoration: none;
 }
 
-.menu-item svg {
+.menu-item svg,
+.menu-item .resource-icon {
   flex-shrink: 0;
   margin-right: 16px;
   transition: margin 0.3s ease;
+  display: block;
 }
 
-.sidebar.collapsed .menu-item svg {
+.sidebar.collapsed .menu-item svg,
+.sidebar.collapsed .menu-item .resource-icon {
   margin-right: 0;
 }
 
 .menu-item .menu-text {
   opacity: 1;
   transition: opacity 0.2s ease-in-out;
+  line-height: 1;
 }
 
 .sidebar.collapsed .menu-item .menu-text {

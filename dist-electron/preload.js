@@ -13,5 +13,6 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   onWebviewNewWindow: (callback) => {
     electron.ipcRenderer.removeAllListeners("webview-new-window");
     electron.ipcRenderer.on("webview-new-window", (_event, url) => callback(url));
-  }
+  },
+  openExternal: (url) => electron.ipcRenderer.send("open-external", url)
 });

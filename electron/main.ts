@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -64,6 +64,10 @@ function createWindow() {
     } else {
       app.quit()
     }
+  })
+
+  ipcMain.on('open-external', (_, url) => {
+    shell.openExternal(url)
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
