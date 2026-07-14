@@ -17,5 +17,6 @@ interface Window {
     getSetting: (key: string) => Promise<any>
     setCloseBehavior: (behavior: string) => void
     getCloseBehavior: () => Promise<string>
+    onWebviewNewWindow: (callback: (url: string) => void) => void
   }
 }

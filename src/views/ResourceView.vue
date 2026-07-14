@@ -1,10 +1,16 @@
 <template>
-  <div class="view resource-view">
+  <div v-if="type === 'ext'" class="workspace-wrapper">
+    <BrowserWorkspace :resourceId="id as string" :resourceUrl="item?.url || ''" />
+  </div>
+  <div v-else class="view resource-view">
     <div class="skeleton-card">
-      <div class="pulse-header"></div>
-      <div class="pulse-line short"></div>
-      <div class="pulse-line"></div>
-      <div class="pulse-line"></div>
+      <div class="skeleton-header">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-text-group">
+          <div class="skeleton-line title"></div>
+          <div class="skeleton-line subtitle"></div>
+        </div>
+      </div>
       
       <div class="resource-info">
         <h1>{{ item?.name || '未知资源' }}</h1>
@@ -19,6 +25,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettings } from '../composables/useSettings'
+import BrowserWorkspace from '../components/BrowserWorkspace.vue'
 
 const route = useRoute()
 const { state } = useSettings()
@@ -36,6 +43,13 @@ const item = computed(() => {
 </script>
 
 <style scoped lang="less">
+.workspace-wrapper {
+  flex: 1;
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
 .resource-view {
   flex: 1;
   display: flex;

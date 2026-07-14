@@ -54,7 +54,8 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(__dirname, "preload.js")
+      preload: path.join(__dirname, "preload.js"),
+      webviewTag: true
     }
   });
   electron.ipcMain.on("window-minimize", () => {
@@ -113,6 +114,14 @@ electron.app.whenReady().then(() => {
 electron.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     electron.app.quit();
+  }
+});
+electron.app.on("web-contents-created", (event, contents) => {
+  if (contents.getType() === "webview") {
+    contents.setWindowOpenHandler((details) => {
+      mainWindow == null ? void 0 : mainWindow.webContents.send("webview-new-window", details.url);
+      return { action: "deny" };
+    });
   }
 });
 electron.app.on("activate", () => {

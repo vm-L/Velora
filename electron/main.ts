@@ -33,6 +33,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.js'),
+      webviewTag: true
     },
   })
 
@@ -97,6 +98,15 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+app.on('web-contents-created', (event, contents) => {
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler((details) => {
+      mainWindow?.webContents.send('webview-new-window', details.url)
+      return { action: 'deny' }
+    })
   }
 })
 

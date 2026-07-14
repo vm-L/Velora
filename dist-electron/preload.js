@@ -9,5 +9,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   setSetting: (key, value) => electron.ipcRenderer.send("set-setting", key, value),
   getSetting: (key) => electron.ipcRenderer.invoke("get-setting", key),
   setCloseBehavior: (behavior) => electron.ipcRenderer.send("set-setting", "closeBehavior", behavior),
-  getCloseBehavior: () => electron.ipcRenderer.invoke("get-setting", "closeBehavior")
+  getCloseBehavior: () => electron.ipcRenderer.invoke("get-setting", "closeBehavior"),
+  onWebviewNewWindow: (callback) => {
+    electron.ipcRenderer.removeAllListeners("webview-new-window");
+    electron.ipcRenderer.on("webview-new-window", (_event, url) => callback(url));
+  }
 });
