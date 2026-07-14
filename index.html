@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Hello Electron</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f5f7fa;
+            overflow: hidden;
+            /* 防止出现滚动条 */
+        }
+
+        /* 自定义标题栏样式 */
+        .title-bar {
+            height: 32px;
+            background: #ffffff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            -webkit-app-region: drag;
+            /* 使标题栏可拖拽 */
+            user-select: none;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .title-bar-text {
+            margin-left: 12px;
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .title-bar-controls {
+            display: flex;
+            -webkit-app-region: no-drag;
+            /* 按钮区域不可拖拽 */
+            height: 100%;
+        }
+
+        .control-btn {
+            width: 46px;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: #333;
+            font-size: 16px;
+            transition: background 0.2s;
+            outline: none;
+        }
+
+        .control-btn:hover {
+            background: #e5e5e5;
+        }
+
+        .control-btn.close:hover {
+            background: #e81123;
+            color: white;
+        }
+
+        /* 主体内容区域 */
+        .content {
+            flex: 1;
+            display: flex;
+            height: calc(100vh - 32px);
+        }
+
+        /* 左侧侧边栏 */
+        .sidebar {
+            width: 200px;
+            background: #ffffff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.02);
+            z-index: 10;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .sidebar.collapsed {
+            width: 64px;
+        }
+
+        /* 侧边栏头部（放置展开收起按钮） */
+        .sidebar-header {
+            height: 54px;
+            padding: 0 22px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            border-bottom: 1px solid #f0f0f0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar-title {
+            position: absolute;
+            left: 22px;
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
+            display: flex;
+            white-space: pre;
+            pointer-events: none; /* 避免挡住点击 */
+        }
+
+        .sidebar-title span {
+            opacity: 1;
+            transform: translateX(0);
+            transition: opacity 0.1s ease, transform 0.1s ease;
+            transition-delay: calc(var(--i) * 0.014s);
+        }
+
+        .sidebar.collapsed .sidebar-title span {
+            opacity: 0;
+            transform: translateX(-5px);
+            transition: opacity 0.1s ease, transform 0.1s ease;
+            transition-delay: calc(var(--inv-i) * 0.014s);
+        }
+
+        .toggle-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            outline: none;
+            transition: color 0.2s;
+            width: 20px;
+            height: 20px;
+        }
+
+        .toggle-btn:hover {
+            color: #1890ff;
+        }
+
+        .toggle-btn svg {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.collapsed .toggle-btn svg {
+            transform: rotate(180deg);
+        }
+
+        .menu-top {
+            flex: 1;
+            padding-top: 10px;
+        }
+
+        /* 设置按钮固定在最下方 */
+        .menu-bottom {
+            margin-top: auto;
+            padding-bottom: 20px;
+        }
+
+        .menu-item {
+            padding: 12px 22px;
+            cursor: pointer;
+            color: #555;
+            font-size: 15px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            height: 48px;
+        }
+
+        .menu-item svg {
+            flex-shrink: 0;
+            margin-right: 16px;
+            transition: margin 0.3s ease;
+        }
+
+        .sidebar.collapsed .menu-item svg {
+            margin-right: 0;
+        }
+
+        .menu-item .menu-text {
+            opacity: 1;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        .sidebar.collapsed .menu-item .menu-text {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .menu-item:hover {
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        .menu-item.active {
+            background: #e6f7ff;
+            color: #1890ff;
+            /* 使用内阴影代替 border-right 避免挤压 padding 导致图标不居中 */
+            box-shadow: inset -3px 0 0 #1890ff;
+            font-weight: 500;
+        }
+
+        /* 右侧内容区 */
+        .main-panel {
+            flex: 1;
+            padding: 30px;
+            background: #f5f7fa;
+            container-type: size;
+        }
+
+        /* 视图管理与动画 */
+        .view {
+            display: none;
+            width: 100%;
+            height: 100%;
+            animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .view.active {
+            display: flex;
+        }
+
+        #view-home.active {
+            align-items: center;
+            justify-content: center;
+        }
+
+        #view-settings.active {
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 设置页面 UI (Modern SaaS Style) */
+        .settings-container {
+            width: 100%;
+            max-width: 680px;
+            margin-top: 40px;
+            padding: 0 20px;
+        }
+
+        .settings-header-text {
+            font-size: 24px;
+            font-weight: 600;
+            color: #111;
+            margin-bottom: 30px;
+            letter-spacing: -0.5px;
+        }
+
+        .settings-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-info h3 {
+            margin: 0 0 4px 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: #222;
+        }
+
+        .settings-info p {
+            margin: 0;
+            font-size: 13px;
+            color: #666;
+            max-width: 280px;
+            line-height: 1.5;
+        }
+
+        /* 精美 Segmented Control */
+        .segmented-control {
+            display: flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 8px;
+            position: relative;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+        }
+
+        .segmented-control input[type="radio"] {
+            display: none;
+        }
+
+        .segmented-control label {
+            position: relative;
+            z-index: 2;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            transition: color 0.2s ease;
+            user-select: none;
+            width: 106px;
+            text-align: center;
+        }
+
+        .segmented-control input[type="radio"]:checked + span {
+            color: #0f172a;
+        }
+
+        .selection-pill {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            left: 4px;
+            width: 106px;
+            background: #ffffff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            z-index: 1;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 通过父级状态类控制滑块位移，规避内联元素引起的兄弟选择器失效 */
+        .segmented-control.state-quit .selection-pill {
+            transform: translateX(106px);
+        }
+
+        .aspect-ratio-box {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+
+            /* 核心：无论如何都保持 16:9 比例，且最大化填充容器不溢出 */
+            width: 100cqw;
+            height: calc(100cqw * 9 / 16);
+            max-height: 100cqh;
+            max-width: calc(100cqh * 16 / 9);
+
+            /* 平滑过渡效果（仅在调整窗口大小时显得丝滑） */
+            transition: all 0.2s ease-out;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            color: #333;
+            /* 字体随容器缩放 */
+            font-size: clamp(20px, 4cqw, 42px);
+        }
+
+        p {
+            margin: 0;
+            color: #666;
+            font-size: clamp(12px, 1.5cqw, 18px);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 自定义标题栏 -->
+    <div class="title-bar">
+        <div class="title-bar-text"></div>
+        <div class="title-bar-controls">
+            <!-- 最小化、最大化/还原、关闭按钮 -->
+            <button class="control-btn" id="min-btn" title="最小化">&#8211;</button>
+            <button class="control-btn" id="max-btn" title="最大化">&#10064;</button>
+            <button class="control-btn close" id="close-btn" title="关闭">&#10006;</button>
+        </div>
+    </div>
+
+    <!-- 主体内容区域 -->
+    <div class="content">
+        <!-- 左侧选项栏 -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title" id="sidebar-title"></div>
+                <!-- 展开/收起按钮 -->
+                <button class="toggle-btn" id="toggle-sidebar" title="展开/收起">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="menu-top">
+                <div class="menu-item active" id="nav-home">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    <span class="menu-text">主页</span>
+                </div>
+            </div>
+
+            <div class="menu-bottom">
+                <!-- 设置按钮 -->
+                <div class="menu-item" id="nav-settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                        </path>
+                    </svg>
+                    <span class="menu-text">设置</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧内容栏 -->
+        <div class="main-panel">
+            <!-- 主页视图 -->
+            <div class="view active" id="view-home">
+                <div class="aspect-ratio-box">
+                    <h1>16:9 视界</h1>
+                    <p>无论如何拖拽窗口，我的显示比例永远是 16:9 &#x1f389;</p>
+                </div>
+            </div>
+
+            <!-- 设置视图 -->
+            <div class="view" id="view-settings">
+                <div class="settings-container">
+                    <div class="settings-header-text">设置</div>
+                    <div class="settings-card">
+                        <div class="settings-row">
+                            <div class="settings-info">
+                                <h3>关闭窗口行为</h3>
+                                <p>指定点击主窗口右上角关闭按钮时的默认系统行为。</p>
+                            </div>
+                            <div class="segmented-control">
+                                <label>
+                                    <input type="radio" name="close-action" id="radio-tray" value="tray" checked>
+                                    <span>隐藏到托盘</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="close-action" id="radio-quit" value="quit">
+                                    <span>直接退出</span>
+                                </label>
+                                <div class="selection-pill"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交互脚本 -->
+    <script>
+        // 绑定标题栏按钮点击事件，调用 preload 中暴露的方法
+        document.getElementById('min-btn').addEventListener('click', () => {
+            window.electronAPI.minimize();
+        });
+
+        document.getElementById('max-btn').addEventListener('click', () => {
+            window.electronAPI.maximize();
+        });
+
+        document.getElementById('close-btn').addEventListener('click', () => {
+            window.electronAPI.close();
+        });
+
+        // 侧边栏展开/收起逻辑
+        const sidebar = document.getElementById('sidebar');
+        const toggleBtn = document.getElementById('toggle-sidebar');
+
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
+
+        // 动态生成侧边栏标题字符以实现动画
+        const titleText = "Hello Electron";
+        const titleContainer = document.getElementById('sidebar-title');
+        
+        const len = titleText.length;
+        titleText.split('').forEach((char, index) => {
+            const span = document.createElement('span');
+            span.textContent = char;
+            // 通过 CSS 变量分别传递正向与反向索引，实现双向丝滑动画
+            span.style.setProperty('--i', index);
+            span.style.setProperty('--inv-i', len - 1 - index);
+            titleContainer.appendChild(span);
+        });
+
+        // 导航切换逻辑
+        const navHome = document.getElementById('nav-home');
+        const navSettings = document.getElementById('nav-settings');
+        const viewHome = document.getElementById('view-home');
+        const viewSettings = document.getElementById('view-settings');
+
+        function switchView(target) {
+            if (target === 'home') {
+                navHome.classList.add('active');
+                navSettings.classList.remove('active');
+                viewHome.classList.add('active');
+                viewSettings.classList.remove('active');
+            } else {
+                navHome.classList.remove('active');
+                navSettings.classList.add('active');
+                viewHome.classList.remove('active');
+                viewSettings.classList.add('active');
+            }
+        }
+
+        navHome.addEventListener('click', () => switchView('home'));
+        navSettings.addEventListener('click', () => switchView('settings'));
+
+        // 设置页：同步与持久化关闭行为
+        const radios = document.querySelectorAll('input[name="close-action"]');
+        
+        const segmentedControl = document.querySelector('.segmented-control');
+
+        // 1. 初始化时向主进程查询状态以正确反显
+        window.electronAPI.getCloseBehavior().then(behavior => {
+            const radio = document.getElementById(`radio-${behavior}`);
+            if (radio) {
+                radio.checked = true;
+                if (behavior === 'quit') segmentedControl.classList.add('state-quit');
+            }
+        });
+
+        // 2. 监听用户修改并同步给主进程与视图状态
+        radios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    if (e.target.value === 'quit') {
+                        segmentedControl.classList.add('state-quit');
+                    } else {
+                        segmentedControl.classList.remove('state-quit');
+                    }
+                    window.electronAPI.setCloseBehavior(e.target.value);
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
