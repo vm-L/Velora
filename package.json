@@ -1,5 +1,5 @@
 {
-  "name": "m3u8-electron",
+  "name": "velora",
   "version": "1.0.0",
   "description": "this is a electron init",
   "main": "dist-electron/main.js",

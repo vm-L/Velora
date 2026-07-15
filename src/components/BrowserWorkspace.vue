@@ -165,6 +165,7 @@ import { useSettings } from '../composables/useSettings';
 import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
+import { APP_PREFIX } from '../constants';
 
 
 const props = defineProps<{
@@ -372,10 +373,10 @@ const refreshWebviewStyles = async (tabId: string) => {
 
     const code = `
       (function() {
-        let style = document.getElementById('m3u8-permanent-style');
+        let style = document.getElementById('${APP_PREFIX}-permanent-style');
         if (!style) {
           style = document.createElement('style');
-          style.id = 'm3u8-permanent-style';
+          style.id = '${APP_PREFIX}-permanent-style';
           document.head.appendChild(style);
         }
         style.innerHTML = ${JSON.stringify(cssText)};
@@ -1177,18 +1178,18 @@ const onApplyPreview = async (selector: string, css: string, isPreviewing: boole
 
   const code = `
     (function() {
-      let style = document.getElementById('m3u8-live-style');
+      let style = document.getElementById('${APP_PREFIX}-live-style');
       if (!style) {
         style = document.createElement('style');
-        style.id = 'm3u8-live-style';
+        style.id = '${APP_PREFIX}-live-style';
         document.head.appendChild(style);
       }
       style.innerHTML = ${JSON.stringify(selector ? selector + ' { ' + css + ' }' : '')};
 
-      let highlight = document.getElementById('m3u8-live-highlight');
+      let highlight = document.getElementById('${APP_PREFIX}-live-highlight');
       if (!highlight) {
         highlight = document.createElement('style');
-        highlight.id = 'm3u8-live-highlight';
+        highlight.id = '${APP_PREFIX}-live-highlight';
         document.head.appendChild(highlight);
       }
       highlight.innerHTML = ${JSON.stringify((selector && isPreviewing) ? selector + ' { outline: 2px dashed #ef4444 !important; outline-offset: -2px !important; }' : '')};

@@ -2,7 +2,7 @@
   <div class="sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header" @click="toggleSidebar">
       <div class="sidebar-title">
-        <AnimatedText text="M3U8 Electron" :isCollapsed="isCollapsed" />
+        <AnimatedText :text="APP_NAME" :isCollapsed="isCollapsed" />
       </div>
       <button class="toggle-btn" title="展开/收起">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -88,6 +88,7 @@
 import { ref } from 'vue';
 import { useSettings } from '../composables/useSettings';
 import AnimatedText from './AnimatedText.vue';
+import { APP_NAME } from '../constants';
 
 const isCollapsed = ref(false);
 const { state } = useSettings();
