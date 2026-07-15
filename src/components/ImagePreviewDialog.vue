@@ -102,12 +102,67 @@
         <line x1="14" y1="21" x2="3" y2="10"></line>
       </svg>
     </div>
+
+    <!-- Save Overlay -->
+    <Teleport to="body">
+      <div v-if="showSaveOverlay" class="save-overlay" @mousedown.stop>
+        <div class="save-modal">
+          <div class="save-header">
+            <h3>保存图片</h3>
+            <button class="icon-action-btn" @click="closeSaveOverlay">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="save-body">
+            <div class="save-location-group">
+              <label>保存位置</label>
+              <div class="location-input-row">
+                <input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+                <button class="select-dir-btn" @click="selectSaveDirectory">浏览</button>
+              </div>
+            </div>
+            <div class="save-items-container">
+              <div class="save-items-header">
+                <label class="checkbox-label">
+                  <input type="checkbox" :checked="saveItems.every(i => i.checked)" @change="toggleAllSaveItems" />
+                  <span>全选</span>
+                </label>
+                <span class="count">{{ saveItems.filter(i => i.checked).length }} / {{ saveItems.length }} 项</span>
+              </div>
+              <div class="save-items-grid">
+                <div v-for="(item, idx) in saveItems" :key="idx" class="save-item" :class="{ selected: item.checked }" @click="item.checked = !item.checked">
+                  <div class="save-item-thumb">
+                    <img :src="item.url" referrerpolicy="no-referrer" />
+                    <div class="checkbox-indicator">
+                      <svg v-if="item.checked" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                  <input type="text" v-model="item.name" class="save-item-name" @click.stop />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="save-footer">
+            <button class="cancel-btn" @click="closeSaveOverlay">取消</button>
+            <button class="confirm-btn" :disabled="isSaving" @click="confirmSave">
+              {{ isSaving ? '保存中...' : '确认保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onUnmounted, computed } from 'vue';
 import { useMessage } from '../composables/useMessage';
+import { useSettings } from '../composables/useSettings';
 
 const props = defineProps<{
   id: string;
@@ -120,6 +175,14 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'focus', 'interaction-start', 'interaction-end']);
 const { showMessage } = useMessage();
+const { state: settingsState } = useSettings();
+
+// Save Overlay State
+const showSaveOverlay = ref(false);
+const saveDirectory = ref('');
+const saveItems = ref<{ url: string; name: string; checked: boolean }[]>([]);
+const isSaving = ref(false);
+
 
 const position = ref({
   x: props.initialX !== undefined ? props.initialX : (window.innerWidth / 2 - 200),
@@ -281,9 +344,109 @@ const copyData = async () => {
   }
 };
 
+const getExtension = (url: string) => {
+  try {
+    const pathname = new URL(url).pathname;
+    const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
+    return match ? match[1] : 'jpg'; // Default to jpg if no extension found
+  } catch {
+    return 'jpg';
+  }
+};
+
+const extractFilename = (url: string) => {
+  try {
+    const pathname = new URL(url).pathname;
+    const parts = pathname.split('/');
+    let name = parts[parts.length - 1] || 'image';
+    return name;
+  } catch {
+    return 'image';
+  }
+};
+
+const openSaveOverlay = () => {
+  saveDirectory.value = settingsState.imageDirectory;
+  const targetUrls = props.urls && props.urls.length > 0 ? props.urls : [props.url];
+  
+  saveItems.value = targetUrls.map((u, i) => {
+    return {
+      url: u,
+      name: `image_${i + 1}_${extractFilename(u)}`,
+      checked: u === currentUrl.value
+    };
+  });
+  showSaveOverlay.value = true;
+};
+
+const closeSaveOverlay = () => {
+  showSaveOverlay.value = false;
+};
+
+const selectSaveDirectory = async () => {
+  if (window.electronAPI && window.electronAPI.selectDirectory) {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      saveDirectory.value = dir;
+    }
+  }
+};
+
+const toggleAllSaveItems = () => {
+  const allChecked = saveItems.value.every(item => item.checked);
+  saveItems.value.forEach(item => {
+    item.checked = !allChecked;
+  });
+};
+
+const confirmSave = async () => {
+  if (!saveDirectory.value) {
+    showMessage('请先选择保存目录', 'error');
+    return;
+  }
+  
+  const itemsToSave = saveItems.value.filter(i => i.checked).map(item => {
+    let finalName = item.name.trim();
+    if (!finalName) finalName = 'image';
+    
+    // Auto append extension if missing
+    const origExt = getExtension(item.url);
+    const currentExtMatch = finalName.match(/\.([a-zA-Z0-9]+)$/);
+    if (!currentExtMatch) {
+      finalName = `${finalName}.${origExt}`;
+    }
+    
+    return { url: item.url, name: finalName };
+  });
+  
+  if (itemsToSave.length === 0) {
+    showMessage('请至少选择一张图片', 'error');
+    return;
+  }
+  
+  isSaving.value = true;
+  showMessage(`正在下载 ${itemsToSave.length} 张图片...`, 'info');
+  
+  try {
+    if (window.electronAPI && window.electronAPI.saveImages) {
+      const results = await window.electronAPI.saveImages(saveDirectory.value, itemsToSave);
+      const successCount = results.filter(r => r.success).length;
+      if (successCount === itemsToSave.length) {
+        showMessage('保存成功', 'success');
+        closeSaveOverlay();
+      } else {
+        showMessage(`保存完成: 成功 ${successCount}，失败 ${itemsToSave.length - successCount}`, 'error');
+      }
+    }
+  } catch (err: any) {
+    showMessage(`保存失败: ${err.message}`, 'error');
+  } finally {
+    isSaving.value = false;
+  }
+};
+
 const saveLocal = () => {
-  // To be implemented
-  console.log('Save to local logic goes here');
+  openSaveOverlay();
 };
 
 // Drag Logic
@@ -751,5 +914,239 @@ onUnmounted(() => {
 
 .resize-handle:hover {
   color: #94a3b8;
+}
+
+/* Save Overlay Styles */
+.save-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 0;
+}
+
+.save-modal {
+  background: white;
+  width: 90%;
+  max-width: 500px;
+  max-height: 90%;
+  border-radius: 8px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.save-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.save-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.save-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.save-location-group {
+  margin-bottom: 16px;
+}
+
+.save-location-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.location-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.location-input-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #334155;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.location-input-row input:focus {
+  border-color: #3b82f6;
+}
+
+.select-dir-btn {
+  padding: 8px 12px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.select-dir-btn:hover {
+  background: #e2e8f0;
+}
+
+.save-items-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.count {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.save-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+.save-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.save-item-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-item-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.save-item.selected .save-item-thumb {
+  border-color: #3b82f6;
+}
+
+.checkbox-indicator {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.save-item.selected .checkbox-indicator {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.save-item-name {
+  font-size: 11px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  text-align: center;
+  background: transparent;
+  color: #475569;
+  transition: all 0.2s;
+}
+
+.save-item-name:hover,
+.save-item-name:focus {
+  border-color: #cbd5e1;
+  background: white;
+  outline: none;
+}
+
+.save-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f8fafc;
+}
+
+.cancel-btn, .confirm-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-btn {
+  background: white;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+}
+
+.cancel-btn:hover {
+  background: #f1f5f9;
+}
+
+.confirm-btn {
+  background: #3b82f6;
+  border: 1px solid #3b82f6;
+  color: white;
+}
+
+.confirm-btn:hover {
+  background: #2563eb;
+}
+
+.confirm-btn:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
 }
 </style>

@@ -9,6 +9,7 @@ export interface ResourceItem {
 
 export const state = reactive({
   closeBehavior: 'tray',
+  imageDirectory: '',
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, { selector: string, css: string }[]>>,
@@ -18,6 +19,7 @@ export const state = reactive({
 export const useSettings = () => {
   const loadSettings = async () => {
     state.closeBehavior = (await window.electronAPI.getSetting('closeBehavior')) || 'tray'
+    state.imageDirectory = (await window.electronAPI.getSetting('imageDirectory')) || ''
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -27,6 +29,11 @@ export const useSettings = () => {
   const setCloseBehavior = async (behavior: string) => {
     state.closeBehavior = behavior
     await window.electronAPI.setSetting('closeBehavior', behavior)
+  }
+
+  const saveImageDirectory = async (dir: string) => {
+    state.imageDirectory = dir
+    await window.electronAPI.setSetting('imageDirectory', dir)
   }
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
@@ -44,5 +51,5 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customStyles', JSON.parse(JSON.stringify(styles)))
   }
 
-  return { state, loadSettings, setCloseBehavior, saveCmsResources, saveExternalSites, saveCustomStyles }
+  return { state, loadSettings, setCloseBehavior, saveImageDirectory, saveCmsResources, saveExternalSites, saveCustomStyles }
 }

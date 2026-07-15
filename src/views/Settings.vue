@@ -21,6 +21,17 @@
             <div class="selection-pill"></div>
           </div>
         </div>
+        
+        <div class="settings-row" style="border-top: 1px solid #f1f5f9;">
+          <div class="settings-info">
+            <h3>默认图片保存目录</h3>
+            <p>设置使用“保存到本地”时的默认保存位置。</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <input v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text" class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
+            <button class="action-btn edit-btn" @click="handleSelectDirectory">选择目录</button>
+          </div>
+        </div>
       </div>
 
       <!-- CMS Resources -->
@@ -168,7 +179,7 @@ import { ref, computed } from 'vue'
 import { useSettings } from '../composables/useSettings'
 import { useConfirm } from '../composables/useConfirm'
 
-const { state, setCloseBehavior, saveCmsResources, saveExternalSites, saveCustomStyles } = useSettings()
+const { state, setCloseBehavior, saveImageDirectory, saveCmsResources, saveExternalSites, saveCustomStyles } = useSettings()
 const { confirm } = useConfirm()
 
 const newCmsName = ref('')
@@ -183,6 +194,13 @@ const editTempUrl = ref('')
 
 const updateBehavior = (behavior: string) => {
   setCloseBehavior(behavior)
+}
+
+const handleSelectDirectory = async () => {
+  const dir = await window.electronAPI.selectDirectory()
+  if (dir) {
+    saveImageDirectory(dir)
+  }
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9)

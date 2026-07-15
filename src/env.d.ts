@@ -21,5 +21,7 @@ interface Window {
     onMediaSniffed: (callback: (data: any) => void) => void
     copyImage: (url: string) => Promise<boolean>
     openExternal: (url: string) => void
+    selectDirectory: () => Promise<string | undefined>
+    saveImages: (dirPath: string, files: { url: string, name: string }[]) => Promise<any[]>
   }
 }

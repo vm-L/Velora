@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 
 // Create a polyfill for __dirname in ESM if needed, though we are compiling via vite-plugin-electron which handles __dirname if we use standard CJS/ESM mixed. 
@@ -82,6 +83,33 @@ function createWindow() {
       console.error('Failed to copy image:', e)
       return false
     }
+  })
+
+  ipcMain.handle('select-directory', async () => {
+    if (!mainWindow) return undefined
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory']
+    })
+    if (canceled) return undefined
+    return filePaths[0]
+  })
+
+  ipcMain.handle('save-images', async (_, dirPath: string, files: { url: string, name: string }[]) => {
+    const results = []
+    for (const file of files) {
+      try {
+        const response = await net.fetch(file.url, { headers: { 'Referer': '' } })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const buffer = await response.arrayBuffer()
+        const savePath = path.join(dirPath, file.name)
+        await fs.promises.writeFile(savePath, Buffer.from(buffer))
+        results.push({ url: file.url, success: true, path: savePath })
+      } catch (e: any) {
+        console.error('Failed to save image:', file.url, e)
+        results.push({ url: file.url, success: false, error: e.message })
+      }
+    }
+    return results
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
