@@ -47,22 +47,6 @@
         </button>
 
         <SnifferDropdown
-          type="image"
-          title="图片嗅探器"
-          tooltip="图片嗅探器"
-          :items="activeTab?.sniffedImages || []"
-          @clear="onClearSniffed('image')"
-          @preview="onPreviewImage"
-        >
-          <template #icon>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-              <polyline points="21 15 16 10 5 21"></polyline>
-            </svg>
-          </template>
-        </SnifferDropdown>
-        <SnifferDropdown
           type="video"
           title="视频嗅探器"
           tooltip="视频嗅探器"
@@ -131,6 +115,7 @@
                @page-favicon-updated="onFaviconUpdated($event, tab.id)"
                @did-start-loading="onStartLoading(tab.id)"
                @did-stop-loading="onStopLoading(tab.id)"
+               @context-menu="handleWebviewContextMenu($event, tab.id)"
                allowpopups
       ></webview>
     </div>
@@ -164,11 +149,31 @@
       @interaction-start="isInteracting = true"
       @interaction-end="isInteracting = false"
     />
+
+    <!-- Custom Context Menu -->
+    <div v-show="contextMenuVisible" class="context-menu" :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
+      <div class="menu-item" @click="triggerPickElement">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
+          <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5-4 3.5" fill="none"></path>
+        </svg>
+        <span>选取元素</span>
+      </div>
+      <div class="menu-item" @click="triggerPickImage">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
+          <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" fill="none"></rect>
+          <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
+          <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" fill="none"></path>
+        </svg>
+        <span>选取图片</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useWorkspaces } from '../composables/useWorkspaces'
 import { useSettings } from '../composables/useSettings'
 import InspectorDialog from './InspectorDialog.vue'
@@ -183,6 +188,36 @@ const props = defineProps<{
 
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces()
 const { state: settingsState, saveCustomStyles, saveExternalSites } = useSettings()
+
+const contextMenuVisible = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
+const contextMenuTabId = ref('')
+
+const handleWebviewContextMenu = (e: any, tabId: string) => {
+  if (isPicking.value || isPickingElementImage.value) return
+  e.preventDefault()
+  
+  const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e
+  const px = typeof params?.x === 'number' ? params.x : 0
+  const py = typeof params?.y === 'number' ? params.y : 0
+  
+  contextMenuPos.value = {
+    x: px,
+    y: py
+  }
+  contextMenuTabId.value = tabId
+  contextMenuVisible.value = true
+}
+
+const triggerPickElement = () => {
+  contextMenuVisible.value = false
+  pickElement()
+}
+
+const triggerPickImage = () => {
+  contextMenuVisible.value = false
+  pickElementImage()
+}
 
 const workspace = computed(() => getWorkspace(props.resourceId))
 const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId))
@@ -229,7 +264,31 @@ onMounted(() => {
       }
     })
   }
+
+  // Click-away to close context menu
+  window.addEventListener('click', handleWindowClick)
+  // Global hotkeys
+  window.addEventListener('keydown', handleGlobalKeydown)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleWindowClick)
+  window.removeEventListener('keydown', handleGlobalKeydown)
+})
+
+const handleWindowClick = () => {
+  contextMenuVisible.value = false
+}
+
+const handleGlobalKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'F5') {
+    e.preventDefault()
+    onRefresh()
+  } else if (e.key === 'F12') {
+    e.preventDefault()
+    onDevTools()
+  }
+}
 
 watch(() => props.resourceId, () => {
   init()
@@ -284,6 +343,29 @@ const onDomReady = async (tabId: string) => {
   
   // Inject saved styles
   refreshWebviewStyles(tabId)
+
+  const webview = document.getElementById(`webview-${tabId}`) as any
+  if (webview) {
+    // Listen to console-message to hide custom context menu on webview left click
+    webview.addEventListener('console-message', (e: any) => {
+      if (e.message === '__webview_click__') {
+        contextMenuVisible.value = false
+      }
+    })
+
+    const clickScript = `
+      (function() {
+        if (window.__clickInjected) return;
+        window.__clickInjected = true;
+        window.addEventListener('mousedown', (e) => {
+          if (e.button === 0) { // left click
+            console.log('__webview_click__');
+          }
+        }, true);
+      })();
+    `
+    webview.executeJavaScript(clickScript)
+  }
 }
 
 const refreshWebviewStyles = async (tabId: string) => {
@@ -411,22 +493,6 @@ interface PreviewImage {
 const activeImagePreviews = ref<PreviewImage[]>([])
 let highestZIndex = 1000
 
-const onPreviewImage = (url: string) => {
-  highestZIndex++
-  const id = 'preview_' + Math.random().toString(36).substr(2, 9)
-
-  // Stagger new windows
-  const offset = (activeImagePreviews.value.length % 5) * 30
-
-  activeImagePreviews.value.push({
-    id,
-    url,
-    zIndex: highestZIndex,
-    x: (window.innerWidth / 2 - 200) + offset,
-    y: (window.innerHeight / 2 - 150) + offset
-  })
-}
-
 const onClosePreview = (id: string) => {
   activeImagePreviews.value = activeImagePreviews.value.filter(img => img.id !== id)
 }
@@ -512,6 +578,49 @@ const pickElement = async () => {
       let selectedEl = null;
       let path = [];
       let pathIndex = 0;
+      let childOverlays = [];
+
+      const getSelector = (el) => {
+        if (el.tagName.toLowerCase() === 'html') return 'html';
+        let path = [];
+        while (el && el.nodeType === Node.ELEMENT_NODE) {
+          let selector = el.tagName.toLowerCase();
+          if (el.id) {
+            selector += '#' + CSS.escape(el.id);
+            path.unshift(selector);
+            break;
+          } else {
+            let index = 1;
+            let sibling = el.previousElementSibling;
+            while (sibling) {
+              index++;
+              sibling = sibling.previousElementSibling;
+            }
+            if (index !== 1 || el.nextElementSibling) {
+              selector += ':nth-child(' + index + ')';
+            }
+          }
+          path.unshift(selector);
+          el = el.parentNode;
+        }
+        return path.join(' > ');
+      };
+
+      const getAffectedChildren = (root) => {
+        let list = [];
+        const walk = (node) => {
+          if (!node) return;
+          if (node.children.length === 0) {
+            list.push(node);
+          } else {
+            for (const child of node.children) {
+              walk(child);
+            }
+          }
+        };
+        walk(root);
+        return list;
+      };
 
       const updateHighlight = (el) => {
         if (!el) return;
@@ -526,9 +635,46 @@ const pickElement = async () => {
         let className = el.className ? '.' + [...el.classList].join('.') : '';
         if (className.length > 20) className = className.substring(0, 20) + '...';
         
+        let count = 0;
+        try {
+          let selector = getSelector(el);
+          count = document.querySelectorAll(selector).length;
+        } catch(e) {}
+
         let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
-        tooltip.textContent = tagName + className + levelText + ' - 滚轮可扩选范围';
+        tooltip.textContent = tagName + className + levelText + ' - 匹配元素: ' + count + ' 个';
         
+        let h = 220; // brand blue
+        overlay.style.borderColor = '#3b82f6';
+        overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+        tooltip.style.backgroundColor = '#1e293b';
+
+        // Child highlighting for multiple levels
+        childOverlays.forEach(o => o.style.display = 'none');
+        if (pathIndex > 0) {
+          const children = getAffectedChildren(el);
+          children.forEach((child, idx) => {
+            let childOverlay = childOverlays[idx];
+            if (!childOverlay) {
+              childOverlay = document.createElement('div');
+              childOverlay.style.position = 'fixed';
+              childOverlay.style.pointerEvents = 'none';
+              childOverlay.style.zIndex = '2147483646';
+              childOverlay.style.border = '1px dashed #3b82f6'; // dashed blue border
+              childOverlay.style.backgroundColor = 'transparent';
+              childOverlay.style.transition = 'all 0.1s ease';
+              document.body.appendChild(childOverlay);
+              childOverlays.push(childOverlay);
+            }
+            const crect = child.getBoundingClientRect();
+            childOverlay.style.top = crect.top + 'px';
+            childOverlay.style.left = crect.left + 'px';
+            childOverlay.style.width = crect.width + 'px';
+            childOverlay.style.height = crect.height + 'px';
+            childOverlay.style.display = 'block';
+          });
+        }
+
         let topPos = rect.top - 28;
         if (topPos < 5) topPos = rect.top + 5;
         let leftPos = rect.left + 5;
@@ -571,38 +717,23 @@ const pickElement = async () => {
         }
       };
 
-      const getSelector = (el) => {
-        if (el.tagName.toLowerCase() === 'html') return 'html';
-        let path = [];
-        while (el && el.nodeType === Node.ELEMENT_NODE) {
-          let selector = el.tagName.toLowerCase();
-          if (el.id) {
-            selector += '#' + CSS.escape(el.id);
-            path.unshift(selector);
-            break;
-          } else {
-            let index = 1;
-            let sibling = el.previousElementSibling;
-            while (sibling) {
-              index++;
-              sibling = sibling.previousElementSibling;
-            }
-            if (index !== 1 || el.nextElementSibling) {
-              selector += ':nth-child(' + index + ')';
-            }
-          }
-          path.unshift(selector);
-          el = el.parentNode;
-        }
-        return path.join(' > ');
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        resolve(null);
       };
 
       const cleanup = () => {
         try { document.body.removeChild(overlay); } catch(e){}
         try { document.body.removeChild(tooltip); } catch(e){}
+        childOverlays.forEach(o => {
+          try { document.body.removeChild(o); } catch(e){}
+        });
         document.removeEventListener('mouseover', onMouseOver, true);
         document.removeEventListener('click', onClick, true);
         document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
+        document.removeEventListener('contextmenu', onContextMenu, true);
         window.__elementPickerActive = false;
         window.__elementPickerCancel = null;
       };
@@ -623,6 +754,7 @@ const pickElement = async () => {
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+      document.addEventListener('contextmenu', onContextMenu, true);
     })
   `
   
@@ -707,6 +839,76 @@ const pickElementImage = async () => {
       let selectedEl = null;
       let path = [];
       let pathIndex = 0;
+      let childOverlays = [];
+
+      const cleanUrl = (raw) => {
+        if (!raw || raw.startsWith('data:')) return raw;
+        try {
+          const parsed = new URL(raw, window.location.href);
+          let clean = parsed.origin + parsed.pathname;
+          const atIdx = clean.indexOf('@');
+          if (atIdx !== -1) clean = clean.substring(0, atIdx);
+          return clean;
+        } catch {
+          return raw;
+        }
+      };
+
+      const collectImages = (root) => {
+        const urls = new Set();
+        const elements = [root, ...root.querySelectorAll('*')];
+        for (const el of elements) {
+          if (el.tagName && el.tagName.toLowerCase() === 'img') {
+            if (el.src) urls.add(cleanUrl(el.src));
+            if (el.srcset) {
+              el.srcset.split(',').forEach(part => {
+                const u = part.trim().split(/\\s+/)[0];
+                if (u) urls.add(cleanUrl(u));
+              });
+            }
+          }
+          try {
+            const style = window.getComputedStyle(el);
+            const bg = style.backgroundImage;
+            if (bg && bg !== 'none') {
+              const re = /url\\(["']?(.*?)["']?\\)/g;
+              let m;
+              while ((m = re.exec(bg)) !== null) {
+                if (m[1] && !m[1].startsWith('data:')) {
+                  urls.add(cleanUrl(m[1]));
+                }
+              }
+            }
+          } catch {}
+        }
+        return [...urls].filter(Boolean);
+      };
+
+      const getAffectedImages = (root) => {
+        let list = [];
+        const walk = (node) => {
+          if (!node) return;
+          let isImg = node.tagName.toLowerCase() === 'img';
+          if (!isImg) {
+            try {
+              const style = window.getComputedStyle(node);
+              const bg = style.backgroundImage;
+              if (bg && bg !== 'none' && bg.includes('url')) {
+                isImg = true;
+              }
+            } catch(e) {}
+          }
+          if (isImg) {
+            list.push(node);
+          } else {
+            for (const child of node.children) {
+              walk(child);
+            }
+          }
+        };
+        walk(root);
+        return list;
+      };
 
       const updateHighlight = (el) => {
         if (!el) return;
@@ -721,9 +923,42 @@ const pickElementImage = async () => {
         let className = el.className ? '.' + [...el.classList].join('.') : '';
         if (className.length > 20) className = className.substring(0, 20) + '...';
         
+        let imgCount = collectImages(el).length;
+
         let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
-        tooltip.textContent = tagName + className + levelText + ' - 滚轮可扩选范围';
+        tooltip.textContent = tagName + className + levelText + ' - 包含图片: ' + imgCount + ' 张';
         
+        let h = 220; // brand blue
+        overlay.style.borderColor = '#3b82f6';
+        overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+        tooltip.style.backgroundColor = '#1e293b';
+
+        // Child highlighting for multiple levels
+        childOverlays.forEach(o => o.style.display = 'none');
+        if (pathIndex > 0) {
+          const children = getAffectedImages(el);
+          children.forEach((child, idx) => {
+            let childOverlay = childOverlays[idx];
+            if (!childOverlay) {
+              childOverlay = document.createElement('div');
+              childOverlay.style.position = 'fixed';
+              childOverlay.style.pointerEvents = 'none';
+              childOverlay.style.zIndex = '2147483646';
+              childOverlay.style.border = '1px dashed #3b82f6'; // dashed blue border
+              childOverlay.style.backgroundColor = 'transparent';
+              childOverlay.style.transition = 'all 0.1s ease';
+              document.body.appendChild(childOverlay);
+              childOverlays.push(childOverlay);
+            }
+            const crect = child.getBoundingClientRect();
+            childOverlay.style.top = crect.top + 'px';
+            childOverlay.style.left = crect.left + 'px';
+            childOverlay.style.width = crect.width + 'px';
+            childOverlay.style.height = crect.height + 'px';
+            childOverlay.style.display = 'block';
+          });
+        }
+
         let topPos = rect.top - 28;
         if (topPos < 5) topPos = rect.top + 5;
         let leftPos = rect.left + 5;
@@ -766,57 +1001,23 @@ const pickElementImage = async () => {
         }
       };
 
-      // 清洗单个 URL：去除 query、fragment、@ 后内容，只保留最短可访问地址
-      const cleanUrl = (raw) => {
-        if (!raw || raw.startsWith('data:')) return raw;
-        try {
-          const parsed = new URL(raw, window.location.href);
-          let clean = parsed.origin + parsed.pathname;
-          const atIdx = clean.indexOf('@');
-          if (atIdx !== -1) clean = clean.substring(0, atIdx);
-          return clean;
-        } catch {
-          return raw;
-        }
-      };
-
-      // 从元素及其所有后代中收集图片 URL
-      const collectImages = (root) => {
-        const urls = new Set();
-        const elements = [root, ...root.querySelectorAll('*')];
-        for (const el of elements) {
-          if (el.tagName && el.tagName.toLowerCase() === 'img') {
-            if (el.src) urls.add(cleanUrl(el.src));
-            if (el.srcset) {
-              el.srcset.split(',').forEach(part => {
-                const u = part.trim().split(/\\s+/)[0];
-                if (u) urls.add(cleanUrl(u));
-              });
-            }
-          }
-          try {
-            const style = window.getComputedStyle(el);
-            const bg = style.backgroundImage;
-            if (bg && bg !== 'none') {
-              const re = /url\\(["']?(.*?)["']?\\)/g;
-              let m;
-              while ((m = re.exec(bg)) !== null) {
-                if (m[1] && !m[1].startsWith('data:')) {
-                  urls.add(cleanUrl(m[1]));
-                }
-              }
-            }
-          } catch {}
-        }
-        return [...urls].filter(Boolean);
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        resolve([]);
       };
 
       const cleanup = () => {
         try { document.body.removeChild(overlay); } catch(e) {}
         try { document.body.removeChild(tooltip); } catch(e) {}
+        childOverlays.forEach(o => {
+          try { document.body.removeChild(o); } catch(e){}
+        });
         document.removeEventListener('mouseover', onMouseOver, true);
         document.removeEventListener('click', onClick, true);
         document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
+        document.removeEventListener('contextmenu', onContextMenu, true);
         window.__imgElementPickerActive = false;
         window.__imgElementPickerCancel = null;
       };
@@ -837,6 +1038,7 @@ const pickElementImage = async () => {
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+      document.addEventListener('contextmenu', onContextMenu, true);
     })
   `
 
@@ -1255,5 +1457,50 @@ const onDeleteRule = async (domain: string, selector: string) => {
 
 .pointer-disabled webview {
   pointer-events: none;
+}
+
+/* Custom Context Menu */
+.context-menu {
+  position: fixed;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  padding: 4px;
+  width: 140px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  user-select: none;
+  animation: menu-show 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes menu-show {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #334155;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menu-item:hover {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.menu-item svg {
+  flex-shrink: 0;
 }
 </style>

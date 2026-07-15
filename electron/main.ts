@@ -172,6 +172,22 @@ app.on('web-contents-created', (event, contents) => {
       mainWindow?.webContents.send('webview-new-window', details.url)
       return { action: 'deny' }
     })
+
+    contents.on('before-input-event', (e, input) => {
+      if (input.type === 'keyDown') {
+        if (input.key === 'F5') {
+          contents.reload()
+          e.preventDefault()
+        } else if (input.key === 'F12') {
+          if (contents.isDevToolsOpened()) {
+            contents.closeDevTools()
+          } else {
+            contents.openDevTools()
+          }
+          e.preventDefault()
+        }
+      }
+    })
   }
 })
 
