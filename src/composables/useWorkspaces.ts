@@ -6,6 +6,9 @@ export interface Tab {
   title: string
   favicon?: string
   loading: boolean
+  webContentsId?: number
+  sniffedImages: { url: string, timestamp: number }[]
+  sniffedVideos: { url: string, timestamp: number }[]
 }
 
 export interface Workspace {
@@ -28,7 +31,9 @@ export const useWorkspaces = () => {
           url: defaultUrl,
           title: 'Loading...',
           loading: true,
-          favicon
+          favicon,
+          sniffedImages: [],
+          sniffedVideos: []
         }]
       }
     }
@@ -46,7 +51,9 @@ export const useWorkspaces = () => {
       url,
       title: 'Loading...',
       loading: true,
-      favicon
+      favicon,
+      sniffedImages: [],
+      sniffedVideos: []
     })
     ws.activeTabId = tabId
     return tabId

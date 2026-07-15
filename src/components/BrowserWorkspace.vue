@@ -31,11 +31,57 @@
     <div class="function-bar">
       <div class="func-spacer"></div>
       <div class="func-group">
-        <button class="func-btn" data-tooltip="选取元素 (Pick Element)" @click="pickElement">
+        <button class="func-btn" :class="{ 'active': isPicking }" data-tooltip="选取元素" @click="pickElement">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 3 10 21 14 14 21 10 3 3"></polygon>
+            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></polygon>
+            <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5l-4 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
           </svg>
         </button>
+        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="选取图片" @click="pickElementImage">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></polygon>
+            <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" stroke="currentColor" stroke-width="2" fill="none"></rect>
+            <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
+            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+          </svg>
+        </button>
+
+        <SnifferDropdown
+          type="image"
+          title="图片嗅探器"
+          tooltip="图片嗅探器"
+          :items="activeTab?.sniffedImages || []"
+          @clear="onClearSniffed('image')"
+          @preview="onPreviewImage"
+        >
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </template>
+        </SnifferDropdown>
+        <SnifferDropdown
+          type="video"
+          title="视频嗅探器"
+          tooltip="视频嗅探器"
+          :items="activeTab?.sniffedVideos || []"
+          @clear="onClearSniffed('video')"
+        >
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+              <line x1="7" y1="2" x2="7" y2="22"></line>
+              <line x1="17" y1="2" x2="17" y2="22"></line>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <line x1="2" y1="7" x2="7" y2="7"></line>
+              <line x1="2" y1="17" x2="7" y2="17"></line>
+              <line x1="17" y1="17" x2="22" y2="17"></line>
+              <line x1="17" y1="7" x2="22" y2="7"></line>
+            </svg>
+          </template>
+        </SnifferDropdown>
         <div class="func-divider"></div>
         <button class="func-btn" data-tooltip="后退" @click="onBack">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -74,7 +120,7 @@
     </div>
 
     <!-- Webviews -->
-    <div class="webview-container">
+    <div class="webview-container" :class="{ 'pointer-disabled': isInteracting }">
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id"
                v-show="workspace?.activeTabId === tab.id"
                :src="tab.url"
@@ -99,6 +145,24 @@
       @save="onSaveRules"
       @repick="pickElement"
       @deleteRule="onDeleteRule"
+      @interaction-start="isInteracting = true"
+      @interaction-end="isInteracting = false"
+    />
+
+    <!-- Image Preview Dialogs -->
+    <ImagePreviewDialog
+      v-for="img in activeImagePreviews"
+      :key="img.id"
+      :id="img.id"
+      :url="img.url"
+      :urls="img.urls"
+      :zIndex="img.zIndex"
+      :initialX="img.x"
+      :initialY="img.y"
+      @close="onClosePreview"
+      @focus="onFocusPreview"
+      @interaction-start="isInteracting = true"
+      @interaction-end="isInteracting = false"
     />
   </div>
 </template>
@@ -108,6 +172,9 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { useWorkspaces } from '../composables/useWorkspaces'
 import { useSettings } from '../composables/useSettings'
 import InspectorDialog from './InspectorDialog.vue'
+import SnifferDropdown from './SnifferDropdown.vue'
+import ImagePreviewDialog from './ImagePreviewDialog.vue'
+
 
 const props = defineProps<{
   resourceId: string
@@ -115,9 +182,10 @@ const props = defineProps<{
 }>()
 
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces()
-const { state: settingsState, saveCustomStyles, saveCmsResources, saveExternalSites } = useSettings()
+const { state: settingsState, saveCustomStyles, saveExternalSites } = useSettings()
 
 const workspace = computed(() => getWorkspace(props.resourceId))
+const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId))
 
 const getResourceIcon = () => {
   const isExt = settingsState.externalSites.find(r => r.id === props.resourceId)
@@ -139,6 +207,28 @@ onMounted(() => {
       addTab(props.resourceId, url, getResourceIcon())
     })
   }
+
+  if (window.electronAPI && window.electronAPI.onMediaSniffed) {
+    window.electronAPI.onMediaSniffed((data: any) => {
+      // data: { webContentsId: number, url: string, type: 'image'|'video', timestamp: number }
+      if (!workspace.value) return
+      
+      for (const tab of workspace.value.tabs) {
+        if (tab.webContentsId === data.webContentsId) {
+          if (data.type === 'image') {
+            if (!tab.sniffedImages.some(m => m.url === data.url)) {
+              tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp })
+            }
+          } else if (data.type === 'video') {
+            if (!tab.sniffedVideos.some(m => m.url === data.url)) {
+              tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp })
+            }
+          }
+          break
+        }
+      }
+    })
+  }
 })
 
 watch(() => props.resourceId, () => {
@@ -150,6 +240,28 @@ watch(() => workspace.value?.tabs.length, (newLen) => {
     // Re-create default tab when all tabs are closed
     initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon())
   }
+})
+
+watch(() => activeTab.value?.id, async (_newTabId, oldTabId) => {
+  if (oldTabId) {
+    const webview = document.getElementById(`webview-${oldTabId}`) as any
+    if (webview) {
+      try {
+        if (isPicking.value) {
+          await webview.executeJavaScript(`
+            if (window.__elementPickerCancel) window.__elementPickerCancel();
+          `)
+        }
+        if (isPickingElementImage.value) {
+          await webview.executeJavaScript(`
+            if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
+          `)
+        }
+      } catch (e) {}
+    }
+  }
+  isPicking.value = false
+  isPickingElementImage.value = false
 })
 
 const setActiveTab = (tabId: string) => {
@@ -209,6 +321,15 @@ const refreshWebviewStyles = async (tabId: string) => {
 
 const onStartLoading = (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: true })
+  const webview = document.getElementById(`webview-${tabId}`) as any
+  if (webview && webview.getWebContentsId) {
+    try {
+      const wcId = webview.getWebContentsId()
+      updateTab(props.resourceId, tabId, { webContentsId: wcId })
+    } catch (e) {
+      // ignore
+    }
+  }
 }
 
 const onStopLoading = (tabId: string) => {
@@ -267,19 +388,100 @@ const onOpenExternal = () => {
   }
 }
 
+const onClearSniffed = (type: 'image' | 'video') => {
+  if (activeTab.value) {
+    if (type === 'image') {
+      activeTab.value.sniffedImages = []
+    } else {
+      activeTab.value.sniffedVideos = []
+    }
+  }
+}
+
+// Image Preview Logic
+interface PreviewImage {
+  id: string
+  url: string       // 第一张或唯一图片的 URL（向下兼容）
+  urls?: string[]   // 多图模式时传入的完整 URL 列表
+  zIndex: number
+  x?: number
+  y?: number
+}
+
+const activeImagePreviews = ref<PreviewImage[]>([])
+let highestZIndex = 1000
+
+const onPreviewImage = (url: string) => {
+  highestZIndex++
+  const id = 'preview_' + Math.random().toString(36).substr(2, 9)
+
+  // Stagger new windows
+  const offset = (activeImagePreviews.value.length % 5) * 30
+
+  activeImagePreviews.value.push({
+    id,
+    url,
+    zIndex: highestZIndex,
+    x: (window.innerWidth / 2 - 200) + offset,
+    y: (window.innerHeight / 2 - 150) + offset
+  })
+}
+
+const onClosePreview = (id: string) => {
+  activeImagePreviews.value = activeImagePreviews.value.filter(img => img.id !== id)
+}
+
+const onFocusPreview = (id: string) => {
+  const img = activeImagePreviews.value.find(img => img.id === id)
+  if (img) {
+    highestZIndex++
+    img.zIndex = highestZIndex
+  }
+}
+
 // Element Picker Logic
 const inspectorVisible = ref(false)
 const inspectorSelector = ref('')
 const inspectorUrl = ref('')
+const isInteracting = ref(false)
+const isPicking = ref(false)
+const isPickingElementImage = ref(false)
 
 const pickElement = async () => {
   if (!workspace.value?.activeTabId) return
   const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any
   if (!webview) return
   
+  if (isPicking.value) {
+    try {
+      await webview.executeJavaScript(`
+        if (window.__elementPickerCancel) {
+          window.__elementPickerCancel();
+        }
+      `)
+    } catch(e) {}
+    isPicking.value = false
+    return
+  }
+
+  if (isPickingElementImage.value) {
+    try {
+      await webview.executeJavaScript(`
+        if (window.__imgElementPickerCancel) {
+          window.__imgElementPickerCancel();
+        }
+      `)
+    } catch(e) {}
+    isPickingElementImage.value = false
+  }
+
+  isPicking.value = true
+
   const pickerScript = `
     new Promise((resolve) => {
-      if (window.__elementPickerActive) return resolve(null);
+      if (window.__elementPickerActive) {
+        if (window.__elementPickerCancel) window.__elementPickerCancel();
+      }
       window.__elementPickerActive = true;
       
       const overlay = document.createElement('div');
@@ -291,14 +493,82 @@ const pickElement = async () => {
       overlay.style.transition = 'all 0.1s ease';
       document.body.appendChild(overlay);
 
-      const onMouseOver = (e) => {
-        e.stopPropagation();
-        const rect = e.target.getBoundingClientRect();
+      const tooltip = document.createElement('div');
+      tooltip.style.position = 'fixed';
+      tooltip.style.zIndex = '2147483647';
+      tooltip.style.backgroundColor = '#1e293b';
+      tooltip.style.color = '#ffffff';
+      tooltip.style.padding = '4px 8px';
+      tooltip.style.borderRadius = '4px';
+      tooltip.style.fontSize = '12px';
+      tooltip.style.fontFamily = 'system-ui, sans-serif';
+      tooltip.style.pointerEvents = 'none';
+      tooltip.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+      tooltip.style.display = 'none';
+      tooltip.style.transition = 'all 0.1s ease';
+      document.body.appendChild(tooltip);
+
+      let currentEl = null;
+      let selectedEl = null;
+      let path = [];
+      let pathIndex = 0;
+
+      const updateHighlight = (el) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
         overlay.style.top = rect.top + 'px';
         overlay.style.left = rect.left + 'px';
         overlay.style.width = rect.width + 'px';
         overlay.style.height = rect.height + 'px';
         overlay.style.display = 'block';
+
+        let tagName = el.tagName.toLowerCase();
+        let className = el.className ? '.' + [...el.classList].join('.') : '';
+        if (className.length > 20) className = className.substring(0, 20) + '...';
+        
+        let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
+        tooltip.textContent = tagName + className + levelText + ' - 滚轮可扩选范围';
+        
+        let topPos = rect.top - 28;
+        if (topPos < 5) topPos = rect.top + 5;
+        let leftPos = rect.left + 5;
+        
+        tooltip.style.top = topPos + 'px';
+        tooltip.style.left = leftPos + 'px';
+        tooltip.style.display = 'block';
+      };
+
+      const onMouseOver = (e) => {
+        e.stopPropagation();
+        if (e.target === currentEl) return;
+        currentEl = e.target;
+        path = [];
+        let temp = currentEl;
+        while (temp && temp.tagName.toLowerCase() !== 'html') {
+          path.push(temp);
+          temp = temp.parentElement;
+        }
+        pathIndex = 0;
+        selectedEl = path[pathIndex];
+        updateHighlight(selectedEl);
+      };
+
+      const onWheel = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.deltaY < 0) {
+          if (pathIndex < path.length - 1) {
+            pathIndex++;
+            selectedEl = path[pathIndex];
+            updateHighlight(selectedEl);
+          }
+        } else if (e.deltaY > 0) {
+          if (pathIndex > 0) {
+            pathIndex--;
+            selectedEl = path[pathIndex];
+            updateHighlight(selectedEl);
+          }
+        }
       };
 
       const getSelector = (el) => {
@@ -327,27 +597,267 @@ const pickElement = async () => {
         return path.join(' > ');
       };
 
+      const cleanup = () => {
+        try { document.body.removeChild(overlay); } catch(e){}
+        try { document.body.removeChild(tooltip); } catch(e){}
+        document.removeEventListener('mouseover', onMouseOver, true);
+        document.removeEventListener('click', onClick, true);
+        document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
+        window.__elementPickerActive = false;
+        window.__elementPickerCancel = null;
+      };
+
       const onClick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const selector = getSelector(e.target);
-        document.body.removeChild(overlay);
-        document.removeEventListener('mouseover', onMouseOver, true);
-        document.removeEventListener('click', onClick, true);
-        window.__elementPickerActive = false;
+        const selector = getSelector(selectedEl || e.target);
+        cleanup();
         resolve(selector);
+      };
+
+      window.__elementPickerCancel = () => {
+        cleanup();
+        resolve(null);
       };
 
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
+      document.addEventListener('wheel', onWheel, { capture: true, passive: false });
     })
   `
   
-  const selector = await webview.executeJavaScript(pickerScript)
-  if (selector) {
-    inspectorSelector.value = selector
-    inspectorUrl.value = webview.getURL()
-    inspectorVisible.value = true
+  try {
+    const selector = await webview.executeJavaScript(pickerScript)
+    isPicking.value = false
+    if (selector) {
+      inspectorSelector.value = selector
+      inspectorUrl.value = webview.getURL()
+      inspectorVisible.value = true
+    }
+  } catch (e) {
+    isPicking.value = false
+  }
+}
+
+/**
+ * 选取图片：与选取元素操作流程相同，但点击后收集元素内所有图片资源，
+ * 清洗 URL（去 query/fragment/@ 后内容），去重后展示在 ImagePreviewDialog 中。
+ */
+const pickElementImage = async () => {
+  if (!workspace.value?.activeTabId) return
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any
+  if (!webview) return
+
+  // 再次点击则取消拾取模式
+  if (isPickingElementImage.value) {
+    try {
+      await webview.executeJavaScript(`
+        if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
+      `)
+    } catch(e) {}
+    isPickingElementImage.value = false
+    return
+  }
+
+  if (isPicking.value) {
+    try {
+      await webview.executeJavaScript(`
+        if (window.__elementPickerCancel) {
+          window.__elementPickerCancel();
+        }
+      `)
+    } catch(e) {}
+    isPicking.value = false
+  }
+
+  isPickingElementImage.value = true
+
+  const pickerScript = `
+    new Promise((resolve) => {
+      if (window.__imgElementPickerActive) {
+        if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
+      }
+      window.__imgElementPickerActive = true;
+
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.pointerEvents = 'none';
+      overlay.style.zIndex = '2147483647';
+      overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
+      overlay.style.border = '2px solid #3b82f6';
+      overlay.style.transition = 'all 0.1s ease';
+      document.body.appendChild(overlay);
+
+      const tooltip = document.createElement('div');
+      tooltip.style.position = 'fixed';
+      tooltip.style.zIndex = '2147483647';
+      tooltip.style.backgroundColor = '#1e293b';
+      tooltip.style.color = '#ffffff';
+      tooltip.style.padding = '4px 8px';
+      tooltip.style.borderRadius = '4px';
+      tooltip.style.fontSize = '12px';
+      tooltip.style.fontFamily = 'system-ui, sans-serif';
+      tooltip.style.pointerEvents = 'none';
+      tooltip.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+      tooltip.style.display = 'none';
+      tooltip.style.transition = 'all 0.1s ease';
+      document.body.appendChild(tooltip);
+
+      let currentEl = null;
+      let selectedEl = null;
+      let path = [];
+      let pathIndex = 0;
+
+      const updateHighlight = (el) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        overlay.style.top = rect.top + 'px';
+        overlay.style.left = rect.left + 'px';
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
+        overlay.style.display = 'block';
+
+        let tagName = el.tagName.toLowerCase();
+        let className = el.className ? '.' + [...el.classList].join('.') : '';
+        if (className.length > 20) className = className.substring(0, 20) + '...';
+        
+        let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
+        tooltip.textContent = tagName + className + levelText + ' - 滚轮可扩选范围';
+        
+        let topPos = rect.top - 28;
+        if (topPos < 5) topPos = rect.top + 5;
+        let leftPos = rect.left + 5;
+        
+        tooltip.style.top = topPos + 'px';
+        tooltip.style.left = leftPos + 'px';
+        tooltip.style.display = 'block';
+      };
+
+      const onMouseOver = (e) => {
+        e.stopPropagation();
+        if (e.target === currentEl) return;
+        currentEl = e.target;
+        path = [];
+        let temp = currentEl;
+        while (temp && temp.tagName.toLowerCase() !== 'html') {
+          path.push(temp);
+          temp = temp.parentElement;
+        }
+        pathIndex = 0;
+        selectedEl = path[pathIndex];
+        updateHighlight(selectedEl);
+      };
+
+      const onWheel = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.deltaY < 0) {
+          if (pathIndex < path.length - 1) {
+            pathIndex++;
+            selectedEl = path[pathIndex];
+            updateHighlight(selectedEl);
+          }
+        } else if (e.deltaY > 0) {
+          if (pathIndex > 0) {
+            pathIndex--;
+            selectedEl = path[pathIndex];
+            updateHighlight(selectedEl);
+          }
+        }
+      };
+
+      // 清洗单个 URL：去除 query、fragment、@ 后内容，只保留最短可访问地址
+      const cleanUrl = (raw) => {
+        if (!raw || raw.startsWith('data:')) return raw;
+        try {
+          const parsed = new URL(raw, window.location.href);
+          let clean = parsed.origin + parsed.pathname;
+          const atIdx = clean.indexOf('@');
+          if (atIdx !== -1) clean = clean.substring(0, atIdx);
+          return clean;
+        } catch {
+          return raw;
+        }
+      };
+
+      // 从元素及其所有后代中收集图片 URL
+      const collectImages = (root) => {
+        const urls = new Set();
+        const elements = [root, ...root.querySelectorAll('*')];
+        for (const el of elements) {
+          if (el.tagName && el.tagName.toLowerCase() === 'img') {
+            if (el.src) urls.add(cleanUrl(el.src));
+            if (el.srcset) {
+              el.srcset.split(',').forEach(part => {
+                const u = part.trim().split(/\\s+/)[0];
+                if (u) urls.add(cleanUrl(u));
+              });
+            }
+          }
+          try {
+            const style = window.getComputedStyle(el);
+            const bg = style.backgroundImage;
+            if (bg && bg !== 'none') {
+              const re = /url\\(["']?(.*?)["']?\\)/g;
+              let m;
+              while ((m = re.exec(bg)) !== null) {
+                if (m[1] && !m[1].startsWith('data:')) {
+                  urls.add(cleanUrl(m[1]));
+                }
+              }
+            }
+          } catch {}
+        }
+        return [...urls].filter(Boolean);
+      };
+
+      const cleanup = () => {
+        try { document.body.removeChild(overlay); } catch(e) {}
+        try { document.body.removeChild(tooltip); } catch(e) {}
+        document.removeEventListener('mouseover', onMouseOver, true);
+        document.removeEventListener('click', onClick, true);
+        document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
+        window.__imgElementPickerActive = false;
+        window.__imgElementPickerCancel = null;
+      };
+
+      const onClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const urls = collectImages(selectedEl || e.target);
+        cleanup();
+        resolve(urls);
+      };
+
+      window.__imgElementPickerCancel = () => {
+        cleanup();
+        resolve([]);
+      };
+
+      document.addEventListener('mouseover', onMouseOver, true);
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    })
+  `
+
+  try {
+    const urls: string[] = await webview.executeJavaScript(pickerScript)
+    isPickingElementImage.value = false
+    if (urls && urls.length > 0) {
+      highestZIndex++
+      const id = 'preview_img_' + Math.random().toString(36).substr(2, 9)
+      const offset = (activeImagePreviews.value.length % 5) * 30
+      activeImagePreviews.value.push({
+        id,
+        url: urls[0],
+        urls,
+        zIndex: highestZIndex,
+        x: (window.innerWidth / 2 - 200) + offset,
+        y: (window.innerHeight / 2 - 150) + offset
+      })
+    }
+  } catch (e) {
+    isPickingElementImage.value = false
   }
 }
 
@@ -378,6 +888,35 @@ const onApplyPreview = (selector: string, css: string, isPreviewing: boolean = t
   webview.executeJavaScript(code)
 }
 
+const mergeCss = (oldCss: string, newCss: string): string => {
+  const parseRules = (cssStr: string) => {
+    const map = new Map<string, string>()
+    const statements = cssStr.split(';').map(s => s.trim()).filter(Boolean)
+    for (const statement of statements) {
+      const colonIdx = statement.indexOf(':')
+      if (colonIdx > 0) {
+        const prop = statement.slice(0, colonIdx).trim()
+        const val = statement.slice(colonIdx + 1).trim()
+        map.set(prop, val)
+      }
+    }
+    return map
+  }
+
+  const oldMap = parseRules(oldCss)
+  const newMap = parseRules(newCss)
+
+  for (const [prop, val] of newMap.entries()) {
+    oldMap.set(prop, val)
+  }
+
+  let merged = ''
+  for (const [prop, val] of oldMap.entries()) {
+    merged += `${prop}: ${val}; `
+  }
+  return merged.trim()
+}
+
 const onSaveRules = async (domain: string, selector: string, css: string) => {
   if (!selector || !css) return
   
@@ -385,11 +924,11 @@ const onSaveRules = async (domain: string, selector: string, css: string) => {
   if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {}
   if (!newStyles[props.resourceId][domain]) newStyles[props.resourceId][domain] = []
   
-  // Replace if selector exists, otherwise push
+  // Replace and merge if selector exists, otherwise push
   const rules = newStyles[props.resourceId][domain]
   const existingIdx = rules.findIndex(r => r.selector === selector)
   if (existingIdx >= 0) {
-    rules[existingIdx].css = css
+    rules[existingIdx].css = mergeCss(rules[existingIdx].css, css)
   } else {
     rules.push({ selector, css })
   }
@@ -641,6 +1180,16 @@ const onDeleteRule = async (domain: string, selector: string) => {
   color: #0f172a;
 }
 
+.func-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.func-btn.active:hover {
+  background: #2563eb;
+  color: #ffffff;
+}
+
 /* Custom CSS Tooltip */
 .func-btn::before,
 .func-btn::after {
@@ -702,5 +1251,9 @@ const onDeleteRule = async (domain: string, selector: string) => {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+.pointer-disabled webview {
+  pointer-events: none;
 }
 </style>

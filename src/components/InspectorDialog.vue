@@ -2,23 +2,29 @@
   <div v-if="modelValue" class="inspector-dialog" :style="{ top: position.y + 'px', left: position.x + 'px' }">
     <div class="inspector-header" @mousedown="startDrag">
       <div class="header-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+          </path>
         </svg>
-        样式检查器
+        样式注入器
       </div>
       <div class="header-actions">
         <button class="action-btn" @click="isCollapsed = !isCollapsed" :title="isCollapsed ? '展开' : '收起'">
-          <svg v-if="isCollapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg v-if="isCollapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
-          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <polyline points="18 15 12 9 6 15"></polyline>
           </svg>
         </button>
         <button class="action-btn close-btn" @click="close" title="取消">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
@@ -39,7 +45,8 @@
               <label>CSS 选择器</label>
               <button class="text-btn" @click="handleRepick">重新选择</button>
             </div>
-            <input type="text" v-model="localSelector" class="mono-input" @input="updatePreviewImmediate" placeholder=".class-name, #id" />
+            <input type="text" v-model="localSelector" class="mono-input" @input="updatePreviewImmediate"
+              placeholder=".class-name, #id" />
           </div>
 
           <div class="form-group" style="margin-top: 12px;">
@@ -52,7 +59,8 @@
                   <div v-for="(rule, idx) in domainRules" :key="idx" class="dropdown-item">
                     <span class="dropdown-text" @click="applyRule(rule)" :title="rule.css">{{ rule.selector }}</span>
                     <button class="del-btn" @click.stop="confirmDelete(rule)" title="删除">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                       </svg>
@@ -61,7 +69,8 @@
                 </div>
               </div>
             </div>
-            <textarea v-model="localCss" class="mono-input css-textarea" @input="updatePreview" @blur="deduplicateCss" placeholder="background: red;"></textarea>
+            <textarea v-model="localCss" class="mono-input css-textarea" @input="updatePreview" @blur="deduplicateCss"
+              placeholder="background: red;"></textarea>
           </div>
         </div>
 
@@ -75,178 +84,185 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
-import { useConfirm } from '../composables/useConfirm'
+import { ref, watch, onUnmounted } from 'vue';
+import { useConfirm } from '../composables/useConfirm';
 
-const { confirm } = useConfirm()
+const { confirm } = useConfirm();
 
 const props = defineProps<{
-  modelValue: boolean
-  selector: string
-  url: string
-  domainRules?: { selector: string, css: string }[]
-}>()
+  modelValue: boolean;
+  selector: string;
+  url: string;
+  domainRules?: { selector: string, css: string; }[];
+}>();
 
-const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'repick', 'deleteRule'])
+const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'repick', 'deleteRule', 'interaction-start', 'interaction-end']);
 
-const isCollapsed = ref(false)
-const dropdownOpen = ref(false)
+const isCollapsed = ref(false);
+const dropdownOpen = ref(false);
 
-const localSelector = ref('')
-const localCss = ref('')
-const domain = ref('')
+const localSelector = ref('');
+const localCss = ref('');
+const domain = ref('');
 
-const position = ref({ x: 100, y: 100 })
-let isDragging = false
-let dragOffset = { x: 0, y: 0 }
+const position = ref({ x: 100, y: 100 });
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
 
-const closeDropdown = () => { dropdownOpen.value = false }
+const closeDropdown = () => { dropdownOpen.value = false; };
 
 const vClickOutside = {
   mounted(el: any, binding: any) {
     el.clickOutsideEvent = function (event: Event) {
       if (!(el == event.target || el.contains(event.target))) {
-        binding.value(event, el)
+        binding.value(event, el);
       }
-    }
-    document.body.addEventListener('click', el.clickOutsideEvent)
+    };
+    document.body.addEventListener('click', el.clickOutsideEvent);
   },
   unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent)
+    document.body.removeEventListener('click', el.clickOutsideEvent);
   }
-}
+};
 
 watch(() => props.modelValue, (newVal) => {
   if (newVal) {
-    localSelector.value = props.selector
+    localSelector.value = props.selector;
     try {
-      const urlObj = new URL(props.url)
-      domain.value = urlObj.hostname
+      const urlObj = new URL(props.url);
+      domain.value = urlObj.hostname;
     } catch (e) {
-      domain.value = '未知域名'
+      domain.value = '未知域名';
     }
-    localCss.value = ''
-    isCollapsed.value = false
-    dropdownOpen.value = false
-    
-    // Position near the top right initially
+    localCss.value = '';
+    isCollapsed.value = false;
+    dropdownOpen.value = false;
+
+    // Position in the center of the content area
+    // Approximate: sidebar ~220px wide, titlebar ~32px tall, dialog ~320px wide, ~400px tall
+    const dialogW = 320;
+    const dialogH = 400;
+    const sidebarW = 220;
+    const titlebarH = 32;
     position.value = {
-      x: window.innerWidth - 340,
-      y: 60
-    }
-    
+      x: sidebarW + (window.innerWidth - sidebarW - dialogW) / 2,
+      y: titlebarH + (window.innerHeight - titlebarH - dialogH) / 2
+    };
+
     // Trigger preview immediately when dialog opens
-    updatePreviewImmediate()
+    updatePreviewImmediate();
   }
-})
+});
 
 const handleRepick = () => {
-  emit('applyPreview', '', '', false)
-  emit('update:modelValue', false)
-  emit('repick')
-}
+  emit('applyPreview', '', '', false);
+  emit('update:modelValue', false);
+  emit('repick');
+};
 
-const applyRule = (rule: { selector: string, css: string }) => {
-  localCss.value = (localCss.value ? localCss.value + '\n' : '') + rule.css
-  dropdownOpen.value = false
-  updatePreview()
-}
+const applyRule = (rule: { selector: string, css: string; }) => {
+  localCss.value = (localCss.value ? localCss.value + '\n' : '') + rule.css;
+  dropdownOpen.value = false;
+  updatePreview();
+};
 
-const confirmDelete = async (rule: { selector: string }) => {
+const confirmDelete = async (rule: { selector: string; }) => {
   const isOk = await confirm({
     title: '删除规则',
-    message: `确定要删除规则 "${rule.selector}" 吗？此操作无法撤销。`,
+    message: '是否确认删除此规则',
     type: 'danger',
     confirmText: '删除'
-  })
+  });
   if (isOk) {
     if (props.url) {
-      const domain = new URL(props.url).hostname
-      emit('deleteRule', domain, rule.selector)
-      dropdownOpen.value = false
+      const domain = new URL(props.url).hostname;
+      emit('deleteRule', domain, rule.selector);
+      dropdownOpen.value = false;
     }
   }
-}
+};
 
 const deduplicateCss = () => {
-  if (!localCss.value) return
-  
-  const rawCss = localCss.value
-  const rules = rawCss.split(';').map(r => r.trim()).filter(Boolean)
-  const map = new Map<string, string>()
-  
+  if (!localCss.value) return;
+
+  const rawCss = localCss.value;
+  const rules = rawCss.split(';').map(r => r.trim()).filter(Boolean);
+  const map = new Map<string, string>();
+
   for (const rule of rules) {
-    const colonIndex = rule.indexOf(':')
+    const colonIndex = rule.indexOf(':');
     if (colonIndex > 0) {
-      const prop = rule.slice(0, colonIndex).trim()
-      let val = rule.slice(colonIndex + 1).trim()
+      const prop = rule.slice(0, colonIndex).trim();
+      let val = rule.slice(colonIndex + 1).trim();
       if (!val.includes('!important')) {
-        val += ' !important'
+        val += ' !important';
       }
-      map.set(prop, val)
+      map.set(prop, val);
     }
   }
-  
-  let newCss = ''
+
+  let newCss = '';
   for (const [prop, val] of map.entries()) {
-    newCss += `${prop}: ${val};\n`
+    newCss += `${prop}: ${val};\n`;
   }
-  
+
   if (localCss.value !== newCss) {
-    localCss.value = newCss
-    updatePreviewImmediate()
+    localCss.value = newCss;
+    updatePreviewImmediate();
   }
-}
+};
 
 const updatePreviewImmediate = () => {
-  clearTimeout(previewTimer)
-  emit('applyPreview', localSelector.value, localCss.value, true)
-}
+  clearTimeout(previewTimer);
+  emit('applyPreview', localSelector.value, localCss.value, true);
+};
 
-let previewTimer: any
+let previewTimer: any;
 const updatePreview = () => {
-  clearTimeout(previewTimer)
+  clearTimeout(previewTimer);
   previewTimer = setTimeout(() => {
-    emit('applyPreview', localSelector.value, localCss.value, true)
-  }, 200)
-}
+    emit('applyPreview', localSelector.value, localCss.value, true);
+  }, 200);
+};
 
 const save = () => {
-  emit('save', domain.value, localSelector.value, localCss.value)
-  emit('applyPreview', '', '', false) // clear preview and highlight
-  emit('update:modelValue', false)
-}
+  emit('save', domain.value, localSelector.value, localCss.value);
+  emit('applyPreview', '', '', false); // clear preview and highlight
+  emit('update:modelValue', false);
+};
 
 const close = () => {
-  emit('update:modelValue', false)
-  emit('applyPreview', '', '', false) // clear preview and highlight
-}
+  emit('update:modelValue', false);
+  emit('applyPreview', '', '', false); // clear preview and highlight
+};
 
 // Drag Logic
 const startDrag = (e: MouseEvent) => {
-  isDragging = true
-  dragOffset.x = e.clientX - position.value.x
-  dragOffset.y = e.clientY - position.value.y
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
-}
+  isDragging = true;
+  emit('interaction-start');
+  dragOffset.x = e.clientX - position.value.x;
+  dragOffset.y = e.clientY - position.value.y;
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', stopDrag);
+};
 
 const onDrag = (e: MouseEvent) => {
-  if (!isDragging) return
-  position.value.x = e.clientX - dragOffset.x
-  position.value.y = e.clientY - dragOffset.y
-}
+  if (!isDragging) return;
+  position.value.x = e.clientX - dragOffset.x;
+  position.value.y = e.clientY - dragOffset.y;
+};
 
 const stopDrag = () => {
-  isDragging = false
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
-}
+  isDragging = false;
+  emit('interaction-end');
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+};
 
 onUnmounted(() => {
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
-})
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+});
 </script>
 
 <style scoped lang="less">
@@ -255,7 +271,7 @@ onUnmounted(() => {
   width: 300px;
   background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
   z-index: 9999;
   display: flex;
   flex-direction: column;

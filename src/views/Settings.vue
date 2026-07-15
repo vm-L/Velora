@@ -306,7 +306,7 @@ const deleteRule = async (domain: string, selector: string) => {
   if (!managingStylesFor.value) return
   const isOk = await confirm({
     title: '删除规则',
-    message: `确定要删除规则 "${selector}" 吗？此操作无法撤销。`,
+    message: '是否确认删除此规则',
     type: 'danger',
     confirmText: '删除'
   })

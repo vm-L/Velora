@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 
 export interface ConfirmOptions {
   title: string
-  message: string
+  message?: string
   confirmText?: string
   cancelText?: string
   type?: 'danger' | 'warning' | 'info'
@@ -16,7 +16,7 @@ interface ConfirmState extends ConfirmOptions {
 const state = reactive<ConfirmState>({
   isVisible: false,
   title: '',
-  message: '',
+  message: '是否确认操作',
   confirmText: '确定',
   cancelText: '取消',
   type: 'danger',
@@ -27,7 +27,7 @@ export const useConfirm = () => {
   const confirm = (options: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
       state.title = options.title
-      state.message = options.message
+      state.message = options.message || '是否确认操作'
       state.confirmText = options.confirmText || '确定'
       state.cancelText = options.cancelText || '取消'
       state.type = options.type || 'danger'

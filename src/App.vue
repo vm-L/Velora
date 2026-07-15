@@ -11,6 +11,7 @@
     </div>
   </div>
   <ConfirmDialog />
+  <MessageBar />
 </template>
 
 <script setup lang="ts">
@@ -18,6 +19,7 @@ import { onMounted } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import Sidebar from './components/Sidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import MessageBar from './components/MessageBar.vue'
 import { useSettings } from './composables/useSettings'
 
 const { loadSettings } = useSettings()

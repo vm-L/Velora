@@ -18,6 +18,8 @@ interface Window {
     setCloseBehavior: (behavior: string) => void
     getCloseBehavior: () => Promise<string>
     onWebviewNewWindow: (callback: (url: string) => void) => void
+    onMediaSniffed: (callback: (data: any) => void) => void
+    copyImage: (url: string) => Promise<boolean>
     openExternal: (url: string) => void
   }
 }

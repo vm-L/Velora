@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -70,6 +70,20 @@ function createWindow() {
     shell.openExternal(url)
   })
 
+  ipcMain.handle('copy-image', async (_, url: string) => {
+    try {
+      const response = await net.fetch(url, { headers: { 'Referer': '' } })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const buffer = await response.arrayBuffer()
+      const image = nativeImage.createFromBuffer(Buffer.from(buffer))
+      clipboard.writeImage(image)
+      return true
+    } catch (e: any) {
+      console.error('Failed to copy image:', e)
+      return false
+    }
+  })
+
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     // mainWindow.webContents.openDevTools()
@@ -80,6 +94,53 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  // Network Sniffer
+  session.defaultSession.webRequest.onResponseStarted(
+    { urls: ['*://*/*'] },
+    (details) => {
+      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') return;
+
+      let url = details.url;
+      const lowerUrl = url.toLowerCase();
+      let type = '';
+
+      const isImage = details.resourceType === 'image' || lowerUrl.match(/\.(png|jpe?g|gif|webp|svg|ico)(\?.*)?$/i);
+      const isVideo = details.resourceType === 'media' || lowerUrl.match(/\.(mp4|webm|ogg|m3u8|ts|flv|mp3|wav)(\?.*)?$/i);
+
+      let contentType = '';
+      if (details.responseHeaders) {
+        for (const key in details.responseHeaders) {
+          if (key.toLowerCase() === 'content-type') {
+            contentType = details.responseHeaders[key][0].toLowerCase();
+            break;
+          }
+        }
+      }
+
+      if (isImage || contentType.startsWith('image/')) type = 'image';
+      else if (isVideo || contentType.startsWith('video/') || contentType.includes('mpegurl') || contentType.includes('application/x-mpegurl') || contentType.includes('application/vnd.apple.mpegurl')) type = 'video';
+
+      if (type === 'image') {
+        // 去除 query 参数、fragment 和 @ 后的内容，只保留最短可访问地址
+        try {
+          const parsed = new URL(url);
+          url = parsed.origin + parsed.pathname;
+        } catch {}
+        const atIndex = url.indexOf('@');
+        if (atIndex !== -1) url = url.substring(0, atIndex);
+      }
+
+      if (type && mainWindow) {
+        mainWindow.webContents.send('media-sniffed', {
+          webContentsId: details.webContentsId,
+          url,
+          type,
+          timestamp: Date.now()
+        });
+      }
+    }
+  )
 }
 
 app.whenReady().then(() => {

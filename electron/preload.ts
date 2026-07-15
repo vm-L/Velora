@@ -15,5 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('webview-new-window')
     ipcRenderer.on('webview-new-window', (_event, url) => callback(url))
   },
+  onMediaSniffed: (callback: (data: any) => void) => ipcRenderer.on('media-sniffed', (_event, data) => callback(data)),
+  copyImage: (url: string) => ipcRenderer.invoke('copy-image', url),
   openExternal: (url: string) => ipcRenderer.send('open-external', url)
 })

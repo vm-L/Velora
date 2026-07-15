@@ -2,26 +2,28 @@
   <transition name="dialog-fade">
     <div v-if="state.isVisible" class="dialog-overlay" @click.self="cancel">
       <div class="dialog-content">
-        <div class="dialog-icon" :class="state.type">
-          <svg v-if="state.type === 'danger'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-          </svg>
-          <svg v-else-if="state.type === 'warning'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-        </div>
-        <div class="dialog-text">
-          <h3>{{ state.title }}</h3>
-          <p>{{ state.message }}</p>
+        <div class="dialog-body">
+          <div class="dialog-icon" :class="state.type">
+            <svg v-if="state.type === 'danger'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <svg v-else-if="state.type === 'warning'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </div>
+          <div class="dialog-text">
+            <h3>{{ state.title }}</h3>
+            <p>{{ state.message }}</p>
+          </div>
         </div>
         <div class="dialog-actions">
           <button class="btn-cancel" @click="cancel">{{ state.cancelText }}</button>
@@ -55,36 +57,55 @@ const { state, proceed, cancel } = useConfirm()
   border-radius: 12px;
   width: 400px;
   max-width: 90vw;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 24px;
+  padding: 20px;
+}
+
+.dialog-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
 }
 
 .dialog-icon {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 .dialog-icon.danger { background: #fee2e2; color: #ef4444; }
 .dialog-icon.warning { background: #fef3c7; color: #f59e0b; }
 .dialog-icon.info { background: #e0f2fe; color: #0ea5e9; }
-.dialog-icon svg { display: block; }
+.dialog-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
 
+.dialog-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .dialog-text h3 {
-  margin: 0 0 8px 0;
-  font-size: 18px;
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
   color: #0f172a;
+  line-height: 20px;
 }
 .dialog-text p {
-  margin: 0 0 24px 0;
-  font-size: 14px;
+  margin: 0;
+  font-size: 13px;
   color: #64748b;
   line-height: 1.5;
 }
@@ -92,7 +113,7 @@ const { state, proceed, cancel } = useConfirm()
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
 }
 
 button {
