@@ -46,7 +46,9 @@
               <button class="text-btn" @click="handleRepick">重新选择</button>
             </div>
             <input type="text" v-model="localSelector" class="mono-input" @input="updatePreviewImmediate"
+              @wheel="handleSelectorWheel"
               placeholder=".class-name, #id" />
+            <div class="help-text" style="margin-top: 4px;">输入框滚动滚轮切换选择器范围</div>
           </div>
 
           <div class="form-group" style="margin-top: 12px;">
@@ -69,8 +71,31 @@
                 </div>
               </div>
             </div>
-            <textarea v-model="localCss" class="mono-input css-textarea" @input="updatePreview" @blur="deduplicateCss"
-              placeholder="background: red;"></textarea>
+            <div class="textarea-wrapper" style="position: relative;">
+              <textarea
+                v-model="localCss"
+                class="mono-input css-textarea"
+                @input="onTextareaInput"
+                @keydown="handleTextareaKeydown"
+                @blur="onTextareaBlur"
+                placeholder="例如：display: none; color: red;"
+                style="width: 100%; box-sizing: border-box;"
+              ></textarea>
+              
+              <!-- Suggestions Dropdown -->
+              <div v-if="showSuggestions && suggestions.length > 0" class="autocomplete-dropdown">
+                <div
+                  v-for="(item, idx) in suggestions"
+                  :key="idx"
+                  class="autocomplete-item"
+                  :class="{ active: idx === activeSuggestionIndex }"
+                  @mousedown.prevent="selectSuggestion(item)"
+                >
+                  <span class="ac-label">{{ item }}</span>
+                  <span class="ac-desc">{{ activeQuery?.type === 'property' ? '属性' : '推荐值' }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -96,7 +121,7 @@ const props = defineProps<{
   domainRules?: { selector: string, css: string; }[];
 }>();
 
-const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'repick', 'deleteRule', 'interaction-start', 'interaction-end']);
+const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'repick', 'deleteRule', 'interaction-start', 'interaction-end', 'traverseSelector']);
 
 const isCollapsed = ref(false);
 const dropdownOpen = ref(false);
@@ -108,6 +133,27 @@ const domain = ref('');
 const position = ref({ x: 100, y: 100 });
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
+
+// CSS Autocomplete & Visual Designer states
+const cssDict: Record<string, string[]> = {
+  'display': ['none', 'block', 'inline-block', 'flex', 'grid', 'inline'],
+  'pointer-events': ['none', 'auto', 'initial', 'inherit'],
+  'opacity': ['0', '0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1'],
+  'position': ['relative', 'absolute', 'fixed', 'sticky', 'static'],
+  'z-index': ['-1', '0', '1', '10', '100', '9999', '2147483647'],
+  'visibility': ['hidden', 'visible', 'collapse'],
+  'color': ['transparent', 'red', 'blue', 'green', 'white', 'black'],
+  'background-color': ['transparent', '#ffffff', '#000000', '#f3f4f6'],
+  'width': ['auto', '0', '100%', '50%', '100vw'],
+  'height': ['auto', '0', '100%', '50%', '100vh'],
+  'overflow': ['hidden', 'auto', 'scroll', 'visible'],
+  'filter': ['blur(4px)', 'blur(8px)', 'grayscale(100%)', 'none']
+}
+
+const showSuggestions = ref(false)
+const suggestions = ref<string[]>([])
+const activeSuggestionIndex = ref(0)
+const activeQuery = ref<any>(null)
 
 const closeDropdown = () => { dropdownOpen.value = false; };
 
@@ -153,6 +199,20 @@ watch(() => props.modelValue, (newVal) => {
     updatePreviewImmediate();
   }
 });
+
+watch(() => props.selector, (newVal) => {
+  if (props.modelValue) {
+    localSelector.value = newVal;
+    updatePreviewImmediate();
+  }
+});
+
+const handleSelectorWheel = (e: WheelEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const direction = e.deltaY < 0 ? 'up' : 'down';
+  emit('traverseSelector', direction);
+};
 
 const handleRepick = () => {
   emit('applyPreview', '', '', false);
@@ -224,6 +284,130 @@ const updatePreview = () => {
     emit('applyPreview', localSelector.value, localCss.value, true);
   }, 200);
 };
+
+// CSS Autocomplete & Visual Designer Logics
+const getActiveQuery = () => {
+  const textarea = document.querySelector('.css-textarea') as HTMLTextAreaElement
+  if (!textarea) return null
+  
+  const text = localCss.value || ''
+  const selStart = textarea.selectionStart
+  
+  const beforeCaret = text.slice(0, selStart)
+  const lastSemicolon = beforeCaret.lastIndexOf(';')
+  const currentRule = beforeCaret.slice(lastSemicolon + 1)
+  
+  const colonIdx = currentRule.indexOf(':')
+  if (colonIdx === -1) {
+    const query = currentRule.trim()
+    return { type: 'property', query }
+  } else {
+    const prop = currentRule.slice(0, colonIdx).trim()
+    const query = currentRule.slice(colonIdx + 1).trim()
+    return { type: 'value', prop, query }
+  }
+}
+
+const onTextareaInput = () => {
+  updatePreview()
+  
+  const queryInfo = getActiveQuery()
+  activeQuery.value = queryInfo
+  
+  if (!queryInfo) {
+    showSuggestions.value = false
+    return
+  }
+  
+  if (queryInfo.type === 'property') {
+    const q = queryInfo.query.toLowerCase()
+    if (!q) {
+      showSuggestions.value = false
+      return
+    }
+    const matches = Object.keys(cssDict).filter(k => k.startsWith(q))
+    if (matches.length > 0) {
+      suggestions.value = matches
+      activeSuggestionIndex.value = 0
+      showSuggestions.value = true
+    } else {
+      showSuggestions.value = false
+    }
+  } else {
+    const prop = (queryInfo.prop || '').toLowerCase()
+    const q = queryInfo.query.toLowerCase()
+    const values = cssDict[prop]
+    if (values) {
+      const matches = values.filter(v => v.startsWith(q))
+      if (matches.length > 0) {
+        suggestions.value = matches
+        activeSuggestionIndex.value = 0
+        showSuggestions.value = true
+      } else {
+        showSuggestions.value = false
+      }
+    } else {
+      showSuggestions.value = false
+    }
+  }
+}
+
+const onTextareaBlur = () => {
+  setTimeout(() => {
+    showSuggestions.value = false
+  }, 200)
+  deduplicateCss()
+}
+
+const selectSuggestion = (suggestion: string) => {
+  const textarea = document.querySelector('.css-textarea') as HTMLTextAreaElement
+  if (!textarea) return
+  
+  const text = localCss.value || ''
+  const selStart = textarea.selectionStart
+  const beforeCaret = text.slice(0, selStart)
+  const afterCaret = text.slice(selStart)
+  
+  const lastSemicolon = beforeCaret.lastIndexOf(';')
+  const newBeforeCaretBase = beforeCaret.slice(0, lastSemicolon + 1)
+  
+  let newRule = ''
+  if (activeQuery.value.type === 'property') {
+    newRule = `${suggestion}: `
+  } else {
+    newRule = ` ${activeQuery.value.prop}: ${suggestion};`
+  }
+  
+  const newBeforeCaret = newBeforeCaretBase + newRule
+  localCss.value = newBeforeCaret + afterCaret
+  
+  updatePreview()
+  
+  setTimeout(() => {
+    textarea.focus()
+    const newPos = newBeforeCaret.length
+    textarea.setSelectionRange(newPos, newPos)
+    showSuggestions.value = false
+  }, 10)
+}
+
+const handleTextareaKeydown = (e: KeyboardEvent) => {
+  if (!showSuggestions.value || suggestions.value.length === 0) return
+  
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    activeSuggestionIndex.value = (activeSuggestionIndex.value + 1) % suggestions.value.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    activeSuggestionIndex.value = (activeSuggestionIndex.value - 1 + suggestions.value.length) % suggestions.value.length
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault()
+    selectSuggestion(suggestions.value[activeSuggestionIndex.value])
+  } else if (e.key === 'Escape') {
+    showSuggestions.value = false
+  }
+}
+
 
 const save = () => {
   emit('save', domain.value, localSelector.value, localCss.value);
@@ -564,4 +748,51 @@ onUnmounted(() => {
 .btn-primary:hover {
   background: #2563eb;
 }
+
+/* Autocomplete Dropdown */
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 1000;
+  padding: 4px;
+}
+
+.autocomplete-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #334155;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.autocomplete-item.active,
+.autocomplete-item:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.ac-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.ac-desc {
+  font-size: 10px;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 </style>

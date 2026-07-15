@@ -2,25 +2,26 @@
   <div class="browser-workspace">
     <!-- Tab Bar -->
     <div class="tab-bar">
-      <div v-for="tab in workspace?.tabs || []" :key="tab.id"
-           class="tab" :class="{ active: workspace?.activeTabId === tab.id }"
-           @click="setActiveTab(tab.id)">
+      <div v-for="tab in workspace?.tabs || []" :key="tab.id" class="tab"
+        :class="{ active: workspace?.activeTabId === tab.id }" @click="setActiveTab(tab.id)">
         <div class="tab-favicon">
           <img v-if="tab.favicon" :src="tab.favicon" referrerpolicy="no-referrer" />
           <div v-else class="favicon-placeholder" :class="{ loading: tab.loading }"></div>
         </div>
         <div class="tab-title">{{ tab.title }}</div>
         <button class="tab-close" @click.stop="onCloseTab(tab.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      
+
       <!-- New Tab Button -->
       <button class="new-tab-btn" @click="onAddDefaultTab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
@@ -32,29 +33,33 @@
       <div class="func-spacer"></div>
       <div class="func-group">
         <button class="func-btn" :class="{ 'active': isPicking }" data-tooltip="选取元素" @click="pickElement">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></polygon>
-            <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5l-4 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2"
+              stroke-linejoin="round"></polygon>
+            <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5l-4 3.5" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
           </svg>
         </button>
-        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="选取图片" @click="pickElementImage">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></polygon>
-            <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" stroke="currentColor" stroke-width="2" fill="none"></rect>
+        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="选取图片"
+          @click="pickElementImage">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2"
+              stroke-linejoin="round"></polygon>
+            <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" stroke="currentColor" stroke-width="2"
+              fill="none"></rect>
             <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
-            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+              stroke-linejoin="round" fill="none"></path>
           </svg>
         </button>
 
-        <SnifferDropdown
-          type="video"
-          title="视频嗅探器"
-          tooltip="视频嗅探器"
-          :items="activeTab?.sniffedVideos || []"
-          @clear="onClearSniffed('video')"
-        >
+        <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
+          @clear="onClearSniffed('video')">
           <template #icon>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
               <line x1="7" y1="2" x2="7" y2="22"></line>
               <line x1="17" y1="2" x2="17" y2="22"></line>
@@ -68,19 +73,22 @@
         </SnifferDropdown>
         <div class="func-divider"></div>
         <button class="func-btn" data-tooltip="后退" @click="onBack">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
         </button>
         <button class="func-btn" data-tooltip="前进" @click="onForward">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"></line>
             <polyline points="12 5 19 12 12 19"></polyline>
           </svg>
         </button>
         <button class="func-btn" data-tooltip="刷新" @click="onRefresh">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
@@ -88,13 +96,15 @@
         </button>
         <div class="func-divider"></div>
         <button class="func-btn" data-tooltip="开发者工具" @click="onDevTools">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6"></polyline>
             <polyline points="8 6 2 12 8 18"></polyline>
           </svg>
         </button>
         <button class="func-btn" data-tooltip="在默认浏览器中打开" @click="onOpenExternal">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
@@ -105,62 +115,38 @@
 
     <!-- Webviews -->
     <div class="webview-container" :class="{ 'pointer-disabled': isInteracting }">
-      <webview v-for="tab in workspace?.tabs || []" :key="tab.id"
-               v-show="workspace?.activeTabId === tab.id"
-               :src="tab.url"
-               :id="`webview-${tab.id}`"
-               class="webview-el"
-               @dom-ready="onDomReady(tab.id)"
-               @page-title-updated="onTitleUpdated($event, tab.id)"
-               @page-favicon-updated="onFaviconUpdated($event, tab.id)"
-               @did-start-loading="onStartLoading(tab.id)"
-               @did-stop-loading="onStopLoading(tab.id)"
-               @context-menu="handleWebviewContextMenu($event, tab.id)"
-               allowpopups
-      ></webview>
+      <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
+        :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
+        @page-title-updated="onTitleUpdated($event, tab.id)" @page-favicon-updated="onFaviconUpdated($event, tab.id)"
+        @did-start-loading="onStartLoading(tab.id)" @did-stop-loading="onStopLoading(tab.id)"
+        @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups></webview>
     </div>
 
     <!-- Inspector Dialog -->
-    <InspectorDialog
-      v-model="inspectorVisible"
-      :selector="inspectorSelector"
-      :url="inspectorUrl"
-      :domain-rules="currentDomainRules"
-      @applyPreview="onApplyPreview"
-      @save="onSaveRules"
-      @repick="pickElement"
-      @deleteRule="onDeleteRule"
-      @interaction-start="isInteracting = true"
-      @interaction-end="isInteracting = false"
-    />
+    <InspectorDialog v-model="inspectorVisible" :selector="inspectorSelector" :url="inspectorUrl"
+      :domain-rules="currentDomainRules" @applyPreview="onApplyPreview" @save="onSaveRules" @repick="pickElement"
+      @deleteRule="onDeleteRule" @traverseSelector="onTraverseSelector" @interaction-start="isInteracting = true"
+      @interaction-end="isInteracting = false" />
 
     <!-- Image Preview Dialogs -->
-    <ImagePreviewDialog
-      v-for="img in activeImagePreviews"
-      :key="img.id"
-      :id="img.id"
-      :url="img.url"
-      :urls="img.urls"
-      :zIndex="img.zIndex"
-      :initialX="img.x"
-      :initialY="img.y"
-      @close="onClosePreview"
-      @focus="onFocusPreview"
-      @interaction-start="isInteracting = true"
-      @interaction-end="isInteracting = false"
-    />
+    <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" :id="img.id" :url="img.url" :urls="img.urls"
+      :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" @close="onClosePreview" @focus="onFocusPreview"
+      @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Custom Context Menu -->
-    <div v-show="contextMenuVisible" class="context-menu" :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
+    <div v-show="contextMenuVisible" class="context-menu"
+      :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
       <div class="menu-item" @click="triggerPickElement">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
           <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5-4 3.5" fill="none"></path>
         </svg>
         <span>选取元素</span>
       </div>
       <div class="menu-item" @click="triggerPickImage">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
           <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" fill="none"></rect>
           <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
@@ -173,185 +159,185 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
-import { useWorkspaces } from '../composables/useWorkspaces'
-import { useSettings } from '../composables/useSettings'
-import InspectorDialog from './InspectorDialog.vue'
-import SnifferDropdown from './SnifferDropdown.vue'
-import ImagePreviewDialog from './ImagePreviewDialog.vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
+import { useWorkspaces } from '../composables/useWorkspaces';
+import { useSettings } from '../composables/useSettings';
+import InspectorDialog from './InspectorDialog.vue';
+import SnifferDropdown from './SnifferDropdown.vue';
+import ImagePreviewDialog from './ImagePreviewDialog.vue';
 
 
 const props = defineProps<{
-  resourceId: string
-  resourceUrl: string
-}>()
+  resourceId: string;
+  resourceUrl: string;
+}>();
 
-const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces()
-const { state: settingsState, saveCustomStyles, saveExternalSites } = useSettings()
+const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
+const { state: settingsState, saveCustomStyles, saveExternalSites } = useSettings();
 
-const contextMenuVisible = ref(false)
-const contextMenuPos = ref({ x: 0, y: 0 })
-const contextMenuTabId = ref('')
+const contextMenuVisible = ref(false);
+const contextMenuPos = ref({ x: 0, y: 0 });
+const contextMenuTabId = ref('');
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
-  if (isPicking.value || isPickingElementImage.value) return
-  e.preventDefault()
-  
-  const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e
-  const px = typeof params?.x === 'number' ? params.x : 0
-  const py = typeof params?.y === 'number' ? params.y : 0
-  
+  if (isPicking.value || isPickingElementImage.value) return;
+  e.preventDefault();
+
+  const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
+  const px = typeof params?.x === 'number' ? params.x : 0;
+  const py = typeof params?.y === 'number' ? params.y : 0;
+
   contextMenuPos.value = {
     x: px,
     y: py
-  }
-  contextMenuTabId.value = tabId
-  contextMenuVisible.value = true
-}
+  };
+  contextMenuTabId.value = tabId;
+  contextMenuVisible.value = true;
+};
 
 const triggerPickElement = () => {
-  contextMenuVisible.value = false
-  pickElement()
-}
+  contextMenuVisible.value = false;
+  pickElement();
+};
 
 const triggerPickImage = () => {
-  contextMenuVisible.value = false
-  pickElementImage()
-}
+  contextMenuVisible.value = false;
+  pickElementImage();
+};
 
-const workspace = computed(() => getWorkspace(props.resourceId))
-const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId))
+const workspace = computed(() => getWorkspace(props.resourceId));
+const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId));
 
 const getResourceIcon = () => {
-  const isExt = settingsState.externalSites.find(r => r.id === props.resourceId)
-  if (isExt?.icon) return isExt.icon
-  return undefined
-}
+  const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
+  if (isExt?.icon) return isExt.icon;
+  return undefined;
+};
 
 const init = () => {
   if (props.resourceId && props.resourceUrl) {
-    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon())
+    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon());
   }
-}
+};
 
 onMounted(() => {
-  init()
+  init();
   if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
     window.electronAPI.onWebviewNewWindow((url) => {
       // Add as new tab in current workspace
-      addTab(props.resourceId, url, getResourceIcon())
-    })
+      addTab(props.resourceId, url, getResourceIcon());
+    });
   }
 
   if (window.electronAPI && window.electronAPI.onMediaSniffed) {
     window.electronAPI.onMediaSniffed((data: any) => {
       // data: { webContentsId: number, url: string, type: 'image'|'video', timestamp: number }
-      if (!workspace.value) return
-      
+      if (!workspace.value) return;
+
       for (const tab of workspace.value.tabs) {
         if (tab.webContentsId === data.webContentsId) {
           if (data.type === 'image') {
             if (!tab.sniffedImages.some(m => m.url === data.url)) {
-              tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp })
+              tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
             }
           } else if (data.type === 'video') {
             if (!tab.sniffedVideos.some(m => m.url === data.url)) {
-              tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp })
+              tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
             }
           }
-          break
+          break;
         }
       }
-    })
+    });
   }
 
   // Click-away to close context menu
-  window.addEventListener('click', handleWindowClick)
+  window.addEventListener('click', handleWindowClick);
   // Global hotkeys
-  window.addEventListener('keydown', handleGlobalKeydown)
-})
+  window.addEventListener('keydown', handleGlobalKeydown);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('click', handleWindowClick)
-  window.removeEventListener('keydown', handleGlobalKeydown)
-})
+  window.removeEventListener('click', handleWindowClick);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+});
 
 const handleWindowClick = () => {
-  contextMenuVisible.value = false
-}
+  contextMenuVisible.value = false;
+};
 
 const handleGlobalKeydown = (e: KeyboardEvent) => {
   if (e.key === 'F5') {
-    e.preventDefault()
-    onRefresh()
+    e.preventDefault();
+    onRefresh();
   } else if (e.key === 'F12') {
-    e.preventDefault()
-    onDevTools()
+    e.preventDefault();
+    onDevTools();
   }
-}
+};
 
 watch(() => props.resourceId, () => {
-  init()
-})
+  init();
+});
 
 watch(() => workspace.value?.tabs.length, (newLen) => {
   if (newLen === 0) {
     // Re-create default tab when all tabs are closed
-    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon())
+    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon());
   }
-})
+});
 
 watch(() => activeTab.value?.id, async (_newTabId, oldTabId) => {
   if (oldTabId) {
-    const webview = document.getElementById(`webview-${oldTabId}`) as any
+    const webview = document.getElementById(`webview-${oldTabId}`) as any;
     if (webview) {
       try {
         if (isPicking.value) {
           await webview.executeJavaScript(`
             if (window.__elementPickerCancel) window.__elementPickerCancel();
-          `)
+          `);
         }
         if (isPickingElementImage.value) {
           await webview.executeJavaScript(`
             if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
-          `)
+          `);
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
-  isPicking.value = false
-  isPickingElementImage.value = false
-})
+  isPicking.value = false;
+  isPickingElementImage.value = false;
+});
 
 const setActiveTab = (tabId: string) => {
   if (workspace.value) {
-    workspace.value.activeTabId = tabId
+    workspace.value.activeTabId = tabId;
   }
-}
+};
 
 const onCloseTab = (tabId: string) => {
-  closeTab(props.resourceId, tabId)
-}
+  closeTab(props.resourceId, tabId);
+};
 
 const onAddDefaultTab = () => {
-  addTab(props.resourceId, props.resourceUrl, getResourceIcon())
-}
+  addTab(props.resourceId, props.resourceUrl, getResourceIcon());
+};
 
 // Webview Events
 const onDomReady = async (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: false })
-  
-  // Inject saved styles
-  refreshWebviewStyles(tabId)
+  updateTab(props.resourceId, tabId, { loading: false });
 
-  const webview = document.getElementById(`webview-${tabId}`) as any
+  // Inject saved styles
+  refreshWebviewStyles(tabId);
+
+  const webview = document.getElementById(`webview-${tabId}`) as any;
   if (webview) {
     // Listen to console-message to hide custom context menu on webview left click
     webview.addEventListener('console-message', (e: any) => {
       if (e.message === '__webview_click__') {
-        contextMenuVisible.value = false
+        contextMenuVisible.value = false;
       }
-    })
+    });
 
     const clickScript = `
       (function() {
@@ -363,27 +349,27 @@ const onDomReady = async (tabId: string) => {
           }
         }, true);
       })();
-    `
-    webview.executeJavaScript(clickScript)
+    `;
+    webview.executeJavaScript(clickScript);
   }
-}
+};
 
 const refreshWebviewStyles = async (tabId: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any
-  if (!webview) return
-  
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) return;
+
   try {
-    const urlStr = webview.getURL()
-    const domain = new URL(urlStr).hostname
-    const stylesObj = settingsState.customStyles[props.resourceId]
-    let cssText = ''
-    
+    const urlStr = webview.getURL();
+    const domain = new URL(urlStr).hostname;
+    const stylesObj = settingsState.customStyles[props.resourceId];
+    let cssText = '';
+
     if (stylesObj && stylesObj[domain]) {
       for (const rule of stylesObj[domain]) {
-        cssText += `${rule.selector} { ${rule.css} }\n`
+        cssText += `${rule.selector} { ${rule.css} }\n`;
       }
     }
-    
+
     const code = `
       (function() {
         let style = document.getElementById('m3u8-permanent-style');
@@ -394,140 +380,141 @@ const refreshWebviewStyles = async (tabId: string) => {
         }
         style.innerHTML = ${JSON.stringify(cssText)};
       })();
-    `
-    webview.executeJavaScript(code)
+    `;
+    webview.executeJavaScript(code);
   } catch (e) {
-    console.warn('Failed to parse URL or inject styles', e)
+    console.warn('Failed to parse URL or inject styles', e);
   }
-}
+};
 
 const onStartLoading = (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: true })
-  const webview = document.getElementById(`webview-${tabId}`) as any
+  updateTab(props.resourceId, tabId, { loading: true });
+  const webview = document.getElementById(`webview-${tabId}`) as any;
   if (webview && webview.getWebContentsId) {
     try {
-      const wcId = webview.getWebContentsId()
-      updateTab(props.resourceId, tabId, { webContentsId: wcId })
+      const wcId = webview.getWebContentsId();
+      updateTab(props.resourceId, tabId, { webContentsId: wcId });
     } catch (e) {
       // ignore
     }
   }
-}
+};
 
 const onStopLoading = (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: false })
-}
+  updateTab(props.resourceId, tabId, { loading: false });
+};
 
 const onTitleUpdated = (event: any, tabId: string) => {
-  updateTab(props.resourceId, tabId, { title: event.title })
-}
+  updateTab(props.resourceId, tabId, { title: event.title });
+};
 
 const onFaviconUpdated = async (event: any, tabId: string) => {
   if (event.favicons && event.favicons.length > 0) {
-    const faviconUrl = event.favicons[0]
-    updateTab(props.resourceId, tabId, { favicon: faviconUrl })
-    
+    const faviconUrl = event.favicons[0];
+    updateTab(props.resourceId, tabId, { favicon: faviconUrl });
+
     // Check if external resource needs updating
-    const isExt = settingsState.externalSites.find(r => r.id === props.resourceId)
-    
+    const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
+
     if (isExt && isExt.icon !== faviconUrl) {
-      isExt.icon = faviconUrl
-      await saveExternalSites([...settingsState.externalSites])
+      isExt.icon = faviconUrl;
+      await saveExternalSites([...settingsState.externalSites]);
     }
   }
-}
+};
 
 // Function Bar Actions
 const activeWebview = () => {
-  if (!workspace.value?.activeTabId) return null
-  return document.getElementById(`webview-${workspace.value.activeTabId}`) as any
-}
+  if (!workspace.value?.activeTabId) return null;
+  return document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+};
 
 const onBack = () => {
-  const wv = activeWebview()
-  if (wv && wv.canGoBack()) wv.goBack()
-}
+  const wv = activeWebview();
+  if (wv && wv.canGoBack()) wv.goBack();
+};
 
 const onForward = () => {
-  const wv = activeWebview()
-  if (wv && wv.canGoForward()) wv.goForward()
-}
+  const wv = activeWebview();
+  if (wv && wv.canGoForward()) wv.goForward();
+};
 
 const onRefresh = () => {
-  const wv = activeWebview()
-  if (wv) wv.reload()
-}
+  const wv = activeWebview();
+  if (wv) wv.reload();
+};
 
 const onDevTools = () => {
-  const wv = activeWebview()
-  if (wv) wv.openDevTools()
-}
+  const wv = activeWebview();
+  if (wv) wv.openDevTools();
+};
 
 const onOpenExternal = () => {
-  const wv = activeWebview()
+  const wv = activeWebview();
   if (wv) {
-    window.electronAPI.openExternal(wv.getURL())
+    window.electronAPI.openExternal(wv.getURL());
   }
-}
+};
 
 const onClearSniffed = (type: 'image' | 'video') => {
   if (activeTab.value) {
     if (type === 'image') {
-      activeTab.value.sniffedImages = []
+      activeTab.value.sniffedImages = [];
     } else {
-      activeTab.value.sniffedVideos = []
+      activeTab.value.sniffedVideos = [];
     }
   }
-}
+};
 
 // Image Preview Logic
 interface PreviewImage {
-  id: string
-  url: string       // 第一张或唯一图片的 URL（向下兼容）
-  urls?: string[]   // 多图模式时传入的完整 URL 列表
-  zIndex: number
-  x?: number
-  y?: number
+  id: string;
+  url: string;       // 第一张或唯一图片的 URL（向下兼容）
+  urls?: string[];   // 多图模式时传入的完整 URL 列表
+  zIndex: number;
+  x?: number;
+  y?: number;
 }
 
-const activeImagePreviews = ref<PreviewImage[]>([])
-let highestZIndex = 1000
+const activeImagePreviews = ref<PreviewImage[]>([]);
+let highestZIndex = 1000;
 
 const onClosePreview = (id: string) => {
-  activeImagePreviews.value = activeImagePreviews.value.filter(img => img.id !== id)
-}
+  activeImagePreviews.value = activeImagePreviews.value.filter(img => img.id !== id);
+};
 
 const onFocusPreview = (id: string) => {
-  const img = activeImagePreviews.value.find(img => img.id === id)
+  const img = activeImagePreviews.value.find(img => img.id === id);
   if (img) {
-    highestZIndex++
-    img.zIndex = highestZIndex
+    highestZIndex++;
+    img.zIndex = highestZIndex;
   }
-}
+};
 
 // Element Picker Logic
-const inspectorVisible = ref(false)
-const inspectorSelector = ref('')
-const inspectorUrl = ref('')
-const isInteracting = ref(false)
-const isPicking = ref(false)
-const isPickingElementImage = ref(false)
+const inspectorVisible = ref(false);
+const inspectorSelector = ref('');
+const initialSelector = ref('');
+const inspectorUrl = ref('');
+const isInteracting = ref(false);
+const isPicking = ref(false);
+const isPickingElementImage = ref(false);
 
 const pickElement = async () => {
-  if (!workspace.value?.activeTabId) return
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any
-  if (!webview) return
-  
+  if (!workspace.value?.activeTabId) return;
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+  if (!webview) return;
+
   if (isPicking.value) {
     try {
       await webview.executeJavaScript(`
         if (window.__elementPickerCancel) {
           window.__elementPickerCancel();
         }
-      `)
-    } catch(e) {}
-    isPicking.value = false
-    return
+      `);
+    } catch (e) { }
+    isPicking.value = false;
+    return;
   }
 
   if (isPickingElementImage.value) {
@@ -536,12 +523,12 @@ const pickElement = async () => {
         if (window.__imgElementPickerCancel) {
           window.__imgElementPickerCancel();
         }
-      `)
-    } catch(e) {}
-    isPickingElementImage.value = false
+      `);
+    } catch (e) { }
+    isPickingElementImage.value = false;
   }
 
-  isPicking.value = true
+  isPicking.value = true;
 
   const pickerScript = `
     new Promise((resolve) => {
@@ -549,7 +536,7 @@ const pickElement = async () => {
         if (window.__elementPickerCancel) window.__elementPickerCancel();
       }
       window.__elementPickerActive = true;
-      
+
       const overlay = document.createElement('div');
       overlay.style.position = 'fixed';
       overlay.style.pointerEvents = 'none';
@@ -634,16 +621,16 @@ const pickElement = async () => {
         let tagName = el.tagName.toLowerCase();
         let className = el.className ? '.' + [...el.classList].join('.') : '';
         if (className.length > 20) className = className.substring(0, 20) + '...';
-        
+
         let count = 0;
         try {
           let selector = getSelector(el);
           count = document.querySelectorAll(selector).length;
         } catch(e) {}
 
-        let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
+        let levelText = pathIndex === 0 ? ' (滚轮切换选择器范围)' : ' (层级 +' + pathIndex + ')';
         tooltip.textContent = tagName + className + levelText + ' - 匹配元素: ' + count + ' 个';
-        
+
         let h = 220; // brand blue
         overlay.style.borderColor = '#3b82f6';
         overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
@@ -678,7 +665,7 @@ const pickElement = async () => {
         let topPos = rect.top - 28;
         if (topPos < 5) topPos = rect.top + 5;
         let leftPos = rect.left + 5;
-        
+
         tooltip.style.top = topPos + 'px';
         tooltip.style.left = leftPos + 'px';
         tooltip.style.display = 'block';
@@ -756,39 +743,40 @@ const pickElement = async () => {
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
       document.addEventListener('contextmenu', onContextMenu, true);
     })
-  `
-  
+  `;
+
   try {
-    const selector = await webview.executeJavaScript(pickerScript)
-    isPicking.value = false
+    const selector = await webview.executeJavaScript(pickerScript);
+    isPicking.value = false;
     if (selector) {
-      inspectorSelector.value = selector
-      inspectorUrl.value = webview.getURL()
-      inspectorVisible.value = true
+      inspectorSelector.value = selector;
+      initialSelector.value = selector;
+      inspectorUrl.value = webview.getURL();
+      inspectorVisible.value = true;
     }
   } catch (e) {
-    isPicking.value = false
+    isPicking.value = false;
   }
-}
+};
 
 /**
  * 选取图片：与选取元素操作流程相同，但点击后收集元素内所有图片资源，
  * 清洗 URL（去 query/fragment/@ 后内容），去重后展示在 ImagePreviewDialog 中。
  */
 const pickElementImage = async () => {
-  if (!workspace.value?.activeTabId) return
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any
-  if (!webview) return
+  if (!workspace.value?.activeTabId) return;
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+  if (!webview) return;
 
   // 再次点击则取消拾取模式
   if (isPickingElementImage.value) {
     try {
       await webview.executeJavaScript(`
         if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
-      `)
-    } catch(e) {}
-    isPickingElementImage.value = false
-    return
+      `);
+    } catch (e) { }
+    isPickingElementImage.value = false;
+    return;
   }
 
   if (isPicking.value) {
@@ -797,12 +785,12 @@ const pickElementImage = async () => {
         if (window.__elementPickerCancel) {
           window.__elementPickerCancel();
         }
-      `)
-    } catch(e) {}
-    isPicking.value = false
+      `);
+    } catch (e) { }
+    isPicking.value = false;
   }
 
-  isPickingElementImage.value = true
+  isPickingElementImage.value = true;
 
   const pickerScript = `
     new Promise((resolve) => {
@@ -922,12 +910,12 @@ const pickElementImage = async () => {
         let tagName = el.tagName.toLowerCase();
         let className = el.className ? '.' + [...el.classList].join('.') : '';
         if (className.length > 20) className = className.substring(0, 20) + '...';
-        
+
         let imgCount = collectImages(el).length;
 
-        let levelText = pathIndex === 0 ? '' : ' (层级 +' + pathIndex + ')';
+        let levelText = pathIndex === 0 ? ' (滚轮切换选择器范围)' : ' (层级 +' + pathIndex + ')';
         tooltip.textContent = tagName + className + levelText + ' - 包含图片: ' + imgCount + ' 张';
-        
+
         let h = 220; // brand blue
         overlay.style.borderColor = '#3b82f6';
         overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
@@ -962,7 +950,7 @@ const pickElementImage = async () => {
         let topPos = rect.top - 28;
         if (topPos < 5) topPos = rect.top + 5;
         let leftPos = rect.left + 5;
-        
+
         tooltip.style.top = topPos + 'px';
         tooltip.style.left = leftPos + 'px';
         tooltip.style.display = 'block';
@@ -1040,15 +1028,15 @@ const pickElementImage = async () => {
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
       document.addEventListener('contextmenu', onContextMenu, true);
     })
-  `
+  `;
 
   try {
-    const urls: string[] = await webview.executeJavaScript(pickerScript)
-    isPickingElementImage.value = false
+    const urls: string[] = await webview.executeJavaScript(pickerScript);
+    isPickingElementImage.value = false;
     if (urls && urls.length > 0) {
-      highestZIndex++
-      const id = 'preview_img_' + Math.random().toString(36).substr(2, 9)
-      const offset = (activeImagePreviews.value.length % 5) * 30
+      highestZIndex++;
+      const id = 'preview_img_' + Math.random().toString(36).substr(2, 9);
+      const offset = (activeImagePreviews.value.length % 5) * 30;
       activeImagePreviews.value.push({
         id,
         url: urls[0],
@@ -1056,17 +1044,136 @@ const pickElementImage = async () => {
         zIndex: highestZIndex,
         x: (window.innerWidth / 2 - 200) + offset,
         y: (window.innerHeight / 2 - 150) + offset
-      })
+      });
     }
   } catch (e) {
-    isPickingElementImage.value = false
+    isPickingElementImage.value = false;
   }
-}
+};
 
-const onApplyPreview = (selector: string, css: string, isPreviewing: boolean = true) => {
-  if (!workspace.value?.activeTabId) return
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any
-  if (!webview) return
+const onTraverseSelector = async (direction: 'up' | 'down') => {
+  if (!workspace.value?.activeTabId) return;
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+  if (!webview) return;
+
+  // Prevent descending below the initial selector
+  if (direction === 'down' && inspectorSelector.value === initialSelector.value) {
+    return;
+  }
+
+  try {
+    const currentSelector = inspectorSelector.value;
+    const nextSelector = await webview.executeJavaScript(`
+      (function() {
+        const el = document.querySelector(${JSON.stringify(currentSelector)});
+        if (!el) return null;
+
+        const getSelector = (el) => {
+          if (el.tagName.toLowerCase() === 'html') return 'html';
+          let path = [];
+          while (el && el.nodeType === Node.ELEMENT_NODE) {
+            let selector = el.tagName.toLowerCase();
+            if (el.id) {
+              selector += '#' + CSS.escape(el.id);
+              path.unshift(selector);
+              break;
+            } else {
+              let index = 1;
+              let sibling = el.previousElementSibling;
+              while (sibling) {
+                index++;
+                sibling = sibling.previousElementSibling;
+              }
+              if (index !== 1 || el.nextElementSibling) {
+                selector += ':nth-child(' + index + ')';
+              }
+            }
+            path.unshift(selector);
+            el = el.parentNode;
+          }
+          return path.join(' > ');
+        };
+
+        if (${JSON.stringify(direction)} === 'up') {
+          const parent = el.parentElement;
+          if (parent && parent.tagName.toLowerCase() !== 'html') {
+            return getSelector(parent);
+          }
+        } else {
+          const initialSelector = ${JSON.stringify(initialSelector.value)};
+          const initialEl = document.querySelector(initialSelector);
+          if (el === initialEl) {
+            return null;
+          }
+          // Trace back down specifically along the path to the initial selector
+          if (initialEl && el.contains(initialEl)) {
+            let temp = initialEl;
+            while (temp && temp.parentElement !== el) {
+              temp = temp.parentElement;
+            }
+            if (temp) {
+              return getSelector(temp);
+            }
+          }
+          // Fallback first child
+          const child = el.firstElementChild;
+          if (child) {
+            return getSelector(child);
+          }
+        }
+        return null;
+      })();
+    `);
+
+    if (nextSelector) {
+      inspectorSelector.value = nextSelector;
+    }
+  } catch (e) {
+    console.error('Selector traversal failed', e);
+  }
+};
+
+const onApplyPreview = async (selector: string, css: string, isPreviewing: boolean = true) => {
+  if (!workspace.value?.activeTabId) return;
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+  if (!webview) return;
+
+  // Sync current selector value
+  if (selector) {
+    inspectorSelector.value = selector;
+  }
+
+  // Dynamic deepest selector tracking (minimum boundary backup)
+  if (selector && initialSelector.value && selector !== initialSelector.value) {
+    try {
+      const isDeeperOrUnrelated = await webview.executeJavaScript(`
+        (function() {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          const initialEl = document.querySelector(${JSON.stringify(initialSelector.value)});
+          if (!el) return false;
+          if (!initialEl) return true;
+          
+          if (initialEl.contains(el)) {
+            // el is a descendant of initialEl (deeper or equal)
+            return true;
+          }
+          if (el.contains(initialEl)) {
+            // el is an ancestor of initialEl (shallower)
+            return false;
+          }
+          // Unrelated elements - reset initialSelector to new selector
+          return true;
+        })();
+      `);
+      if (isDeeperOrUnrelated) {
+        initialSelector.value = selector;
+      }
+    } catch (e) {
+      console.error('Failed to compare selectors', e);
+    }
+  } else if (selector && !initialSelector.value) {
+    initialSelector.value = selector;
+  }
 
   const code = `
     (function() {
@@ -1086,83 +1193,83 @@ const onApplyPreview = (selector: string, css: string, isPreviewing: boolean = t
       }
       highlight.innerHTML = ${JSON.stringify((selector && isPreviewing) ? selector + ' { outline: 2px dashed #ef4444 !important; outline-offset: -2px !important; }' : '')};
     })();
-  `
-  webview.executeJavaScript(code)
-}
+  `;
+  webview.executeJavaScript(code);
+};
 
 const mergeCss = (oldCss: string, newCss: string): string => {
   const parseRules = (cssStr: string) => {
-    const map = new Map<string, string>()
-    const statements = cssStr.split(';').map(s => s.trim()).filter(Boolean)
+    const map = new Map<string, string>();
+    const statements = cssStr.split(';').map(s => s.trim()).filter(Boolean);
     for (const statement of statements) {
-      const colonIdx = statement.indexOf(':')
+      const colonIdx = statement.indexOf(':');
       if (colonIdx > 0) {
-        const prop = statement.slice(0, colonIdx).trim()
-        const val = statement.slice(colonIdx + 1).trim()
-        map.set(prop, val)
+        const prop = statement.slice(0, colonIdx).trim();
+        const val = statement.slice(colonIdx + 1).trim();
+        map.set(prop, val);
       }
     }
-    return map
-  }
+    return map;
+  };
 
-  const oldMap = parseRules(oldCss)
-  const newMap = parseRules(newCss)
+  const oldMap = parseRules(oldCss);
+  const newMap = parseRules(newCss);
 
   for (const [prop, val] of newMap.entries()) {
-    oldMap.set(prop, val)
+    oldMap.set(prop, val);
   }
 
-  let merged = ''
+  let merged = '';
   for (const [prop, val] of oldMap.entries()) {
-    merged += `${prop}: ${val}; `
+    merged += `${prop}: ${val}; `;
   }
-  return merged.trim()
-}
+  return merged.trim();
+};
 
 const onSaveRules = async (domain: string, selector: string, css: string) => {
-  if (!selector || !css) return
-  
-  const newStyles = { ...settingsState.customStyles }
-  if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {}
-  if (!newStyles[props.resourceId][domain]) newStyles[props.resourceId][domain] = []
-  
+  if (!selector || !css) return;
+
+  const newStyles = { ...settingsState.customStyles };
+  if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {};
+  if (!newStyles[props.resourceId][domain]) newStyles[props.resourceId][domain] = [];
+
   // Replace and merge if selector exists, otherwise push
-  const rules = newStyles[props.resourceId][domain]
-  const existingIdx = rules.findIndex(r => r.selector === selector)
+  const rules = newStyles[props.resourceId][domain];
+  const existingIdx = rules.findIndex(r => r.selector === selector);
   if (existingIdx >= 0) {
-    rules[existingIdx].css = mergeCss(rules[existingIdx].css, css)
+    rules[existingIdx].css = mergeCss(rules[existingIdx].css, css);
   } else {
-    rules.push({ selector, css })
+    rules.push({ selector, css });
   }
-  
-  await saveCustomStyles(newStyles)
+
+  await saveCustomStyles(newStyles);
   if (workspace.value?.activeTabId) {
-    refreshWebviewStyles(workspace.value.activeTabId)
+    refreshWebviewStyles(workspace.value.activeTabId);
   }
-}
+};
 
 const currentDomainRules = computed(() => {
-  if (!inspectorUrl.value) return []
+  if (!inspectorUrl.value) return [];
   try {
-    const domain = new URL(inspectorUrl.value).hostname
-    const stylesObj = settingsState.customStyles[props.resourceId]
+    const domain = new URL(inspectorUrl.value).hostname;
+    const stylesObj = settingsState.customStyles[props.resourceId];
     if (stylesObj && stylesObj[domain]) {
-      return stylesObj[domain]
+      return stylesObj[domain];
     }
   } catch (e) { }
-  return []
-})
+  return [];
+});
 
 const onDeleteRule = async (domain: string, selector: string) => {
-  const newStyles = { ...settingsState.customStyles }
+  const newStyles = { ...settingsState.customStyles };
   if (newStyles[props.resourceId] && newStyles[props.resourceId][domain]) {
-    newStyles[props.resourceId][domain] = newStyles[props.resourceId][domain].filter(r => r.selector !== selector)
-    await saveCustomStyles(newStyles)
+    newStyles[props.resourceId][domain] = newStyles[props.resourceId][domain].filter(r => r.selector !== selector);
+    await saveCustomStyles(newStyles);
     if (workspace.value?.activeTabId) {
-      refreshWebviewStyles(workspace.value.activeTabId)
+      refreshWebviewStyles(workspace.value.activeTabId);
     }
   }
-}
+};
 </script>
 
 <style scoped lang="less">
@@ -1212,7 +1319,8 @@ const onDeleteRule = async (domain: string, selector: string) => {
   z-index: 2;
 }
 
-.tab.active::before, .tab.active::after {
+.tab.active::before,
+.tab.active::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -1262,7 +1370,9 @@ const onDeleteRule = async (domain: string, selector: string) => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tab-title {
@@ -1300,7 +1410,8 @@ const onDeleteRule = async (domain: string, selector: string) => {
   display: block;
 }
 
-.tab:hover .tab-close, .tab.active .tab-close {
+.tab:hover .tab-close,
+.tab.active .tab-close {
   opacity: 1;
 }
 
@@ -1479,8 +1590,15 @@ const onDeleteRule = async (domain: string, selector: string) => {
 }
 
 @keyframes menu-show {
-  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .menu-item {
