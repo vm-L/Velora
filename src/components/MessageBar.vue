@@ -1,7 +1,13 @@
 <template>
-  <div class="message-container">
+  <div class="message-container" :class="{ 'is-expanded': isHovered }" :style="containerStyle" @mouseenter="isHovered = true" @mouseleave="isHovered = false">
     <TransitionGroup name="message-list">
-      <div v-for="msg in messages" :key="msg.id" class="message-item" :class="`message-${msg.type}`">
+      <div 
+        v-for="(msg, index) in messages" 
+        :key="msg.id" 
+        class="message-item" 
+        :class="`message-${msg.type}`"
+        :style="getStyle(index)"
+      >
         <div class="message-icon">
           <svg v-if="msg.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
@@ -36,38 +42,103 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { useMessage } from '../composables/useMessage'
+
 const { messages, removeMessage } = useMessage()
+const isHovered = ref(false)
+
+const containerStyle = computed(() => {
+  if (!isHovered.value) return { transform: 'translate(-50%, 0)' };
+  const count = messages.value.length;
+  if (count <= 1) return { transform: 'translate(-50%, 0)' };
+  const shiftDown = (count - 1) * 60;
+  return {
+    transform: `translate(-50%, ${shiftDown}px)`
+  };
+});
+
+const getStyle = (index: number) => {
+  const total = messages.value.length;
+  // reverseIndex: 0 is the newest (visually in the front)
+  const reverseIndex = total - 1 - index;
+  
+  if (isHovered.value) {
+    // Spread out mode
+    return {
+      transform: `translate3d(0, ${reverseIndex * -60}px, 0) scale(1)`,
+      zIndex: 1000 - reverseIndex,
+      opacity: 1, // Show all when hovered
+      pointerEvents: 'auto'
+    }
+  } else {
+    // Stacked mode
+    const isActive = reverseIndex < 3; // Show top 3
+    const yOffset = isActive ? reverseIndex * -14 : -14 * 3;
+    const scale = isActive ? 1 - reverseIndex * 0.05 : 1 - 3 * 0.05;
+    
+    return {
+      transform: `translate3d(0, ${yOffset}px, 0) scale(${scale})`,
+      zIndex: 1000 - reverseIndex,
+      opacity: isActive ? 1 - reverseIndex * 0.15 : 0,
+      pointerEvents: reverseIndex === 0 ? 'auto' : 'none'
+    }
+  }
+}
 </script>
 
 <style scoped lang="less">
 .message-container {
   position: fixed;
-  top: 50px;
+  top: 40px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   pointer-events: none;
+  width: 380px;
+  height: 52px; /* Base height for hover catching */
+  transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1);
+  
+  &.is-expanded {
+    /* Optional: When expanded, make container capture events in gaps */
+  }
+  
+  /* Catch hover seamlessly when expanding upwards */
+  &::before {
+    content: '';
+    position: absolute;
+    top: -400px; left: 0; right: 0; bottom: 10px;
+    pointer-events: none;
+  }
+  &.is-expanded::before {
+    pointer-events: auto;
+  }
 }
 
 .message-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 52px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 0 16px;
   background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.05);
   pointer-events: auto;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
+  transition: all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
+  transform-origin: bottom center;
 }
 
 .message-text {
   color: #334155;
+  flex: 1;
 }
 
 .message-icon {
@@ -103,14 +174,14 @@ const { messages, removeMessage } = useMessage()
 /* Transitions */
 .message-list-enter-active,
 .message-list-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
 }
 .message-list-enter-from {
   opacity: 0;
-  transform: translateY(-20px) scale(0.95);
+  transform: translate3d(0, -20px, 0) scale(0.9) !important;
 }
 .message-list-leave-to {
   opacity: 0;
-  transform: translateY(-10px) scale(0.95);
+  transform: translate3d(0, -10px, 0) scale(0.95) !important;
 }
 </style>

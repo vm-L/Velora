@@ -108,6 +108,7 @@ const { state, proceed, cancel } = useConfirm()
   font-size: 13px;
   color: #64748b;
   line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .dialog-actions {

@@ -10,6 +10,10 @@ export interface ResourceItem {
 export const state = reactive({
   closeBehavior: 'tray',
   imageDirectory: '',
+  audioDirectory: '',
+  videoDirectory: '',
+  fileDirectory: '',
+  maxConcurrentDownloads: 3,
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, { selector: string, css: string }[]>>,
@@ -20,6 +24,10 @@ export const useSettings = () => {
   const loadSettings = async () => {
     state.closeBehavior = (await window.electronAPI.getSetting('closeBehavior')) || 'tray'
     state.imageDirectory = (await window.electronAPI.getSetting('imageDirectory')) || ''
+    state.audioDirectory = (await window.electronAPI.getSetting('audioDirectory')) || ''
+    state.videoDirectory = (await window.electronAPI.getSetting('videoDirectory')) || ''
+    state.fileDirectory = (await window.electronAPI.getSetting('fileDirectory')) || ''
+    state.maxConcurrentDownloads = (await window.electronAPI.getSetting('maxConcurrentDownloads')) || 3
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -34,6 +42,26 @@ export const useSettings = () => {
   const saveImageDirectory = async (dir: string) => {
     state.imageDirectory = dir
     await window.electronAPI.setSetting('imageDirectory', dir)
+  }
+
+  const saveAudioDirectory = async (dir: string) => {
+    state.audioDirectory = dir
+    await window.electronAPI.setSetting('audioDirectory', dir)
+  }
+
+  const saveVideoDirectory = async (dir: string) => {
+    state.videoDirectory = dir
+    await window.electronAPI.setSetting('videoDirectory', dir)
+  }
+
+  const saveFileDirectory = async (dir: string) => {
+    state.fileDirectory = dir
+    await window.electronAPI.setSetting('fileDirectory', dir)
+  }
+
+  const saveMaxConcurrentDownloads = async (count: number) => {
+    state.maxConcurrentDownloads = count
+    await window.electronAPI.setSetting('maxConcurrentDownloads', count)
   }
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
@@ -51,5 +79,17 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customStyles', JSON.parse(JSON.stringify(styles)))
   }
 
-  return { state, loadSettings, setCloseBehavior, saveImageDirectory, saveCmsResources, saveExternalSites, saveCustomStyles }
+  return { 
+    state, 
+    loadSettings, 
+    setCloseBehavior, 
+    saveImageDirectory, 
+    saveAudioDirectory,
+    saveVideoDirectory,
+    saveFileDirectory,
+    saveMaxConcurrentDownloads,
+    saveCmsResources, 
+    saveExternalSites, 
+    saveCustomStyles 
+  }
 }

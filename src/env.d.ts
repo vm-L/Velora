@@ -21,7 +21,14 @@ interface Window {
     onMediaSniffed: (callback: (data: any) => void) => void
     copyImage: (url: string) => Promise<boolean>
     openExternal: (url: string) => void
+    showItemInFolder: (filePath: string) => void
     selectDirectory: () => Promise<string | undefined>
     saveImages: (dirPath: string, files: { url: string, name: string }[]) => Promise<any[]>
+    startDownload: (cmd: any) => void
+    pauseDownload: (id: string) => void
+    cancelDownload: (id: string) => void
+    deleteFile: (filePath: string) => Promise<boolean>
+    fileExists: (filePath: string) => Promise<boolean>
+    onDownloadProgress: (callback: (data: any) => void) => void
   }
 }

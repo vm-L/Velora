@@ -13,6 +13,7 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
   : process.env.DIST
 
 import { storeManager, setupStoreHandlers } from './store'
+import { downloader } from './downloader'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
@@ -71,6 +72,10 @@ function createWindow() {
     shell.openExternal(url)
   })
 
+  ipcMain.on('show-item-in-folder', (_, filePath: string) => {
+    shell.showItemInFolder(filePath)
+  })
+
   ipcMain.handle('copy-image', async (_, url: string) => {
     try {
       const response = await net.fetch(url, { headers: { 'Referer': '' } })
@@ -110,6 +115,37 @@ function createWindow() {
       }
     }
     return results
+  })
+
+  // Downloader IPCs
+  downloader.setWindow(mainWindow)
+  
+  ipcMain.on('start-download', (_, cmd) => {
+    downloader.startDownload(cmd)
+  })
+
+  ipcMain.on('pause-download', (_, id: string) => {
+    downloader.pauseDownload(id)
+  })
+
+  ipcMain.on('cancel-download', (_, id: string) => {
+    downloader.cancelDownload(id)
+  })
+
+  ipcMain.handle('delete-file', async (_, filePath: string) => {
+    try {
+      if (fs.existsSync(filePath)) {
+        await fs.promises.unlink(filePath)
+        return true
+      }
+    } catch (e) {
+      console.error('Failed to delete file:', e)
+    }
+    return false
+  })
+
+  ipcMain.handle('file-exists', async (_, filePath: string) => {
+    return fs.existsSync(filePath)
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {

@@ -12,6 +12,7 @@
   </div>
   <ConfirmDialog />
   <MessageBar />
+  <NotificationBar />
 </template>
 
 <script setup lang="ts">
@@ -20,12 +21,19 @@ import TitleBar from './components/TitleBar.vue'
 import Sidebar from './components/Sidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import MessageBar from './components/MessageBar.vue'
+import NotificationBar from './components/NotificationBar.vue'
 import { useSettings } from './composables/useSettings'
+import { useDownloads } from './composables/useDownloads'
 
 const { loadSettings } = useSettings()
+const { loadTasks, initListeners, isInitialized } = useDownloads()
 
-onMounted(() => {
+onMounted(async () => {
   loadSettings()
+  if (!isInitialized.value) {
+    await loadTasks()
+    initListeners()
+  }
 })
 </script>
 

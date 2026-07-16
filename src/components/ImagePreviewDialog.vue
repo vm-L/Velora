@@ -77,7 +77,7 @@
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </button>
-        <button class="icon-action-btn" @click="saveLocal" title="保存到本地">
+        <button class="icon-action-btn" @click="saveLocal" title="下载图片">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
@@ -108,7 +108,7 @@
       <div v-if="showSaveOverlay" class="save-overlay" @mousedown.stop>
         <div class="save-modal">
           <div class="save-header">
-            <h3>保存图片</h3>
+            <h3>下载图片</h3>
             <button class="icon-action-btn" @click="closeSaveOverlay">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -150,7 +150,7 @@
           <div class="save-footer">
             <button class="cancel-btn" @click="closeSaveOverlay">取消</button>
             <button class="confirm-btn" :disabled="isSaving" @click="confirmSave">
-              {{ isSaving ? '保存中...' : '确认保存' }}
+              {{ isSaving ? '下载中...' : '确认下载' }}
             </button>
           </div>
         </div>
@@ -399,6 +399,9 @@ const toggleAllSaveItems = () => {
   });
 };
 
+import { useDownloads } from '../composables/useDownloads';
+const { addDownload } = useDownloads();
+
 const confirmSave = async () => {
   if (!saveDirectory.value) {
     showMessage('请先选择保存目录', 'error');
@@ -425,21 +428,21 @@ const confirmSave = async () => {
   }
   
   isSaving.value = true;
-  showMessage(`正在下载 ${itemsToSave.length} 张图片...`, 'info');
   
   try {
-    if (window.electronAPI && window.electronAPI.saveImages) {
-      const results = await window.electronAPI.saveImages(saveDirectory.value, itemsToSave);
-      const successCount = results.filter(r => r.success).length;
-      if (successCount === itemsToSave.length) {
-        showMessage('保存成功', 'success');
-        closeSaveOverlay();
-      } else {
-        showMessage(`保存完成: 成功 ${successCount}，失败 ${itemsToSave.length - successCount}`, 'error');
-      }
+    let addedCount = 0;
+    for (const item of itemsToSave) {
+      const savePath = `${saveDirectory.value}/${item.name}`;
+      const added = await addDownload(item.url, item.name, savePath);
+      if (added) addedCount++;
     }
+    
+    if (addedCount > 0) {
+      showMessage(`已添加 ${addedCount} 个下载任务`, 'success');
+    }
+    closeSaveOverlay();
   } catch (err: any) {
-    showMessage(`保存失败: ${err.message}`, 'error');
+    showMessage(`添加任务失败: ${err.message}`, 'error');
   } finally {
     isSaving.value = false;
   }

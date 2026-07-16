@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMediaSniffed: (callback: (data: any) => void) => ipcRenderer.on('media-sniffed', (_event, data) => callback(data)),
   copyImage: (url: string) => ipcRenderer.invoke('copy-image', url),
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
+  showItemInFolder: (filePath: string) => ipcRenderer.send('show-item-in-folder', filePath),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
-  saveImages: (dirPath: string, files: { url: string, name: string }[]) => ipcRenderer.invoke('save-images', dirPath, files)
+  saveImages: (dirPath: string, files: { url: string, name: string }[]) => ipcRenderer.invoke('save-images', dirPath, files),
+  startDownload: (cmd: any) => ipcRenderer.send('start-download', cmd),
+  pauseDownload: (id: string) => ipcRenderer.send('pause-download', id),
+  cancelDownload: (id: string) => ipcRenderer.send('cancel-download', id),
+  deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
+  fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
+  onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download-progress', (_event, data) => callback(data))
 })
