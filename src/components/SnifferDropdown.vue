@@ -1,8 +1,9 @@
 <template>
-  <div class="dropdown-container" v-click-outside="close">
+  <div class="dropdown-container">
     <button class="func-btn" :class="{ 'active': isOpen }" :data-tooltip="tooltip" @click="toggle">
       <slot name="icon"></slot>
     </button>
+    <div v-if="isOpen" class="dropdown-backdrop" @click.stop="close"></div>
     <div v-if="isOpen" class="dropdown-menu">
       <div class="dropdown-header">
         <span class="dropdown-title">{{ title }} ({{ items.length }})</span>
@@ -173,24 +174,13 @@ const saveLocal = (url: string) => {
   console.log('Save to local logic goes here', url)
 }
 
-const vClickOutside = {
-  mounted(el: any, binding: any) {
-    el.clickOutsideEvent = function (event: Event) {
-      if (!(el == event.target || el.contains(event.target))) {
-        binding.value(event, el)
-      }
-    }
-    document.body.addEventListener('click', el.clickOutsideEvent)
-  },
-  unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent)
-  }
-}
+
 </script>
 
 <style scoped lang="less">
 .dropdown-container {
   position: relative;
+  display: flex;
 }
 
 .func-btn {
@@ -228,6 +218,18 @@ const vClickOutside = {
   z-index: 100;
 }
 
+.dropdown-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99;
+  background: transparent;
+  cursor: default;
+}
+
+/* Tooltip text */
 .func-btn::before {
   content: attr(data-tooltip);
   top: 100%;

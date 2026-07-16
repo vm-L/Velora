@@ -12,17 +12,7 @@
         样式注入器
       </div>
       <div class="header-actions">
-        <button class="action-btn" @click="isCollapsed = !isCollapsed" :title="isCollapsed ? '展开' : '收起'">
-          <svg v-if="isCollapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="18 15 12 9 6 15"></polyline>
-          </svg>
-        </button>
-        <button class="action-btn close-btn" @click="close" title="取消">
+        <button class="action-btn close-btn" @click="close" title="关闭">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -32,80 +22,31 @@
       </div>
     </div>
 
-    <div class="inspector-content" :class="{ 'is-collapsed': isCollapsed }">
+    <div class="inspector-content">
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
             <span class="label">匹配规则</span>
-            <input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; margin-left: 12px; font-size: 11px; padding: 4px 6px;" />
-          </div>
-
-          <div class="form-group">
-            <div class="label-row">
-              <label>CSS 选择器</label>
-              <button class="text-btn" @click="handleRepick">重新选择</button>
-            </div>
-            <input type="text" v-model="localSelector" class="mono-input" @input="updatePreviewImmediate"
-              @wheel="handleSelectorWheel"
-              placeholder=".class-name, #id" />
-            <div class="pseudo-toggles" style="display: flex; gap: 6px; margin-top: 8px;">
-              <button 
-                v-for="pseudo in [':hover', ':active', ':focus', '::before', '::after']" 
-                :key="pseudo"
-                class="pseudo-btn"
-                :class="{ active: localSelector.includes(pseudo) }"
-                @click="togglePseudo(pseudo)"
-              >
-                {{ pseudo }}
-              </button>
-            </div>
-            <div class="help-text" style="margin-top: 6px;">输入框滚动滚轮切换层级，点击上方标签快捷附加伪类。</div>
-          </div>
-
-          <div class="form-group" style="margin-top: 12px;">
-            <div class="label-row">
-              <label>自定义 CSS 样式规则</label>
-              <div class="dropdown" v-click-outside="closeDropdown">
-                <button class="text-btn" @click="dropdownOpen = !dropdownOpen">沿用样式 ▼</button>
+            <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
+              <input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
+              <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
+                <button class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</button>
                 <div v-if="dropdownOpen" class="dropdown-menu">
-                  <div v-if="!domainRules || domainRules.length === 0" class="dropdown-empty">暂无保存的样式</div>
-                  <div v-for="(rule, idx) in domainRules" :key="idx" class="dropdown-item">
-                    <span class="dropdown-text" @click="applyRule(rule)" :title="rule.css">{{ rule.selector }}</span>
-                    <button class="del-btn" @click.stop="confirmDelete(rule)" title="删除">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                      </svg>
-                    </button>
+                  <div v-if="!domainRules || Object.keys(domainRules).length === 0" class="dropdown-empty">暂无保存的样式</div>
+                  <div v-for="(cssString, ruleDomain) in domainRules" :key="ruleDomain" class="dropdown-item">
+                    <span class="dropdown-text" @click="loadRule(ruleDomain as string, cssString as string)">{{ ruleDomain }}</span>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="textarea-wrapper" style="position: relative;">
-              <textarea
-                v-model="localCss"
-                class="mono-input css-textarea"
-                @input="onTextareaInput"
-                @keydown="handleTextareaKeydown"
-                @blur="onTextareaBlur"
-                placeholder="例如：display: none; color: red;"
-                style="width: 100%; box-sizing: border-box;"
-              ></textarea>
-              
-              <!-- Suggestions Dropdown -->
-              <div v-if="showSuggestions && suggestions.length > 0" class="autocomplete-dropdown">
-                <div
-                  v-for="(item, idx) in suggestions"
-                  :key="idx"
-                  class="autocomplete-item"
-                  :class="{ active: idx === activeSuggestionIndex }"
-                  @mousedown.prevent="selectSuggestion(item)"
-                >
-                  <span class="ac-label">{{ item }}</span>
-                  <span class="ac-desc">{{ activeQuery?.type === 'property' ? '属性' : '推荐值' }}</span>
-                </div>
-              </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1;">
+            <div class="label-row" style="margin-bottom: 8px;">
+              <label>自定义 CSS 样式</label>
+            </div>
+            <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #fff; min-height: 280px; display: flex; flex-direction: column;">
+              <!-- CodeMirror will attach here -->
             </div>
           </div>
         </div>
@@ -120,51 +61,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
-import { useConfirm } from '../composables/useConfirm';
-
-const { confirm } = useConfirm();
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { EditorView, basicSetup } from 'codemirror';
+import { css } from '@codemirror/lang-css';
+import { EditorState, EditorSelection } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { defaultKeymap, indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
+import { syntaxTree } from '@codemirror/language';
 
 const props = defineProps<{
   modelValue: boolean;
-  selector: string;
-  url: string;
-  domainRules?: { selector: string, css: string; }[];
+  url?: string;
+  domainRules?: Record<string, string>;
 }>();
 
-const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'repick', 'deleteRule', 'interaction-start', 'interaction-end', 'traverseSelector']);
+const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'interaction-start', 'interaction-end']);
 
-const isCollapsed = ref(false);
 const dropdownOpen = ref(false);
-
-const localSelector = ref('');
-const localCss = ref('');
 const domain = ref('');
-
 const position = ref({ x: 100, y: 100 });
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 
-// CSS Autocomplete & Visual Designer states
-const cssDict: Record<string, string[]> = {
-  'display': ['none', 'block', 'inline-block', 'flex', 'grid', 'inline'],
-  'pointer-events': ['none', 'auto', 'initial', 'inherit'],
-  'opacity': ['0', '0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1'],
-  'position': ['relative', 'absolute', 'fixed', 'sticky', 'static'],
-  'z-index': ['-1', '0', '1', '10', '100', '9999', '2147483647'],
-  'visibility': ['hidden', 'visible', 'collapse'],
-  'color': ['transparent', 'red', 'blue', 'green', 'white', 'black'],
-  'background-color': ['transparent', '#ffffff', '#000000', '#f3f4f6'],
-  'width': ['auto', '0', '100%', '50%', '100vw'],
-  'height': ['auto', '0', '100%', '50%', '100vh'],
-  'overflow': ['hidden', 'auto', 'scroll', 'visible'],
-  'filter': ['blur(4px)', 'blur(8px)', 'grayscale(100%)', 'none']
-}
-
-const showSuggestions = ref(false)
-const suggestions = ref<string[]>([])
-const activeSuggestionIndex = ref(0)
-const activeQuery = ref<any>(null)
+const editorContainer = ref<HTMLElement | null>(null);
+let editorView: EditorView | null = null;
+let currentCss = '';
 
 const closeDropdown = () => { dropdownOpen.value = false; };
 
@@ -182,24 +103,135 @@ const vClickOutside = {
   }
 };
 
-watch(() => props.modelValue, (newVal) => {
-  if (newVal) {
-    localSelector.value = props.selector;
-    try {
-      const urlObj = new URL(props.url);
-      const host = urlObj.hostname.replace(/^www\./, '');
-      domain.value = `*://*.${host}/*`;
-    } catch (e) {
-      domain.value = '*://*/*';
-    }
-    localCss.value = '';
-    isCollapsed.value = false;
-    dropdownOpen.value = false;
+const updatePreview = () => {
+  emit('applyPreview', currentCss);
+};
 
-    // Position in the center of the content area
-    // Approximate: sidebar ~220px wide, titlebar ~32px tall, dialog ~320px wide, ~400px tall
-    const dialogW = 320;
-    const dialogH = 400;
+const autoImportantExtension = keymap.of([
+  {
+    key: ";",
+    run: (view) => {
+      const { state } = view;
+      let handled = false;
+      const changes = state.changeByRange(range => {
+        if (!range.empty) return { range };
+        let node = syntaxTree(state).resolveInner(range.head, -1);
+        let isProp = false;
+        while (node) {
+          if (node.name === 'Declaration' || node.name === 'PropertyValue') { isProp = true; break; }
+          if (node.name === 'Block') break;
+          node = node.parent;
+        }
+        if (isProp) {
+          const line = state.doc.lineAt(range.head);
+          const textBefore = line.text.slice(0, range.head - line.from);
+          if (!/!important\s*$/.test(textBefore)) {
+            handled = true;
+            return {
+              changes: { from: range.head, insert: " !important;" },
+              range: EditorSelection.cursor(range.head + 12)
+            };
+          }
+        }
+        return { range };
+      });
+      if (handled) {
+        view.dispatch(state.update(changes, { scrollIntoView: true, userEvent: "input" }));
+        return true;
+      }
+      return false;
+    }
+  },
+  {
+    key: "Enter",
+    run: (view) => {
+      const { state } = view;
+      let handled = false;
+      const changes = state.changeByRange(range => {
+        if (!range.empty) return { range };
+        let node = syntaxTree(state).resolveInner(range.head, -1);
+        let isProp = false;
+        while (node) {
+          if (node.name === 'Declaration' || node.name === 'PropertyValue') { isProp = true; break; }
+          if (node.name === 'Block') break;
+          node = node.parent;
+        }
+        if (isProp) {
+          const line = state.doc.lineAt(range.head);
+          const textBefore = line.text.slice(0, range.head - line.from);
+          if (!/!important\s*;?\s*$/.test(textBefore)) {
+            handled = true;
+            return {
+              changes: { from: range.head, insert: " !important;" },
+              range: EditorSelection.cursor(range.head + 12)
+            };
+          }
+        }
+        return { range };
+      });
+      if (handled) {
+        view.dispatch(state.update(changes, { scrollIntoView: true, userEvent: "input" }));
+        insertNewlineAndIndent(view);
+        return true;
+      }
+      return false;
+    }
+  }
+]);
+
+const initEditor = (initialContent: string) => {
+  if (editorView) {
+    editorView.destroy();
+  }
+  if (!editorContainer.value) return;
+
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged) {
+      currentCss = update.state.doc.toString();
+      updatePreview();
+    }
+  });
+
+  editorView = new EditorView({
+    state: EditorState.create({
+      doc: initialContent,
+      extensions: [
+        basicSetup,
+        css(),
+        keymap.of([indentWithTab, ...defaultKeymap]),
+        autoImportantExtension,
+        updateListener,
+        EditorView.theme({
+          "&": { flex: 1, fontSize: "12px", fontFamily: "ui-monospace, monospace" },
+          ".cm-scroller": { overflow: "auto" }
+        })
+      ]
+    }),
+    parent: editorContainer.value
+  });
+};
+
+watch(() => props.modelValue, async (newVal) => {
+  if (newVal) {
+    let initialDomain = '*://*/*';
+    try {
+      if (props.url) {
+        const urlObj = new URL(props.url);
+        const host = urlObj.hostname.replace(/^www\./, '');
+        initialDomain = `*://*.${host}${urlObj.pathname}`;
+      }
+    } catch (e) {}
+
+    domain.value = initialDomain;
+    dropdownOpen.value = false;
+    currentCss = '';
+
+    if (props.domainRules && props.domainRules[domain.value]) {
+      currentCss = props.domainRules[domain.value];
+    }
+
+    const dialogW = 420;
+    const dialogH = 480;
     const sidebarW = 220;
     const titlebarH = 32;
     position.value = {
@@ -207,272 +239,59 @@ watch(() => props.modelValue, (newVal) => {
       y: titlebarH + (window.innerHeight - titlebarH - dialogH) / 2
     };
 
-    // Trigger preview immediately when dialog opens
-    updatePreviewImmediate();
-  }
-});
-
-watch(() => props.selector, (newVal) => {
-  if (props.modelValue) {
-    localSelector.value = newVal;
-    updatePreviewImmediate();
-  }
-});
-
-const handleSelectorWheel = (e: WheelEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  const direction = e.deltaY < 0 ? 'up' : 'down';
-  emit('traverseSelector', direction);
-};
-
-const togglePseudo = (pseudo: string) => {
-  if (localSelector.value.includes(pseudo)) {
-    localSelector.value = localSelector.value.replace(pseudo, '');
+    await nextTick();
+    initEditor(currentCss);
+    updatePreview();
   } else {
-    localSelector.value = localSelector.value + pseudo;
+    if (editorView) {
+      editorView.destroy();
+      editorView = null;
+    }
   }
-  updatePreviewImmediate();
-};
+});
 
-const handleRepick = () => {
-  emit('applyPreview', '', '', false);
-  emit('update:modelValue', false);
-  emit('repick');
-};
-
-const applyRule = (rule: { selector: string, css: string; }) => {
-  localCss.value = (localCss.value ? localCss.value + '\n' : '') + rule.css;
+const loadRule = (ruleDomain: string, cssString: string) => {
+  domain.value = ruleDomain;
+  currentCss = cssString;
   dropdownOpen.value = false;
-  updatePreview();
-};
-
-const confirmDelete = async (rule: { selector: string; }) => {
-  const isOk = await confirm({
-    title: '删除规则',
-    message: '是否确认删除此规则',
-    type: 'danger',
-    confirmText: '删除'
-  });
-  if (isOk) {
-    if (props.url) {
-      const domain = new URL(props.url).hostname;
-      emit('deleteRule', domain, rule.selector);
-      dropdownOpen.value = false;
-    }
+  if (editorView) {
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: cssString }
+    });
   }
 };
-
-const deduplicateCss = () => {
-  if (!localCss.value) return;
-
-  const rawCss = localCss.value;
-  const rules = rawCss.split(';').map(r => r.trim()).filter(Boolean);
-  const map = new Map<string, string>();
-
-  for (const rule of rules) {
-    const colonIndex = rule.indexOf(':');
-    if (colonIndex > 0) {
-      const prop = rule.slice(0, colonIndex).trim();
-      let val = rule.slice(colonIndex + 1).trim();
-      if (!val.includes('!important')) {
-        val += ' !important';
-      }
-      map.set(prop, val);
-    }
-  }
-
-  let newCss = '';
-  for (const [prop, val] of map.entries()) {
-    newCss += `${prop}: ${val};\n`;
-  }
-
-  if (localCss.value !== newCss) {
-    localCss.value = newCss;
-    updatePreviewImmediate();
-  }
-};
-
-const updatePreviewImmediate = () => {
-  clearTimeout(previewTimer);
-  emit('applyPreview', localSelector.value, localCss.value, true);
-};
-
-let previewTimer: any;
-const updatePreview = () => {
-  clearTimeout(previewTimer);
-  previewTimer = setTimeout(() => {
-    emit('applyPreview', localSelector.value, localCss.value, true);
-  }, 200);
-};
-
-// CSS Autocomplete & Visual Designer Logics
-const getActiveQuery = () => {
-  const textarea = document.querySelector('.css-textarea') as HTMLTextAreaElement
-  if (!textarea) return null
-  
-  const text = localCss.value || ''
-  const selStart = textarea.selectionStart
-  
-  const beforeCaret = text.slice(0, selStart)
-  const lastSemicolon = beforeCaret.lastIndexOf(';')
-  const currentRuleRaw = beforeCaret.slice(lastSemicolon + 1)
-  
-  const leadingWhitespaceMatch = currentRuleRaw.match(/^\s*/);
-  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : '';
-  const currentRule = currentRuleRaw.substring(leadingWhitespace.length);
-  
-  const colonIdx = currentRule.indexOf(':')
-  if (colonIdx === -1) {
-    return { type: 'property', query: currentRule, leadingWhitespace }
-  } else {
-    const prop = currentRule.slice(0, colonIdx).trim()
-    const valueRaw = currentRule.slice(colonIdx + 1)
-    
-    const valLeadingMatch = valueRaw.match(/^\s*/);
-    const valLeading = valLeadingMatch ? valLeadingMatch[0] : '';
-    const query = valueRaw.substring(valLeading.length);
-    
-    return { type: 'value', prop, query, leadingWhitespace, valLeading }
-  }
-}
-
-const onTextareaInput = () => {
-  updatePreview()
-  
-  const queryInfo = getActiveQuery()
-  activeQuery.value = queryInfo
-  
-  if (!queryInfo) {
-    showSuggestions.value = false
-    return
-  }
-  
-  if (queryInfo.type === 'property') {
-    const q = queryInfo.query.toLowerCase()
-    if (!q) {
-      showSuggestions.value = false
-      return
-    }
-    const matches = Object.keys(cssDict).filter(k => k.startsWith(q))
-    if (matches.length > 0) {
-      suggestions.value = matches
-      activeSuggestionIndex.value = 0
-      showSuggestions.value = true
-    } else {
-      showSuggestions.value = false
-    }
-  } else {
-    const prop = (queryInfo.prop || '').toLowerCase()
-    const q = queryInfo.query.toLowerCase()
-    const values = cssDict[prop]
-    if (values) {
-      const matches = values.filter(v => v.startsWith(q))
-      if (matches.length > 0) {
-        suggestions.value = matches
-        activeSuggestionIndex.value = 0
-        showSuggestions.value = true
-      } else {
-        showSuggestions.value = false
-      }
-    } else {
-      showSuggestions.value = false
-    }
-  }
-}
-
-const onTextareaBlur = () => {
-  setTimeout(() => {
-    showSuggestions.value = false
-  }, 200)
-  deduplicateCss()
-}
-
-const selectSuggestion = (suggestion: string) => {
-  const textarea = document.querySelector('.css-textarea') as HTMLTextAreaElement
-  if (!textarea) return
-  
-  const text = localCss.value || ''
-  const selStart = textarea.selectionStart
-  const beforeCaret = text.slice(0, selStart)
-  const afterCaret = text.slice(selStart)
-  
-  const lastSemicolon = beforeCaret.lastIndexOf(';')
-  const base = beforeCaret.slice(0, lastSemicolon + 1)
-  
-  let newRule = ''
-  let triggersNext = false
-  if (activeQuery.value.type === 'property') {
-    newRule = `${activeQuery.value.leadingWhitespace}${suggestion}: `
-    triggersNext = true
-  } else {
-    const space = activeQuery.value.valLeading || ' '
-    const lastIndentMatch = activeQuery.value.leadingWhitespace.match(/[ \t]+$/)
-    const indent = lastIndentMatch ? lastIndentMatch[0] : ''
-    newRule = `${activeQuery.value.leadingWhitespace}${activeQuery.value.prop}:${space}${suggestion};\n${indent}`
-  }
-  
-  const newBeforeCaret = base + newRule
-  localCss.value = newBeforeCaret + afterCaret
-  
-  updatePreview()
-  
-  setTimeout(() => {
-    textarea.focus()
-    const newPos = newBeforeCaret.length
-    textarea.setSelectionRange(newPos, newPos)
-    
-    if (triggersNext) {
-      onTextareaInput()
-    } else {
-      showSuggestions.value = false
-    }
-  }, 10)
-}
-
-const handleTextareaKeydown = (e: KeyboardEvent) => {
-  if (!showSuggestions.value || suggestions.value.length === 0) return
-  
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    activeSuggestionIndex.value = (activeSuggestionIndex.value + 1) % suggestions.value.length
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    activeSuggestionIndex.value = (activeSuggestionIndex.value - 1 + suggestions.value.length) % suggestions.value.length
-  } else if (e.key === 'Enter' || e.key === 'Tab') {
-    e.preventDefault()
-    selectSuggestion(suggestions.value[activeSuggestionIndex.value])
-  } else if (e.key === 'Escape') {
-    showSuggestions.value = false
-  }
-}
-
 
 const save = () => {
-  emit('save', domain.value, localSelector.value, localCss.value);
-  emit('applyPreview', '', '', false); // clear preview and highlight
+  emit('save', domain.value, currentCss);
   emit('update:modelValue', false);
 };
 
 const close = () => {
+  emit('applyPreview', '');
   emit('update:modelValue', false);
-  emit('applyPreview', '', '', false); // clear preview and highlight
 };
 
-// Drag Logic
 const startDrag = (e: MouseEvent) => {
+  if ((e.target as HTMLElement).closest('.action-btn')) return;
   isDragging = true;
-  emit('interaction-start');
   dragOffset.x = e.clientX - position.value.x;
   dragOffset.y = e.clientY - position.value.y;
+  emit('interaction-start');
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup', stopDrag);
 };
 
 const onDrag = (e: MouseEvent) => {
   if (!isDragging) return;
-  position.value.x = e.clientX - dragOffset.x;
-  position.value.y = e.clientY - dragOffset.y;
+  let newX = e.clientX - dragOffset.x;
+  let newY = e.clientY - dragOffset.y;
+  const dialogW = 420;
+  const dialogH = 480;
+  if (newX < 0) newX = 0;
+  if (newY < 0) newY = 0;
+  if (newX + dialogW > window.innerWidth) newX = window.innerWidth - dialogW;
+  if (newY + dialogH > window.innerHeight) newY = window.innerHeight - dialogH;
+  position.value = { x: newX, y: newY };
 };
 
 const stopDrag = () => {
@@ -481,77 +300,60 @@ const stopDrag = () => {
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup', stopDrag);
 };
-
-onUnmounted(() => {
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', stopDrag);
-});
 </script>
 
-<style scoped lang="less">
+<style scoped>
 .inspector-dialog {
   position: fixed;
-  width: 300px;
+  width: 420px;
   background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  z-index: 9999;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+  z-index: 2147483647;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  user-select: none;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
 .inspector-header {
-  height: 32px;
+  height: 36px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 12px;
-  cursor: grab;
-}
-
-.inspector-header:active {
-  cursor: grabbing;
+  cursor: move;
+  user-select: none;
 }
 
 .header-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: #334155;
   display: flex;
   align-items: center;
   gap: 6px;
-  line-height: 1;
-}
-
-.header-title svg {
-  display: block;
 }
 
 .header-actions {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .action-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  background: transparent;
+  border: none;
   border-radius: 4px;
-}
-
-.action-btn svg {
-  display: block;
+  color: #64748b;
+  cursor: pointer;
 }
 
 .action-btn:hover {
@@ -559,22 +361,17 @@ onUnmounted(() => {
   color: #334155;
 }
 
-.close-btn:hover {
+.action-btn.close-btn:hover {
+  background: #fee2e2;
   color: #ef4444;
 }
 
 .inspector-content {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.inspector-content.is-collapsed {
-  grid-template-rows: 0fr;
+  display: flex;
+  flex-direction: column;
 }
 
 .inspector-content-inner {
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -583,38 +380,40 @@ onUnmounted(() => {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  user-select: text;
+  flex: 1;
 }
 
 .info-row {
   display: flex;
-  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.label {
   font-size: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.info-row .label {
-  color: #64748b;
-}
-
-.info-row .value {
-  color: #0f172a;
   font-weight: 500;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: #64748b;
+  width: 55px;
+  flex-shrink: 0;
+}
+
+.value-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  outline: none;
+  color: #334155;
+}
+
+.value-input:focus {
+  border-color: #3b82f6;
+}
+
+.mono-input {
+  font-family: ui-monospace, monospace;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #334155;
 }
 
 .label-row {
@@ -623,131 +422,24 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.label-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
 .text-btn {
   background: transparent;
   border: none;
   color: #3b82f6;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
-  padding: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
 }
 
 .text-btn:hover {
-  text-decoration: underline;
-}
-
-.dropdown {
-  position: relative;
-}
-
-.dropdown-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  width: 200px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 1000;
-}
-
-.dropdown-empty {
-  padding: 8px 12px;
-  font-size: 11px;
-  color: #94a3b8;
-  text-align: center;
-}
-
-.dropdown-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 11px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.dropdown-item:last-child {
-  border-bottom: none;
-}
-
-.dropdown-item:hover {
-  background: #f8fafc;
-}
-
-.dropdown-text {
-  flex: 1;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  color: #334155;
-}
-
-.del-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 2px;
-  margin-left: 8px;
-  border-radius: 2px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.del-btn:hover {
-  background: #fee2e2;
-  color: #ef4444;
-}
-
-.mono-input {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
-  padding: 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #f8fafc;
-  color: #0f172a;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.mono-input:focus {
-  border-color: #3b82f6;
-  background: #ffffff;
-}
-
-.css-textarea {
-  min-height: 60px;
-  resize: vertical;
-}
-
-.help-text {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.quick-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #334155;
-  cursor: pointer;
-  user-select: none;
+  background: #eff6ff;
 }
 
 .inspector-footer {
@@ -788,73 +480,51 @@ onUnmounted(() => {
   background: #2563eb;
 }
 
-.pseudo-btn {
-  padding: 2px 6px;
-  font-size: 11px;
-  border-radius: 4px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
-  transition: all 0.15s;
+/* Dropdown */
+.dropdown {
+  position: relative;
 }
 
-.pseudo-btn:hover {
-  background: #e2e8f0;
-  color: #334155;
-}
-
-.pseudo-btn.active {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #2563eb;
-}
-
-/* Autocomplete Dropdown */
-.autocomplete-dropdown {
+.dropdown-menu {
   position: absolute;
   top: 100%;
-  left: 0;
   right: 0;
+  margin-top: 4px;
   background: #ffffff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  max-height: 180px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  min-width: 150px;
+  max-height: 200px;
   overflow-y: auto;
-  z-index: 1000;
-  padding: 4px;
+  z-index: 10;
 }
 
-.autocomplete-item {
+.dropdown-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.dropdown-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 8px;
+  padding: 6px 12px;
   font-size: 12px;
   color: #334155;
-  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s;
 }
 
-.autocomplete-item.active,
-.autocomplete-item:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+.dropdown-item:hover {
+  background: #f8fafc;
 }
 
-.ac-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+.dropdown-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.ac-desc {
-  font-size: 10px;
-  color: #94a3b8;
-  background: #f1f5f9;
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
 </style>

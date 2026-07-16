@@ -1,6 +1,6 @@
 <template>
   <div v-if="type === 'ext'" class="workspace-wrapper">
-    <BrowserWorkspace :resourceId="id as string" :resourceUrl="item?.url || ''" />
+    <!-- BrowserWorkspace is now managed globally in App.vue to preserve webviews -->
   </div>
   <div v-else class="view resource-view">
     <div class="skeleton-card">
@@ -22,13 +22,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettings } from '../composables/useSettings'
-import BrowserWorkspace from '../components/BrowserWorkspace.vue'
+import { useOpenedResources } from '../composables/useOpenedResources'
 
 const route = useRoute()
 const { state } = useSettings()
+const { openResource } = useOpenedResources()
 
 const type = computed(() => route.params.type as string)
 const id = computed(() => route.params.id as string)
@@ -40,6 +41,12 @@ const item = computed(() => {
     return state.externalSites.find(r => r.id === id.value)
   }
 })
+
+watch(() => item.value, (newVal) => {
+  if (type.value === 'ext' && newVal) {
+    openResource(id.value, newVal.url)
+  }
+}, { immediate: true })
 </script>
 
 <style scoped lang="less">

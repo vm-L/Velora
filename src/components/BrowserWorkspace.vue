@@ -32,15 +32,12 @@
     <div class="function-bar">
       <div class="func-spacer"></div>
       <div class="func-group">
-        <button class="func-btn" :class="{ 'active': isPicking }" data-tooltip="选取元素" @click="pickElement">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2"
-              stroke-linejoin="round"></polygon>
-            <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5l-4 3.5" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <button class="func-btn" data-tooltip="注入样式" @click="inspectorVisible = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="11" fill="currentColor" stroke="none">CSS</text>
           </svg>
         </button>
+
         <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="选取图片"
           @click="pickElementImage">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -102,14 +99,7 @@
             <polyline points="8 6 2 12 8 18"></polyline>
           </svg>
         </button>
-        <button class="func-btn" data-tooltip="在默认浏览器中打开" @click="onOpenExternal">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
-        </button>
+
       </div>
     </div>
 
@@ -124,9 +114,9 @@
     </div>
 
     <!-- Inspector Dialog -->
-    <InspectorDialog v-model="inspectorVisible" :selector="inspectorSelector" :url="inspectorUrl"
-      :domain-rules="currentDomainRules" @applyPreview="onApplyPreview" @save="onSaveRules" @repick="pickElement"
-      @deleteRule="onDeleteRule" @traverseSelector="onTraverseSelector" @interaction-start="isInteracting = true"
+    <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
+      :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules" 
+      @interaction-start="isInteracting = true"
       @interaction-end="isInteracting = false" />
 
     <!-- Image Preview Dialogs -->
@@ -137,14 +127,6 @@
     <!-- Custom Context Menu -->
     <div v-show="contextMenuVisible" class="context-menu"
       :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
-      <div class="menu-item" @click="triggerPickElement">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
-          <path d="M14 13l-4 3.5l4 3.5 M18 13l4 3.5-4 3.5" fill="none"></path>
-        </svg>
-        <span>选取元素</span>
-      </div>
       <div class="menu-item" @click="triggerPickImage">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
@@ -163,6 +145,8 @@
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { useWorkspaces } from '../composables/useWorkspaces';
 import { useSettings } from '../composables/useSettings';
+import { useMessage } from '../composables/useMessage';
+
 import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
@@ -182,7 +166,7 @@ const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuTabId = ref('');
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
-  if (isPicking.value || isPickingElementImage.value) return;
+  if (isPickingElementImage.value) return;
   e.preventDefault();
 
   const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
@@ -195,11 +179,6 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   };
   contextMenuTabId.value = tabId;
   contextMenuVisible.value = true;
-};
-
-const triggerPickElement = () => {
-  contextMenuVisible.value = false;
-  pickElement();
 };
 
 const triggerPickImage = () => {
@@ -294,11 +273,7 @@ watch(() => activeTab.value?.id, async (_newTabId, oldTabId) => {
     const webview = document.getElementById(`webview-${oldTabId}`) as any;
     if (webview) {
       try {
-        if (isPicking.value) {
-          await webview.executeJavaScript(`
-            if (window.__elementPickerCancel) window.__elementPickerCancel();
-          `);
-        }
+
         if (isPickingElementImage.value) {
           await webview.executeJavaScript(`
             if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
@@ -307,7 +282,7 @@ watch(() => activeTab.value?.id, async (_newTabId, oldTabId) => {
       } catch (e) { }
     }
   }
-  isPicking.value = false;
+
   isPickingElementImage.value = false;
 });
 
@@ -390,9 +365,7 @@ const refreshWebviewStyles = async (tabId: string) => {
         }
 
         if (isMatch) {
-          for (const rule of (rules as any[])) {
-            cssText += `${rule.selector} { ${rule.css} }\n`;
-          }
+          cssText += `${rules}\n`;
         }
       }
     }
@@ -487,12 +460,7 @@ const onDevTools = () => {
   if (wv) wv.openDevTools();
 };
 
-const onOpenExternal = () => {
-  const wv = activeWebview();
-  if (wv) {
-    window.electronAPI.openExternal(wv.getURL());
-  }
-};
+
 
 const onClearSniffed = (type: 'image' | 'video') => {
   if (activeTab.value) {
@@ -532,394 +500,10 @@ const onFocusPreview = (id: string) => {
 // Element Picker Logic
 const inspectorVisible = ref(false);
 const inspectorSelector = ref('');
-const initialSelector = ref('');
-const inspectorUrl = ref('');
 const isInteracting = ref(false);
-const isPicking = ref(false);
 const isPickingElementImage = ref(false);
 
-const pickElement = async () => {
-  if (!workspace.value?.activeTabId) return;
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-  if (!webview) return;
 
-  if (isPicking.value) {
-    try {
-      await webview.executeJavaScript(`
-        if (window.__elementPickerCancel) {
-          window.__elementPickerCancel();
-        }
-      `);
-    } catch (e) { }
-    isPicking.value = false;
-    return;
-  }
-
-  if (isPickingElementImage.value) {
-    try {
-      await webview.executeJavaScript(`
-        if (window.__imgElementPickerCancel) {
-          window.__imgElementPickerCancel();
-        }
-      `);
-    } catch (e) { }
-    isPickingElementImage.value = false;
-  }
-
-  isPicking.value = true;
-
-  const pickerScript = `
-    new Promise((resolve) => {
-      if (window.__elementPickerActive) {
-        if (window.__elementPickerCancel) window.__elementPickerCancel();
-      }
-      window.__elementPickerActive = true;
-
-      const overlay = document.createElement('div');
-      overlay.style.position = 'fixed';
-      overlay.style.pointerEvents = 'none';
-      overlay.style.zIndex = '2147483647';
-      overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
-      overlay.style.border = '2px solid #3b82f6';
-      overlay.style.transition = 'all 0.1s ease';
-      document.body.appendChild(overlay);
-
-      const tooltip = document.createElement('div');
-      tooltip.style.position = 'fixed';
-      tooltip.style.zIndex = '2147483647';
-      tooltip.style.backgroundColor = '#1e293b';
-      tooltip.style.color = '#ffffff';
-      tooltip.style.padding = '4px 8px';
-      tooltip.style.borderRadius = '4px';
-      tooltip.style.fontSize = '12px';
-      tooltip.style.fontFamily = 'system-ui, sans-serif';
-      tooltip.style.pointerEvents = 'none';
-      tooltip.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-      tooltip.style.display = 'none';
-      tooltip.style.transition = 'all 0.1s ease';
-      document.body.appendChild(tooltip);
-
-      const freezeOverlay = document.createElement('div');
-      freezeOverlay.style.position = 'fixed';
-      freezeOverlay.style.top = '0';
-      freezeOverlay.style.left = '0';
-      freezeOverlay.style.width = '100vw';
-      freezeOverlay.style.height = '100vh';
-      freezeOverlay.style.zIndex = '2147483646';
-      freezeOverlay.style.pointerEvents = 'none';
-      document.body.appendChild(freezeOverlay);
-
-      let isFrozen = false;
-
-      let currentEl = null;
-      let selectedEl = null;
-      let path = [];
-      let pathIndex = 0;
-      let childOverlays = [];
-
-      const getSelector = (targetEl) => {
-        if (targetEl.tagName.toLowerCase() === 'html') return 'html';
-
-        const isAtomicOrHash = (cls) => {
-          if (/^(?:sm:|md:|lg:|xl:|2xl:|hover:|focus:)?(?:flex|grid|block|hidden|relative|absolute|sticky|fixed|w-\\d+|h-\\d+|p[xytrbl]?-\\d+|m[xytrbl]?-\\d+|text-[a-z]+|bg-[a-z]+-\\d+|border)/.test(cls)) return true;
-          if (/_\\w{4,}$/.test(cls) || /^css-\\w+$/.test(cls)) return true;
-          return false;
-        };
-
-        const getValidClasses = (el) => {
-          if (!el.className || typeof el.className !== 'string') return [];
-          return el.className.split(/\\s+/).filter(c => c && !isAtomicOrHash(c));
-        };
-
-        const getPathParts = (target) => {
-          let parts = [];
-          let curr = target;
-          while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
-            let sel = curr.tagName.toLowerCase();
-            if (curr.id) {
-              sel += '#' + CSS.escape(curr.id);
-              parts.unshift({ el: curr, selector: sel, hasId: true });
-              break;
-            }
-            const validClasses = getValidClasses(curr);
-            if (validClasses.length > 0) {
-              sel += '.' + validClasses.map(c => CSS.escape(c)).join('.');
-            }
-            parts.unshift({ el: curr, selector: sel, hasId: false });
-            curr = curr.parentNode;
-          }
-          return parts;
-        };
-
-        const parts = getPathParts(targetEl);
-        let bestSelector = '';
-
-        for (let i = parts.length - 1; i >= 0; i--) {
-          const part = parts[i].selector;
-          bestSelector = bestSelector ? part + ' > ' + bestSelector : part;
-          try {
-            const matches = document.querySelectorAll(bestSelector);
-            if (matches.length === 1 && matches[0] === targetEl) {
-              return bestSelector;
-            }
-          } catch (e) {}
-          if (parts[i].hasId) break;
-        }
-
-        let fallbackSelector = '';
-        let curr = targetEl;
-        while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
-          let sel = curr.tagName.toLowerCase();
-          if (curr.id) {
-            sel += '#' + CSS.escape(curr.id);
-            fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
-            break;
-          }
-          const validClasses = getValidClasses(curr);
-          if (validClasses.length > 0) {
-            sel += '.' + CSS.escape(validClasses[0]);
-          }
-          let index = 1;
-          let sibling = curr.previousElementSibling;
-          while (sibling) {
-            index++;
-            sibling = sibling.previousElementSibling;
-          }
-          if (index !== 1 || curr.nextElementSibling) {
-            sel += ':nth-child(' + index + ')';
-          }
-          fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
-
-          try {
-            const matches = document.querySelectorAll(fallbackSelector);
-            if (matches.length === 1 && matches[0] === targetEl) {
-              return fallbackSelector;
-            }
-          } catch (e) {}
-          curr = curr.parentNode;
-        }
-        return fallbackSelector || 'html';
-      };
-
-      const getAffectedChildren = (root) => {
-        let list = [];
-        const walk = (node) => {
-          if (!node) return;
-          if (node.children.length === 0) {
-            list.push(node);
-          } else {
-            for (const child of node.children) {
-              walk(child);
-            }
-          }
-        };
-        walk(root);
-        return list;
-      };
-
-      const updateHighlight = (el) => {
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        overlay.style.top = rect.top + 'px';
-        overlay.style.left = rect.left + 'px';
-        overlay.style.width = rect.width + 'px';
-        overlay.style.height = rect.height + 'px';
-        overlay.style.display = 'block';
-
-        let tagName = el.tagName.toLowerCase();
-        let className = el.className ? '.' + [...el.classList].join('.') : '';
-        if (className.length > 20) className = className.substring(0, 20) + '...';
-
-        let count = 0;
-        try {
-          let selector = getSelector(el);
-          count = document.querySelectorAll(selector).length;
-        } catch(e) {}
-
-        let levelText = pathIndex === 0 ? ' (滚轮切换，按住 Alt 冻结)' : ' (层级 +' + pathIndex + ')';
-        let prefix = isFrozen ? '(快照模式) ' : '';
-        tooltip.textContent = prefix + tagName + className + levelText + ' - 匹配元素: ' + count + ' 个';
-
-        overlay.style.borderColor = isFrozen ? '#ef4444' : '#3b82f6';
-        overlay.style.backgroundColor = isFrozen ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-        tooltip.style.backgroundColor = isFrozen ? '#ef4444' : '#1e293b';
-
-        // Child highlighting for multiple levels
-        childOverlays.forEach(o => o.style.display = 'none');
-        if (pathIndex > 0) {
-          const children = getAffectedChildren(el);
-          children.forEach((child, idx) => {
-            let childOverlay = childOverlays[idx];
-            if (!childOverlay) {
-              childOverlay = document.createElement('div');
-              childOverlay.style.position = 'fixed';
-              childOverlay.style.pointerEvents = 'none';
-              childOverlay.style.zIndex = '2147483646';
-              childOverlay.style.border = '1px dashed #3b82f6'; // dashed blue border
-              childOverlay.style.backgroundColor = 'transparent';
-              childOverlay.style.transition = 'all 0.1s ease';
-              document.body.appendChild(childOverlay);
-              childOverlays.push(childOverlay);
-            }
-            const crect = child.getBoundingClientRect();
-            childOverlay.style.top = crect.top + 'px';
-            childOverlay.style.left = crect.left + 'px';
-            childOverlay.style.width = crect.width + 'px';
-            childOverlay.style.height = crect.height + 'px';
-            childOverlay.style.display = 'block';
-          });
-        }
-
-        let topPos = rect.top - 28;
-        if (topPos < 5) topPos = rect.top + 5;
-        let leftPos = rect.left + 5;
-
-        tooltip.style.top = topPos + 'px';
-        tooltip.style.left = leftPos + 'px';
-        tooltip.style.display = 'block';
-      };
-
-      const onMouseOver = (e) => {
-        e.stopPropagation();
-        if (e.target === overlay || e.target === tooltip || e.target === freezeOverlay || childOverlays.includes(e.target)) return;
-        if (e.target === currentEl) return;
-        currentEl = e.target;
-        path = [];
-        let temp = currentEl;
-        while (temp && temp.tagName.toLowerCase() !== 'html') {
-          path.push(temp);
-          temp = temp.parentElement;
-        }
-        pathIndex = 0;
-        selectedEl = path[pathIndex];
-        updateHighlight(selectedEl);
-      };
-
-      const onWheel = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.deltaY < 0) {
-          if (pathIndex < path.length - 1) {
-            pathIndex++;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
-          }
-        } else if (e.deltaY > 0) {
-          if (pathIndex > 0) {
-            pathIndex--;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
-          }
-        }
-      };
-
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        cleanup();
-        resolve(null);
-      };
-
-      const cleanup = () => {
-        try { document.body.removeChild(overlay); } catch(e){}
-        try { document.body.removeChild(tooltip); } catch(e){}
-        try { document.body.removeChild(freezeOverlay); } catch(e){}
-        childOverlays.forEach(o => {
-          try { document.body.removeChild(o); } catch(e){}
-        });
-        document.removeEventListener('mouseover', onMouseOver, true);
-        document.removeEventListener('click', onClick, true);
-        document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
-        document.removeEventListener('contextmenu', onContextMenu, true);
-        document.removeEventListener('keydown', onKeyDown, true);
-        document.removeEventListener('keyup', onKeyUp, true);
-        window.__elementPickerActive = false;
-        window.__elementPickerCancel = null;
-      };
-
-      const onClick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.target === overlay || e.target === tooltip || e.target === freezeOverlay || childOverlays.includes(e.target)) return;
-        const selector = getSelector(selectedEl || e.target);
-        cleanup();
-        resolve(selector);
-      };
-
-      const onKeyDown = (e) => {
-        if (e.key === 'Alt' && !isFrozen) {
-          isFrozen = true;
-          freezeOverlay.style.pointerEvents = 'auto';
-          if (selectedEl) updateHighlight(selectedEl);
-        }
-      };
-
-      const onKeyUp = (e) => {
-        if (e.key === 'Alt') {
-          isFrozen = false;
-          freezeOverlay.style.pointerEvents = 'none';
-          if (selectedEl) updateHighlight(selectedEl);
-        }
-      };
-
-      const onFreezeMouseMove = (e) => {
-        freezeOverlay.style.pointerEvents = 'none';
-        const target = document.elementFromPoint(e.clientX, e.clientY);
-        freezeOverlay.style.pointerEvents = 'auto';
-        
-        if (target && target !== currentEl) {
-          currentEl = target;
-          path = [];
-          let temp = currentEl;
-          while (temp && temp.tagName.toLowerCase() !== 'html') {
-            path.push(temp);
-            temp = temp.parentElement;
-          }
-          pathIndex = 0;
-          selectedEl = path[pathIndex];
-          updateHighlight(selectedEl);
-        }
-      };
-
-      const onFreezeClick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        freezeOverlay.style.pointerEvents = 'none';
-        const target = document.elementFromPoint(e.clientX, e.clientY);
-        const selector = getSelector(selectedEl || target);
-        cleanup();
-        resolve(selector);
-      };
-
-      window.__elementPickerCancel = () => {
-        cleanup();
-        resolve(null);
-      };
-
-      freezeOverlay.addEventListener('mousemove', onFreezeMouseMove);
-      freezeOverlay.addEventListener('click', onFreezeClick);
-      document.addEventListener('mouseover', onMouseOver, true);
-      document.addEventListener('click', onClick, true);
-      document.addEventListener('wheel', onWheel, { capture: true, passive: false });
-      document.addEventListener('contextmenu', onContextMenu, true);
-      document.addEventListener('keydown', onKeyDown, true);
-      document.addEventListener('keyup', onKeyUp, true);
-    })
-  `;
-
-  try {
-    const selector = await webview.executeJavaScript(pickerScript);
-    isPicking.value = false;
-    if (selector) {
-      inspectorSelector.value = selector;
-      initialSelector.value = selector;
-      inspectorUrl.value = webview.getURL();
-      inspectorVisible.value = true;
-    }
-  } catch (e) {
-    isPicking.value = false;
-  }
-};
 
 /**
  * 选取图片：与选取元素操作流程相同，但点击后收集元素内所有图片资源，
@@ -939,17 +523,6 @@ const pickElementImage = async () => {
     } catch (e) { }
     isPickingElementImage.value = false;
     return;
-  }
-
-  if (isPicking.value) {
-    try {
-      await webview.executeJavaScript(`
-        if (window.__elementPickerCancel) {
-          window.__elementPickerCancel();
-        }
-      `);
-    } catch (e) { }
-    isPicking.value = false;
   }
 
   isPickingElementImage.value = true;
@@ -998,7 +571,7 @@ const pickElementImage = async () => {
           let clean = parsed.origin + parsed.pathname;
           const atIdx = clean.indexOf('@');
           if (atIdx !== -1) clean = clean.substring(0, atIdx);
-          return clean;
+          return clean + parsed.search;
         } catch {
           return raw;
         }
@@ -1213,187 +786,11 @@ const pickElementImage = async () => {
   }
 };
 
-const onTraverseSelector = async (direction: 'up' | 'down') => {
+
+const onApplyPreview = async (cssString: string) => {
   if (!workspace.value?.activeTabId) return;
   const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
   if (!webview) return;
-
-  // Prevent descending below the initial selector
-  if (direction === 'down' && inspectorSelector.value === initialSelector.value) {
-    return;
-  }
-
-  try {
-    const currentSelector = inspectorSelector.value;
-    const nextSelector = await webview.executeJavaScript(`
-      (function() {
-        const el = document.querySelector(${JSON.stringify(currentSelector)});
-        if (!el) return null;
-
-        const getSelector = (targetEl) => {
-          if (targetEl.tagName.toLowerCase() === 'html') return 'html';
-
-          const isAtomicOrHash = (cls) => {
-            if (/^(?:sm:|md:|lg:|xl:|2xl:|hover:|focus:)?(?:flex|grid|block|hidden|relative|absolute|sticky|fixed|w-\\d+|h-\\d+|p[xytrbl]?-\\d+|m[xytrbl]?-\\d+|text-[a-z]+|bg-[a-z]+-\\d+|border)/.test(cls)) return true;
-            if (/_\\w{4,}$/.test(cls) || /^css-\\w+$/.test(cls)) return true;
-            return false;
-          };
-
-          const getValidClasses = (el) => {
-            if (!el.className || typeof el.className !== 'string') return [];
-            return el.className.split(/\\s+/).filter(c => c && !isAtomicOrHash(c));
-          };
-
-          const getPathParts = (target) => {
-            let parts = [];
-            let curr = target;
-            while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
-              let sel = curr.tagName.toLowerCase();
-              if (curr.id) {
-                sel += '#' + CSS.escape(curr.id);
-                parts.unshift({ el: curr, selector: sel, hasId: true });
-                break;
-              }
-              const validClasses = getValidClasses(curr);
-              if (validClasses.length > 0) {
-                sel += '.' + validClasses.map(c => CSS.escape(c)).join('.');
-              }
-              parts.unshift({ el: curr, selector: sel, hasId: false });
-              curr = curr.parentNode;
-            }
-            return parts;
-          };
-
-          const parts = getPathParts(targetEl);
-          let bestSelector = '';
-
-          for (let i = parts.length - 1; i >= 0; i--) {
-            const part = parts[i].selector;
-            bestSelector = bestSelector ? part + ' > ' + bestSelector : part;
-            try {
-              const matches = document.querySelectorAll(bestSelector);
-              if (matches.length === 1 && matches[0] === targetEl) {
-                return bestSelector;
-              }
-            } catch (e) {}
-            if (parts[i].hasId) break;
-          }
-
-          let fallbackSelector = '';
-          let curr = targetEl;
-          while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
-            let sel = curr.tagName.toLowerCase();
-            if (curr.id) {
-              sel += '#' + CSS.escape(curr.id);
-              fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
-              break;
-            }
-            const validClasses = getValidClasses(curr);
-            if (validClasses.length > 0) {
-              sel += '.' + CSS.escape(validClasses[0]);
-            }
-            let index = 1;
-            let sibling = curr.previousElementSibling;
-            while (sibling) {
-              index++;
-              sibling = sibling.previousElementSibling;
-            }
-            if (index !== 1 || curr.nextElementSibling) {
-              sel += ':nth-child(' + index + ')';
-            }
-            fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
-
-            try {
-              const matches = document.querySelectorAll(fallbackSelector);
-              if (matches.length === 1 && matches[0] === targetEl) {
-                return fallbackSelector;
-              }
-            } catch (e) {}
-            curr = curr.parentNode;
-          }
-          return fallbackSelector || 'html';
-        };
-
-        if (${JSON.stringify(direction)} === 'up') {
-          const parent = el.parentElement;
-          if (parent && parent.tagName.toLowerCase() !== 'html') {
-            return getSelector(parent);
-          }
-        } else {
-          const initialSelector = ${JSON.stringify(initialSelector.value)};
-          const initialEl = document.querySelector(initialSelector);
-          if (el === initialEl) {
-            return null;
-          }
-          // Trace back down specifically along the path to the initial selector
-          if (initialEl && el.contains(initialEl)) {
-            let temp = initialEl;
-            while (temp && temp.parentElement !== el) {
-              temp = temp.parentElement;
-            }
-            if (temp) {
-              return getSelector(temp);
-            }
-          }
-          // Fallback first child
-          const child = el.firstElementChild;
-          if (child) {
-            return getSelector(child);
-          }
-        }
-        return null;
-      })();
-    `);
-
-    if (nextSelector) {
-      inspectorSelector.value = nextSelector;
-    }
-  } catch (e) {
-    console.error('Selector traversal failed', e);
-  }
-};
-
-const onApplyPreview = async (selector: string, css: string, isPreviewing: boolean = true) => {
-  if (!workspace.value?.activeTabId) return;
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-  if (!webview) return;
-
-  // Sync current selector value
-  if (selector) {
-    inspectorSelector.value = selector;
-  }
-
-  // Dynamic deepest selector tracking (minimum boundary backup)
-  if (selector && initialSelector.value && selector !== initialSelector.value) {
-    try {
-      const isDeeperOrUnrelated = await webview.executeJavaScript(`
-        (function() {
-          const el = document.querySelector(${JSON.stringify(selector)});
-          const initialEl = document.querySelector(${JSON.stringify(initialSelector.value)});
-          if (!el) return false;
-          if (!initialEl) return true;
-          
-          if (initialEl.contains(el)) {
-            // el is a descendant of initialEl (deeper or equal)
-            return true;
-          }
-          if (el.contains(initialEl)) {
-            // el is an ancestor of initialEl (shallower)
-            return false;
-          }
-          // Unrelated elements - reset initialSelector to new selector
-          return true;
-        })();
-      `);
-      if (isDeeperOrUnrelated) {
-        initialSelector.value = selector;
-      }
-    } catch (e) {
-      console.error('Failed to compare selectors', e);
-    }
-  } else if (selector && !initialSelector.value) {
-    initialSelector.value = selector;
-  }
 
   const code = `
     (function() {
@@ -1403,63 +800,22 @@ const onApplyPreview = async (selector: string, css: string, isPreviewing: boole
         style.id = '${APP_PREFIX}-live-style';
         document.head.appendChild(style);
       }
-      style.innerHTML = ${JSON.stringify(selector ? selector + ' { ' + css + ' }' : '')};
-
-      let highlight = document.getElementById('${APP_PREFIX}-live-highlight');
-      if (!highlight) {
-        highlight = document.createElement('style');
-        highlight.id = '${APP_PREFIX}-live-highlight';
-        document.head.appendChild(highlight);
-      }
-      highlight.innerHTML = ${JSON.stringify((selector && isPreviewing) ? selector + ' { outline: 2px dashed #ef4444 !important; outline-offset: -2px !important; }' : '')};
+      style.innerHTML = ${JSON.stringify(cssString || '')};
     })();
   `;
   webview.executeJavaScript(code);
 };
 
-const mergeCss = (oldCss: string, newCss: string): string => {
-  const parseRules = (cssStr: string) => {
-    const map = new Map<string, string>();
-    const statements = cssStr.split(';').map(s => s.trim()).filter(Boolean);
-    for (const statement of statements) {
-      const colonIdx = statement.indexOf(':');
-      if (colonIdx > 0) {
-        const prop = statement.slice(0, colonIdx).trim();
-        const val = statement.slice(colonIdx + 1).trim();
-        map.set(prop, val);
-      }
-    }
-    return map;
-  };
-
-  const oldMap = parseRules(oldCss);
-  const newMap = parseRules(newCss);
-
-  for (const [prop, val] of newMap.entries()) {
-    oldMap.set(prop, val);
-  }
-
-  let merged = '';
-  for (const [prop, val] of oldMap.entries()) {
-    merged += `${prop}: ${val}; `;
-  }
-  return merged.trim();
-};
-
-const onSaveRules = async (domain: string, selector: string, css: string) => {
-  if (!selector || !css) return;
+const onSaveRules = async (domain: string, cssString: string) => {
+  if (!domain) return;
 
   const newStyles = { ...settingsState.customStyles };
   if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {};
-  if (!newStyles[props.resourceId][domain]) newStyles[props.resourceId][domain] = [];
-
-  // Replace and merge if selector exists, otherwise push
-  const rules = newStyles[props.resourceId][domain];
-  const existingIdx = rules.findIndex(r => r.selector === selector);
-  if (existingIdx >= 0) {
-    rules[existingIdx].css = mergeCss(rules[existingIdx].css, css);
+  
+  if (cssString.trim()) {
+    newStyles[props.resourceId][domain] = cssString;
   } else {
-    rules.push({ selector, css });
+    delete newStyles[props.resourceId][domain];
   }
 
   await saveCustomStyles(newStyles);
@@ -1468,40 +824,7 @@ const onSaveRules = async (domain: string, selector: string, css: string) => {
   }
 };
 
-const currentDomainRules = computed(() => {
-  if (!inspectorUrl.value) return [];
-  try {
-    const urlStr = inspectorUrl.value;
-    const stylesObj = settingsState.customStyles[props.resourceId];
-    let matchedRules: any[] = [];
-    if (stylesObj) {
-      for (const [pattern, rules] of Object.entries(stylesObj)) {
-        let isMatch = false;
-        if (!pattern.includes('*') && !pattern.includes('/')) {
-          isMatch = new URL(urlStr).hostname.endsWith(pattern);
-        } else {
-          isMatch = matchPattern(pattern, urlStr);
-        }
-        if (isMatch) {
-          matchedRules = matchedRules.concat(rules);
-        }
-      }
-    }
-    return matchedRules;
-  } catch (e) { }
-  return [];
-});
-
-const onDeleteRule = async (domain: string, selector: string) => {
-  const newStyles = { ...settingsState.customStyles };
-  if (newStyles[props.resourceId] && newStyles[props.resourceId][domain]) {
-    newStyles[props.resourceId][domain] = newStyles[props.resourceId][domain].filter(r => r.selector !== selector);
-    await saveCustomStyles(newStyles);
-    if (workspace.value?.activeTabId) {
-      refreshWebviewStyles(workspace.value.activeTabId);
-    }
-  }
-};
+// Removed currentDomainRules and onDeleteRule
 </script>
 
 <style scoped lang="less">

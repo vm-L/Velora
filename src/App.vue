@@ -3,11 +3,23 @@
   <div class="content">
     <Sidebar />
     <div class="main-panel">
-      <router-view v-slot="{ Component }">
+      <router-view v-slot="{ Component, route }">
         <transition name="fade" mode="out-in">
-          <component :is="Component" />
+          <keep-alive>
+            <component :is="Component" :key="route.fullPath" />
+          </keep-alive>
         </transition>
       </router-view>
+
+      <!-- Global Workspaces for true keep-alive (prevents webview reload) -->
+      <BrowserWorkspace 
+        v-for="res in openedResources" 
+        :key="res.id"
+        :resourceId="res.id"
+        :resourceUrl="res.url"
+        v-show="$route.params.type === 'ext' && $route.params.id === res.id"
+        class="global-workspace"
+      />
     </div>
   </div>
   <ConfirmDialog />
@@ -22,11 +34,14 @@ import Sidebar from './components/Sidebar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import MessageBar from './components/MessageBar.vue'
 import NotificationBar from './components/NotificationBar.vue'
+import BrowserWorkspace from './components/BrowserWorkspace.vue'
 import { useSettings } from './composables/useSettings'
 import { useDownloads } from './composables/useDownloads'
+import { useOpenedResources } from './composables/useOpenedResources'
 
 const { loadSettings } = useSettings()
 const { loadTasks, initListeners, isInitialized } = useDownloads()
+const { openedResources } = useOpenedResources()
 
 onMounted(async () => {
   loadSettings()
@@ -101,6 +116,17 @@ input, textarea {
   container-type: size;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.global-workspace {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  background: #f5f7fa;
 }
 
 .fade-enter-active,

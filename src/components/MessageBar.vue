@@ -29,7 +29,12 @@
             <line x1="12" y1="8" x2="12.01" y2="8"></line>
           </svg>
         </div>
-        <span class="message-text">{{ msg.text }}</span>
+        <div style="display: flex; align-items: center; flex: 1;">
+          <span class="message-text">{{ msg.text }}</span>
+          <button v-if="msg.action" class="message-action-btn" @click.stop="msg.action.callback(); removeMessage(msg.id)">
+            {{ msg.action.text }}
+          </button>
+        </div>
         <button class="message-close" @click="removeMessage(msg.id)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -138,7 +143,26 @@ const getStyle = (index: number) => {
 
 .message-text {
   color: #334155;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
   flex: 1;
+}
+
+.message-action-btn {
+  margin-left: 12px;
+  background: rgba(0,0,0,0.05);
+  border: 1px solid rgba(0,0,0,0.1);
+  color: #334155;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.message-action-btn:hover {
+  background: rgba(0,0,0,0.1);
 }
 
 .message-icon {

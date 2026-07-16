@@ -17,7 +17,7 @@ export const state = reactive({
   maxConcurrentDownloads: 3,
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
-  customStyles: {} as Record<string, Record<string, { selector: string, css: string }[]>>,
+  customStyles: {} as Record<string, Record<string, string>>,
   loaded: false
 })
 
@@ -75,7 +75,7 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('externalSites', JSON.parse(JSON.stringify(sites)))
   }
 
-  const saveCustomStyles = async (styles: Record<string, Record<string, { selector: string, css: string }[]>>) => {
+  const saveCustomStyles = async (styles: Record<string, Record<string, string>>) => {
     state.customStyles = styles
     await window.electronAPI.setSetting('customStyles', JSON.parse(JSON.stringify(styles)))
   }
