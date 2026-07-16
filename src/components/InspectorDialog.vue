@@ -35,9 +35,9 @@
     <div class="inspector-content" :class="{ 'is-collapsed': isCollapsed }">
       <div class="inspector-content-inner">
         <div class="inspector-body">
-          <div class="info-row domain-info">
-            <span class="label">当前匹配域名</span>
-            <span class="value">{{ domain }}</span>
+          <div class="info-row domain-info" style="align-items: center;">
+            <span class="label">匹配规则</span>
+            <input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; margin-left: 12px; font-size: 11px; padding: 4px 6px;" />
           </div>
 
           <div class="form-group">
@@ -176,9 +176,10 @@ watch(() => props.modelValue, (newVal) => {
     localSelector.value = props.selector;
     try {
       const urlObj = new URL(props.url);
-      domain.value = urlObj.hostname;
+      const host = urlObj.hostname.replace(/^www\./, '');
+      domain.value = `*://*.${host}/*`;
     } catch (e) {
-      domain.value = '未知域名';
+      domain.value = '*://*/*';
     }
     localCss.value = '';
     isCollapsed.value = false;

@@ -20,6 +20,16 @@ let mainWindow: BrowserWindow | null = null
 
 const iconBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAySURBVDhPY/iPBoB0AOP///8xpE2D0RgagEEoMIIGRA8MA2EwhgbgNQChwAhgBwMDAB1eF1y5w6OaAAAAAElFTkSuQmCC'
 
+const clearPrivacyData = async () => {
+  try {
+    await session.defaultSession.clearCache()
+    await session.defaultSession.clearStorageData()
+    console.log('[Privacy] Browser cache and storage data cleared successfully.')
+  } catch (e) {
+    console.error('[Privacy] Failed to clear privacy data:', e)
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -74,6 +84,21 @@ function createWindow() {
 
   ipcMain.on('show-item-in-folder', (_, filePath: string) => {
     shell.showItemInFolder(filePath)
+  })
+
+  ipcMain.handle('fetch-image-base64', async (_, url: string) => {
+    try {
+      const response = await net.fetch(url, { headers: { 'Referer': '' } })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const buffer = await response.arrayBuffer()
+      let contentType = response.headers.get('content-type') || 'image/x-icon'
+      if (contentType.includes(';')) contentType = contentType.split(';')[0]
+      const base64 = Buffer.from(buffer).toString('base64')
+      return `data:${contentType};base64,${base64}`
+    } catch (e: any) {
+      console.error('Failed to fetch image base64:', e)
+      return null
+    }
   })
 
   ipcMain.handle('copy-image', async (_, url: string) => {
@@ -207,7 +232,8 @@ function createWindow() {
   )
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await clearPrivacyData()
   setupStoreHandlers()
   createWindow()
 
@@ -227,6 +253,17 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+let isQuitting = false
+app.on('before-quit', (e) => {
+  if (!isQuitting) {
+    e.preventDefault()
+    isQuitting = true
+    clearPrivacyData().finally(() => {
+      app.exit(0)
+    })
   }
 })
 

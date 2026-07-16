@@ -20,6 +20,7 @@ interface Window {
     onWebviewNewWindow: (callback: (url: string) => void) => void
     onMediaSniffed: (callback: (data: any) => void) => void
     copyImage: (url: string) => Promise<boolean>
+    fetchImageBase64: (url: string) => Promise<string | null>
     openExternal: (url: string) => void
     showItemInFolder: (filePath: string) => void
     selectDirectory: () => Promise<string | undefined>

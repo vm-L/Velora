@@ -117,6 +117,7 @@
     <div class="webview-container" :class="{ 'pointer-disabled': isInteracting }">
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
         :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
+        @load-commit="onLoadCommit($event, tab.id)"
         @page-title-updated="onTitleUpdated($event, tab.id)" @page-favicon-updated="onFaviconUpdated($event, tab.id)"
         @did-start-loading="onStartLoading(tab.id)" @did-stop-loading="onStopLoading(tab.id)"
         @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups></webview>
@@ -174,7 +175,7 @@ const props = defineProps<{
 }>();
 
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveExternalSites } = useSettings();
+const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -328,9 +329,6 @@ const onAddDefaultTab = () => {
 const onDomReady = async (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
 
-  // Inject saved styles
-  refreshWebviewStyles(tabId);
-
   const webview = document.getElementById(`webview-${tabId}`) as any;
   if (webview) {
     // Listen to console-message to hide custom context menu on webview left click
@@ -355,36 +353,55 @@ const onDomReady = async (tabId: string) => {
   }
 };
 
+const matchPattern = (pattern: string, url: string) => {
+  let regexPattern = pattern
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\\*/g, '.*');
+  
+  regexPattern = regexPattern.replace(/:\/\/\.\*\\\./g, '://(?:.*\\.)?');
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(url);
+};
+
+const onLoadCommit = async (event: any, tabId: string) => {
+  if (event.isMainFrame) {
+    refreshWebviewStyles(tabId);
+  }
+};
+
 const refreshWebviewStyles = async (tabId: string) => {
   const webview = document.getElementById(`webview-${tabId}`) as any;
   if (!webview) return;
 
   try {
     const urlStr = webview.getURL();
-    const domain = new URL(urlStr).hostname;
     const stylesObj = settingsState.customStyles[props.resourceId];
     let cssText = '';
 
-    if (stylesObj && stylesObj[domain]) {
-      for (const rule of stylesObj[domain]) {
-        cssText += `${rule.selector} { ${rule.css} }\n`;
+    if (stylesObj) {
+      for (const [pattern, rules] of Object.entries(stylesObj)) {
+        let isMatch = false;
+        if (!pattern.includes('*') && !pattern.includes('/')) {
+          try {
+            isMatch = new URL(urlStr).hostname.endsWith(pattern);
+          } catch(e) {}
+        } else {
+          isMatch = matchPattern(pattern, urlStr);
+        }
+
+        if (isMatch) {
+          for (const rule of (rules as any[])) {
+            cssText += `${rule.selector} { ${rule.css} }\n`;
+          }
+        }
       }
     }
 
-    const code = `
-      (function() {
-        let style = document.getElementById('${APP_PREFIX}-permanent-style');
-        if (!style) {
-          style = document.createElement('style');
-          style.id = '${APP_PREFIX}-permanent-style';
-          document.head.appendChild(style);
-        }
-        style.innerHTML = ${JSON.stringify(cssText)};
-      })();
-    `;
-    webview.executeJavaScript(code);
+    if (cssText) {
+      await webview.insertCSS(cssText, { cssOrigin: 'user' });
+    }
   } catch (e) {
-    console.warn('Failed to parse URL or inject styles', e);
+    console.warn('Failed to inject CSS via insertCSS', e);
   }
 };
 
@@ -414,12 +431,32 @@ const onFaviconUpdated = async (event: any, tabId: string) => {
     const faviconUrl = event.favicons[0];
     updateTab(props.resourceId, tabId, { favicon: faviconUrl });
 
-    // Check if external resource needs updating
-    const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
+    // Ensure electronAPI is available
+    if (!window.electronAPI || !window.electronAPI.fetchImageBase64) return;
 
-    if (isExt && isExt.icon !== faviconUrl) {
-      isExt.icon = faviconUrl;
-      await saveExternalSites([...settingsState.externalSites]);
+    let updated = false;
+    const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
+    
+    if (isExt && (isExt.iconOriginalUrl !== faviconUrl || !isExt.icon || isExt.icon.length < 50)) {
+      const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
+      if (base64) {
+        isExt.icon = base64;
+        isExt.iconOriginalUrl = faviconUrl;
+        await saveExternalSites([...settingsState.externalSites]);
+        updated = true;
+      }
+    }
+
+    if (!updated) {
+      const isCms = settingsState.cmsResources.find(r => r.id === props.resourceId);
+      if (isCms && (isCms.iconOriginalUrl !== faviconUrl || !isCms.icon || isCms.icon.length < 50)) {
+        const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
+        if (base64) {
+          isCms.icon = base64;
+          isCms.iconOriginalUrl = faviconUrl;
+          await saveCmsResources([...settingsState.cmsResources]);
+        }
+      }
     }
   }
 };
@@ -1252,11 +1289,23 @@ const onSaveRules = async (domain: string, selector: string, css: string) => {
 const currentDomainRules = computed(() => {
   if (!inspectorUrl.value) return [];
   try {
-    const domain = new URL(inspectorUrl.value).hostname;
+    const urlStr = inspectorUrl.value;
     const stylesObj = settingsState.customStyles[props.resourceId];
-    if (stylesObj && stylesObj[domain]) {
-      return stylesObj[domain];
+    let matchedRules: any[] = [];
+    if (stylesObj) {
+      for (const [pattern, rules] of Object.entries(stylesObj)) {
+        let isMatch = false;
+        if (!pattern.includes('*') && !pattern.includes('/')) {
+          isMatch = new URL(urlStr).hostname.endsWith(pattern);
+        } else {
+          isMatch = matchPattern(pattern, urlStr);
+        }
+        if (isMatch) {
+          matchedRules = matchedRules.concat(rules);
+        }
+      }
     }
+    return matchedRules;
   } catch (e) { }
   return [];
 });

@@ -5,6 +5,7 @@ export interface ResourceItem {
   name: string
   url: string
   icon?: string
+  iconOriginalUrl?: string
 }
 
 export const state = reactive({
@@ -66,12 +67,12 @@ export const useSettings = () => {
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
     state.cmsResources = resources
-    await window.electronAPI.setSetting('cmsResources', resources)
+    await window.electronAPI.setSetting('cmsResources', JSON.parse(JSON.stringify(resources)))
   }
 
   const saveExternalSites = async (sites: ResourceItem[]) => {
     state.externalSites = sites
-    await window.electronAPI.setSetting('externalSites', sites)
+    await window.electronAPI.setSetting('externalSites', JSON.parse(JSON.stringify(sites)))
   }
 
   const saveCustomStyles = async (styles: Record<string, Record<string, { selector: string, css: string }[]>>) => {
