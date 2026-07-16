@@ -48,7 +48,18 @@
             <input type="text" v-model="localSelector" class="mono-input" @input="updatePreviewImmediate"
               @wheel="handleSelectorWheel"
               placeholder=".class-name, #id" />
-            <div class="help-text" style="margin-top: 4px;">输入框滚动滚轮切换选择器范围</div>
+            <div class="pseudo-toggles" style="display: flex; gap: 6px; margin-top: 8px;">
+              <button 
+                v-for="pseudo in [':hover', ':active', ':focus', '::before', '::after']" 
+                :key="pseudo"
+                class="pseudo-btn"
+                :class="{ active: localSelector.includes(pseudo) }"
+                @click="togglePseudo(pseudo)"
+              >
+                {{ pseudo }}
+              </button>
+            </div>
+            <div class="help-text" style="margin-top: 6px;">输入框滚动滚轮切换层级，点击上方标签快捷附加伪类。</div>
           </div>
 
           <div class="form-group" style="margin-top: 12px;">
@@ -215,6 +226,15 @@ const handleSelectorWheel = (e: WheelEvent) => {
   emit('traverseSelector', direction);
 };
 
+const togglePseudo = (pseudo: string) => {
+  if (localSelector.value.includes(pseudo)) {
+    localSelector.value = localSelector.value.replace(pseudo, '');
+  } else {
+    localSelector.value = localSelector.value + pseudo;
+  }
+  updatePreviewImmediate();
+};
+
 const handleRepick = () => {
   emit('applyPreview', '', '', false);
   emit('update:modelValue', false);
@@ -296,16 +316,24 @@ const getActiveQuery = () => {
   
   const beforeCaret = text.slice(0, selStart)
   const lastSemicolon = beforeCaret.lastIndexOf(';')
-  const currentRule = beforeCaret.slice(lastSemicolon + 1)
+  const currentRuleRaw = beforeCaret.slice(lastSemicolon + 1)
+  
+  const leadingWhitespaceMatch = currentRuleRaw.match(/^\s*/);
+  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : '';
+  const currentRule = currentRuleRaw.substring(leadingWhitespace.length);
   
   const colonIdx = currentRule.indexOf(':')
   if (colonIdx === -1) {
-    const query = currentRule.trim()
-    return { type: 'property', query }
+    return { type: 'property', query: currentRule, leadingWhitespace }
   } else {
     const prop = currentRule.slice(0, colonIdx).trim()
-    const query = currentRule.slice(colonIdx + 1).trim()
-    return { type: 'value', prop, query }
+    const valueRaw = currentRule.slice(colonIdx + 1)
+    
+    const valLeadingMatch = valueRaw.match(/^\s*/);
+    const valLeading = valLeadingMatch ? valLeadingMatch[0] : '';
+    const query = valueRaw.substring(valLeading.length);
+    
+    return { type: 'value', prop, query, leadingWhitespace, valLeading }
   }
 }
 
@@ -370,16 +398,21 @@ const selectSuggestion = (suggestion: string) => {
   const afterCaret = text.slice(selStart)
   
   const lastSemicolon = beforeCaret.lastIndexOf(';')
-  const newBeforeCaretBase = beforeCaret.slice(0, lastSemicolon + 1)
+  const base = beforeCaret.slice(0, lastSemicolon + 1)
   
   let newRule = ''
+  let triggersNext = false
   if (activeQuery.value.type === 'property') {
-    newRule = `${suggestion}: `
+    newRule = `${activeQuery.value.leadingWhitespace}${suggestion}: `
+    triggersNext = true
   } else {
-    newRule = ` ${activeQuery.value.prop}: ${suggestion};`
+    const space = activeQuery.value.valLeading || ' '
+    const lastIndentMatch = activeQuery.value.leadingWhitespace.match(/[ \t]+$/)
+    const indent = lastIndentMatch ? lastIndentMatch[0] : ''
+    newRule = `${activeQuery.value.leadingWhitespace}${activeQuery.value.prop}:${space}${suggestion};\n${indent}`
   }
   
-  const newBeforeCaret = newBeforeCaretBase + newRule
+  const newBeforeCaret = base + newRule
   localCss.value = newBeforeCaret + afterCaret
   
   updatePreview()
@@ -388,7 +421,12 @@ const selectSuggestion = (suggestion: string) => {
     textarea.focus()
     const newPos = newBeforeCaret.length
     textarea.setSelectionRange(newPos, newPos)
-    showSuggestions.value = false
+    
+    if (triggersNext) {
+      onTextareaInput()
+    } else {
+      showSuggestions.value = false
+    }
   }, 10)
 }
 
@@ -748,6 +786,29 @@ onUnmounted(() => {
 
 .btn-primary:hover {
   background: #2563eb;
+}
+
+.pseudo-btn {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  transition: all 0.15s;
+}
+
+.pseudo-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.pseudo-btn.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
 }
 
 /* Autocomplete Dropdown */

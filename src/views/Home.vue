@@ -29,8 +29,8 @@
       <div class="operation-panel">
         <div class="batch-actions-bar" v-if="sortedTasks.length > 0">
           <label class="select-all-checkbox">
-            <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" />
-            <span>全选</span>
+            <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" style="margin: 0;" />
+            <span style="line-height: 1;">{{ isAllSelected ? '反选' : '全选' }}</span>
           </label>
           <div class="batch-buttons">
             <span class="selected-count" v-show="selectedTasks.length > 0">已选择 {{ selectedTasks.length }} 项</span>
@@ -644,6 +644,7 @@ const confirmDelete = async (task: any) => {
     
     input {
       cursor: pointer;
+      margin: 0;
     }
   }
 }

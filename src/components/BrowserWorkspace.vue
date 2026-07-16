@@ -599,36 +599,106 @@ const pickElement = async () => {
       tooltip.style.transition = 'all 0.1s ease';
       document.body.appendChild(tooltip);
 
+      const freezeOverlay = document.createElement('div');
+      freezeOverlay.style.position = 'fixed';
+      freezeOverlay.style.top = '0';
+      freezeOverlay.style.left = '0';
+      freezeOverlay.style.width = '100vw';
+      freezeOverlay.style.height = '100vh';
+      freezeOverlay.style.zIndex = '2147483646';
+      freezeOverlay.style.pointerEvents = 'none';
+      document.body.appendChild(freezeOverlay);
+
+      let isFrozen = false;
+
       let currentEl = null;
       let selectedEl = null;
       let path = [];
       let pathIndex = 0;
       let childOverlays = [];
 
-      const getSelector = (el) => {
-        if (el.tagName.toLowerCase() === 'html') return 'html';
-        let path = [];
-        while (el && el.nodeType === Node.ELEMENT_NODE) {
-          let selector = el.tagName.toLowerCase();
-          if (el.id) {
-            selector += '#' + CSS.escape(el.id);
-            path.unshift(selector);
-            break;
-          } else {
-            let index = 1;
-            let sibling = el.previousElementSibling;
-            while (sibling) {
-              index++;
-              sibling = sibling.previousElementSibling;
+      const getSelector = (targetEl) => {
+        if (targetEl.tagName.toLowerCase() === 'html') return 'html';
+
+        const isAtomicOrHash = (cls) => {
+          if (/^(?:sm:|md:|lg:|xl:|2xl:|hover:|focus:)?(?:flex|grid|block|hidden|relative|absolute|sticky|fixed|w-\\d+|h-\\d+|p[xytrbl]?-\\d+|m[xytrbl]?-\\d+|text-[a-z]+|bg-[a-z]+-\\d+|border)/.test(cls)) return true;
+          if (/_\\w{4,}$/.test(cls) || /^css-\\w+$/.test(cls)) return true;
+          return false;
+        };
+
+        const getValidClasses = (el) => {
+          if (!el.className || typeof el.className !== 'string') return [];
+          return el.className.split(/\\s+/).filter(c => c && !isAtomicOrHash(c));
+        };
+
+        const getPathParts = (target) => {
+          let parts = [];
+          let curr = target;
+          while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
+            let sel = curr.tagName.toLowerCase();
+            if (curr.id) {
+              sel += '#' + CSS.escape(curr.id);
+              parts.unshift({ el: curr, selector: sel, hasId: true });
+              break;
             }
-            if (index !== 1 || el.nextElementSibling) {
-              selector += ':nth-child(' + index + ')';
+            const validClasses = getValidClasses(curr);
+            if (validClasses.length > 0) {
+              sel += '.' + validClasses.map(c => CSS.escape(c)).join('.');
             }
+            parts.unshift({ el: curr, selector: sel, hasId: false });
+            curr = curr.parentNode;
           }
-          path.unshift(selector);
-          el = el.parentNode;
+          return parts;
+        };
+
+        const parts = getPathParts(targetEl);
+        let bestSelector = '';
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const part = parts[i].selector;
+          bestSelector = bestSelector ? part + ' > ' + bestSelector : part;
+          try {
+            const matches = document.querySelectorAll(bestSelector);
+            if (matches.length === 1 && matches[0] === targetEl) {
+              return bestSelector;
+            }
+          } catch (e) {}
+          if (parts[i].hasId) break;
         }
-        return path.join(' > ');
+
+        let fallbackSelector = '';
+        let curr = targetEl;
+        while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
+          let sel = curr.tagName.toLowerCase();
+          if (curr.id) {
+            sel += '#' + CSS.escape(curr.id);
+            fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
+            break;
+          }
+          const validClasses = getValidClasses(curr);
+          if (validClasses.length > 0) {
+            sel += '.' + CSS.escape(validClasses[0]);
+          }
+          let index = 1;
+          let sibling = curr.previousElementSibling;
+          while (sibling) {
+            index++;
+            sibling = sibling.previousElementSibling;
+          }
+          if (index !== 1 || curr.nextElementSibling) {
+            sel += ':nth-child(' + index + ')';
+          }
+          fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
+
+          try {
+            const matches = document.querySelectorAll(fallbackSelector);
+            if (matches.length === 1 && matches[0] === targetEl) {
+              return fallbackSelector;
+            }
+          } catch (e) {}
+          curr = curr.parentNode;
+        }
+        return fallbackSelector || 'html';
       };
 
       const getAffectedChildren = (root) => {
@@ -666,13 +736,13 @@ const pickElement = async () => {
           count = document.querySelectorAll(selector).length;
         } catch(e) {}
 
-        let levelText = pathIndex === 0 ? ' (滚轮切换选择器范围)' : ' (层级 +' + pathIndex + ')';
-        tooltip.textContent = tagName + className + levelText + ' - 匹配元素: ' + count + ' 个';
+        let levelText = pathIndex === 0 ? ' (滚轮切换，按住 Alt 冻结)' : ' (层级 +' + pathIndex + ')';
+        let prefix = isFrozen ? '(快照模式) ' : '';
+        tooltip.textContent = prefix + tagName + className + levelText + ' - 匹配元素: ' + count + ' 个';
 
-        let h = 220; // brand blue
-        overlay.style.borderColor = '#3b82f6';
-        overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        tooltip.style.backgroundColor = '#1e293b';
+        overlay.style.borderColor = isFrozen ? '#ef4444' : '#3b82f6';
+        overlay.style.backgroundColor = isFrozen ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)';
+        tooltip.style.backgroundColor = isFrozen ? '#ef4444' : '#1e293b';
 
         // Child highlighting for multiple levels
         childOverlays.forEach(o => o.style.display = 'none');
@@ -711,6 +781,7 @@ const pickElement = async () => {
 
       const onMouseOver = (e) => {
         e.stopPropagation();
+        if (e.target === overlay || e.target === tooltip || e.target === freezeOverlay || childOverlays.includes(e.target)) return;
         if (e.target === currentEl) return;
         currentEl = e.target;
         path = [];
@@ -752,6 +823,7 @@ const pickElement = async () => {
       const cleanup = () => {
         try { document.body.removeChild(overlay); } catch(e){}
         try { document.body.removeChild(tooltip); } catch(e){}
+        try { document.body.removeChild(freezeOverlay); } catch(e){}
         childOverlays.forEach(o => {
           try { document.body.removeChild(o); } catch(e){}
         });
@@ -759,6 +831,8 @@ const pickElement = async () => {
         document.removeEventListener('click', onClick, true);
         document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
         document.removeEventListener('contextmenu', onContextMenu, true);
+        document.removeEventListener('keydown', onKeyDown, true);
+        document.removeEventListener('keyup', onKeyUp, true);
         window.__elementPickerActive = false;
         window.__elementPickerCancel = null;
       };
@@ -766,7 +840,53 @@ const pickElement = async () => {
       const onClick = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (e.target === overlay || e.target === tooltip || e.target === freezeOverlay || childOverlays.includes(e.target)) return;
         const selector = getSelector(selectedEl || e.target);
+        cleanup();
+        resolve(selector);
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Alt' && !isFrozen) {
+          isFrozen = true;
+          freezeOverlay.style.pointerEvents = 'auto';
+          if (selectedEl) updateHighlight(selectedEl);
+        }
+      };
+
+      const onKeyUp = (e) => {
+        if (e.key === 'Alt') {
+          isFrozen = false;
+          freezeOverlay.style.pointerEvents = 'none';
+          if (selectedEl) updateHighlight(selectedEl);
+        }
+      };
+
+      const onFreezeMouseMove = (e) => {
+        freezeOverlay.style.pointerEvents = 'none';
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        freezeOverlay.style.pointerEvents = 'auto';
+        
+        if (target && target !== currentEl) {
+          currentEl = target;
+          path = [];
+          let temp = currentEl;
+          while (temp && temp.tagName.toLowerCase() !== 'html') {
+            path.push(temp);
+            temp = temp.parentElement;
+          }
+          pathIndex = 0;
+          selectedEl = path[pathIndex];
+          updateHighlight(selectedEl);
+        }
+      };
+
+      const onFreezeClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        freezeOverlay.style.pointerEvents = 'none';
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const selector = getSelector(selectedEl || target);
         cleanup();
         resolve(selector);
       };
@@ -776,10 +896,14 @@ const pickElement = async () => {
         resolve(null);
       };
 
+      freezeOverlay.addEventListener('mousemove', onFreezeMouseMove);
+      freezeOverlay.addEventListener('click', onFreezeClick);
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
       document.addEventListener('contextmenu', onContextMenu, true);
+      document.addEventListener('keydown', onKeyDown, true);
+      document.addEventListener('keyup', onKeyUp, true);
     })
   `;
 
@@ -1106,30 +1230,88 @@ const onTraverseSelector = async (direction: 'up' | 'down') => {
         const el = document.querySelector(${JSON.stringify(currentSelector)});
         if (!el) return null;
 
-        const getSelector = (el) => {
-          if (el.tagName.toLowerCase() === 'html') return 'html';
-          let path = [];
-          while (el && el.nodeType === Node.ELEMENT_NODE) {
-            let selector = el.tagName.toLowerCase();
-            if (el.id) {
-              selector += '#' + CSS.escape(el.id);
-              path.unshift(selector);
-              break;
-            } else {
-              let index = 1;
-              let sibling = el.previousElementSibling;
-              while (sibling) {
-                index++;
-                sibling = sibling.previousElementSibling;
+        const getSelector = (targetEl) => {
+          if (targetEl.tagName.toLowerCase() === 'html') return 'html';
+
+          const isAtomicOrHash = (cls) => {
+            if (/^(?:sm:|md:|lg:|xl:|2xl:|hover:|focus:)?(?:flex|grid|block|hidden|relative|absolute|sticky|fixed|w-\\d+|h-\\d+|p[xytrbl]?-\\d+|m[xytrbl]?-\\d+|text-[a-z]+|bg-[a-z]+-\\d+|border)/.test(cls)) return true;
+            if (/_\\w{4,}$/.test(cls) || /^css-\\w+$/.test(cls)) return true;
+            return false;
+          };
+
+          const getValidClasses = (el) => {
+            if (!el.className || typeof el.className !== 'string') return [];
+            return el.className.split(/\\s+/).filter(c => c && !isAtomicOrHash(c));
+          };
+
+          const getPathParts = (target) => {
+            let parts = [];
+            let curr = target;
+            while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
+              let sel = curr.tagName.toLowerCase();
+              if (curr.id) {
+                sel += '#' + CSS.escape(curr.id);
+                parts.unshift({ el: curr, selector: sel, hasId: true });
+                break;
               }
-              if (index !== 1 || el.nextElementSibling) {
-                selector += ':nth-child(' + index + ')';
+              const validClasses = getValidClasses(curr);
+              if (validClasses.length > 0) {
+                sel += '.' + validClasses.map(c => CSS.escape(c)).join('.');
               }
+              parts.unshift({ el: curr, selector: sel, hasId: false });
+              curr = curr.parentNode;
             }
-            path.unshift(selector);
-            el = el.parentNode;
+            return parts;
+          };
+
+          const parts = getPathParts(targetEl);
+          let bestSelector = '';
+
+          for (let i = parts.length - 1; i >= 0; i--) {
+            const part = parts[i].selector;
+            bestSelector = bestSelector ? part + ' > ' + bestSelector : part;
+            try {
+              const matches = document.querySelectorAll(bestSelector);
+              if (matches.length === 1 && matches[0] === targetEl) {
+                return bestSelector;
+              }
+            } catch (e) {}
+            if (parts[i].hasId) break;
           }
-          return path.join(' > ');
+
+          let fallbackSelector = '';
+          let curr = targetEl;
+          while (curr && curr.nodeType === Node.ELEMENT_NODE && curr.tagName.toLowerCase() !== 'html') {
+            let sel = curr.tagName.toLowerCase();
+            if (curr.id) {
+              sel += '#' + CSS.escape(curr.id);
+              fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
+              break;
+            }
+            const validClasses = getValidClasses(curr);
+            if (validClasses.length > 0) {
+              sel += '.' + CSS.escape(validClasses[0]);
+            }
+            let index = 1;
+            let sibling = curr.previousElementSibling;
+            while (sibling) {
+              index++;
+              sibling = sibling.previousElementSibling;
+            }
+            if (index !== 1 || curr.nextElementSibling) {
+              sel += ':nth-child(' + index + ')';
+            }
+            fallbackSelector = fallbackSelector ? sel + ' > ' + fallbackSelector : sel;
+
+            try {
+              const matches = document.querySelectorAll(fallbackSelector);
+              if (matches.length === 1 && matches[0] === targetEl) {
+                return fallbackSelector;
+              }
+            } catch (e) {}
+            curr = curr.parentNode;
+          }
+          return fallbackSelector || 'html';
         };
 
         if (${JSON.stringify(direction)} === 'up') {

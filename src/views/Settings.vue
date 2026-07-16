@@ -205,15 +205,28 @@
             </svg>
           </button>
         </div>
+
         <div class="modal-body">
           <div v-if="!currentStyles || Object.keys(currentStyles).length === 0" class="empty-state">
             暂无已保存的样式规则。
           </div>
           <div v-else class="domain-list">
             <div v-for="(rules, domain) in currentStyles" :key="domain" class="domain-group">
-              <div class="domain-title">{{ domain }}</div>
+              <div class="domain-title" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;">
+                <label class="select-all-checkbox" style="display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none;">
+                  <input type="checkbox" :checked="isDomainAllSelected(domain as string, rules as any[])" @change="toggleDomainSelectAll(domain as string, rules as any[])" style="margin: 0;" />
+                  <span style="font-family: system-ui, -apple-system, sans-serif; font-weight: 500; font-size: 13px;">{{ isDomainAllSelected(domain as string, rules as any[]) ? '反选' : '全选' }}</span>
+                </label>
+                <span class="domain-name" style="text-align: center;">{{ domain }}</span>
+                <div style="display: flex; justify-content: flex-end;">
+                  <button v-if="getSelectedInDomain(domain as string).length > 0" class="action-btn delete-btn shrink-0" @click="batchDeleteDomainStyles(domain as string)">
+                    删除
+                  </button>
+                </div>
+              </div>
               <div v-if="rules.length === 0" class="empty-rule">无规则</div>
-              <div v-for="(rule, idx) in rules" :key="idx" class="rule-item">
+              <div v-for="(rule, idx) in rules" :key="idx" class="rule-item" :class="{ selected: isStyleSelected(domain as string, rule.selector) }">
+                <input type="checkbox" :checked="isStyleSelected(domain as string, rule.selector)" @change="toggleStyleSelection(domain as string, rule.selector)" style="margin: 0; margin-right: 12px; cursor: pointer;" />
                 <div class="rule-content">
                   <div class="rule-selector">{{ rule.selector }}</div>
                   <div class="rule-css">{{ rule.css }}</div>
@@ -403,15 +416,47 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
   }
 };
 
-// Style Management
 const managingStylesFor = ref<any>(null);
+const selectedStyles = ref<{ domain: string, selector: string }[]>([]);
+
+const toggleStyleSelection = (domain: string, selector: string) => {
+  const index = selectedStyles.value.findIndex(s => s.domain === domain && s.selector === selector);
+  if (index >= 0) {
+    selectedStyles.value.splice(index, 1);
+  } else {
+    selectedStyles.value.push({ domain, selector });
+  }
+};
+
+const isStyleSelected = (domain: string, selector: string) => {
+  return selectedStyles.value.some(s => s.domain === domain && s.selector === selector);
+};
+
+const isDomainAllSelected = (domain: string, rules: any[]) => {
+  if (!rules || rules.length === 0) return false;
+  return rules.every(rule => isStyleSelected(domain, rule.selector));
+};
+
+const toggleDomainSelectAll = (domain: string, rules: any[]) => {
+  if (isDomainAllSelected(domain, rules)) {
+    selectedStyles.value = selectedStyles.value.filter(s => s.domain !== domain);
+  } else {
+    const newSelected = selectedStyles.value.filter(s => s.domain !== domain);
+    for (const rule of rules) {
+      newSelected.push({ domain, selector: rule.selector });
+    }
+    selectedStyles.value = newSelected;
+  }
+};
 
 const openStyleManager = (item: any) => {
   managingStylesFor.value = item;
+  selectedStyles.value = [];
 };
 
 const closeStyleManager = () => {
   managingStylesFor.value = null;
+  selectedStyles.value = [];
 };
 
 const currentStyles = computed(() => {
@@ -437,6 +482,40 @@ const deleteRule = async (domain: string, selector: string) => {
       delete newStyles[resourceId][domain];
     }
     await saveCustomStyles(newStyles);
+    
+    // Remove from selectedStyles if deleted
+    const selIdx = selectedStyles.value.findIndex(s => s.domain === domain && s.selector === selector);
+    if (selIdx >= 0) selectedStyles.value.splice(selIdx, 1);
+  }
+};
+
+const getSelectedInDomain = (domain: string) => {
+  return selectedStyles.value.filter(s => s.domain === domain);
+};
+
+const batchDeleteDomainStyles = async (domain: string) => {
+  const selectedInDomain = getSelectedInDomain(domain);
+  if (selectedInDomain.length === 0 || !managingStylesFor.value) return;
+  const isOk = await confirm({
+    title: '批量删除',
+    message: `确认删除选中的 ${selectedInDomain.length} 个样式规则吗？`,
+    type: 'danger',
+    confirmText: '删除'
+  });
+  
+  if (isOk) {
+    const resourceId = managingStylesFor.value.id;
+    const newStyles = { ...state.customStyles };
+    if (newStyles[resourceId] && newStyles[resourceId][domain]) {
+      for (const { selector } of selectedInDomain) {
+        newStyles[resourceId][domain] = newStyles[resourceId][domain].filter((r: any) => r.selector !== selector);
+      }
+      if (newStyles[resourceId][domain].length === 0) {
+        delete newStyles[resourceId][domain];
+      }
+      await saveCustomStyles(newStyles);
+      selectedStyles.value = selectedStyles.value.filter(s => s.domain !== domain);
+    }
   }
 };
 </script>
@@ -616,7 +695,6 @@ const deleteRule = async (domain: string, selector: string) => {
   font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: all 0.2s;
 }
 
 .add-btn,
@@ -772,6 +850,7 @@ const deleteRule = async (domain: string, selector: string) => {
   background: #f1f5f9;
   color: #0f172a;
 }
+
 
 .modal-body {
   padding: 20px;
