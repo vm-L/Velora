@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, protocol } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -271,7 +271,19 @@ function createWindow() {
   )
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'velora', privileges: { bypassCSP: true, supportFetchAPI: true, stream: true } }
+])
+
 app.whenReady().then(async () => {
+  protocol.handle('velora', (request) => {
+    let filePath = request.url.slice('velora://'.length)
+    if (process.platform === 'win32' && filePath.startsWith('/')) {
+      filePath = filePath.slice(1) // Remove leading slash on Windows (e.g. /C:/foo -> C:/foo)
+    }
+    return net.fetch('file://' + filePath)
+  })
+
   await clearPrivacyData()
   setupStoreHandlers()
   createWindow()

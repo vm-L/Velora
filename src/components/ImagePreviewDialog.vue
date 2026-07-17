@@ -1038,6 +1038,9 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+  padding-right: 4px; /* Space for scrollbar */
 }
 
 .save-item {

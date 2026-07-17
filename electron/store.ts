@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 
 // A wrapper to handle the ESM nature of electron-store in a potentially CJS compiled environment
 class StoreManager {
@@ -15,7 +15,11 @@ class StoreManager {
       defaults: {
         closeBehavior: 'tray',
         cmsResources: [],
-        externalSites: []
+        externalSites: [],
+        imageDirectory: app.getPath('downloads'),
+        audioDirectory: app.getPath('downloads'),
+        videoDirectory: app.getPath('downloads'),
+        fileDirectory: app.getPath('downloads')
       }
     })
   }

@@ -141,6 +141,15 @@
       :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" @close="onClosePreview" @focus="onFocusPreview"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
+    <SaveMediaDialog
+      :visible="saveDialogVisible"
+      @update:visible="saveDialogVisible = $event"
+      :url="saveTargetUrl"
+      :default-name="saveDefaultName"
+      :default-dir="saveDefaultDir"
+      :type="'audio'"
+    />
+
     <!-- Custom Context Menu -->
     <div v-show="contextMenuVisible" class="context-menu"
       :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
@@ -169,6 +178,7 @@ import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
 import AudioPlayerDialog from './AudioPlayerDialog.vue';
+import SaveMediaDialog from './SaveMediaDialog.vue';
 import { useDownloads } from '../composables/useDownloads';
 
 const { addDownload } = useDownloads();
@@ -181,7 +191,7 @@ const props = defineProps<{
 }>();
 
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, setTheme, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
+const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -554,6 +564,11 @@ const onPreviewSniffedAudio = (url: string) => {
   activeAudioPreview.value = url;
 };
 
+const saveDialogVisible = ref(false);
+const saveTargetUrl = ref('');
+const saveDefaultName = ref('');
+const saveDefaultDir = ref('');
+
 const onDownloadAudio = (url: string) => {
   let name = '';
   try {
@@ -563,14 +578,16 @@ const onDownloadAudio = (url: string) => {
   } catch {
     name = 'audio.mp3';
   }
-  const savePath = settingsState.value.audioDirectory ? `${settingsState.value.audioDirectory}/${name}` : name;
-  addDownload(url, name, savePath);
-  showMessage('已添加到下载任务', 'success');
+  
+  saveTargetUrl.value = url;
+  saveDefaultName.value = name;
+  saveDefaultDir.value = settingsState.audioDirectory;
+  saveDialogVisible.value = true;
 };
 
 // Element Picker Logic
 const inspectorVisible = ref(false);
-const inspectorSelector = ref('');
+
 const isInteracting = ref(false);
 const isPickingElementImage = ref(false);
 

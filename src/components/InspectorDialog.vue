@@ -61,7 +61,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, watch, nextTick } from 'vue';
+import type { SyntaxNode } from '@lezer/common';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';
 import { EditorState, EditorSelection } from '@codemirror/state';
@@ -115,7 +116,7 @@ const autoImportantExtension = keymap.of([
       let handled = false;
       const changes = state.changeByRange(range => {
         if (!range.empty) return { range };
-        let node = syntaxTree(state).resolveInner(range.head, -1);
+        let node: SyntaxNode | null = syntaxTree(state).resolveInner(range.head, -1);
         let isProp = false;
         while (node) {
           if (node.name === 'Declaration' || node.name === 'PropertyValue') { isProp = true; break; }
@@ -149,7 +150,7 @@ const autoImportantExtension = keymap.of([
       let handled = false;
       const changes = state.changeByRange(range => {
         if (!range.empty) return { range };
-        let node = syntaxTree(state).resolveInner(range.head, -1);
+        let node: SyntaxNode | null = syntaxTree(state).resolveInner(range.head, -1);
         let isProp = false;
         while (node) {
           if (node.name === 'Declaration' || node.name === 'PropertyValue') { isProp = true; break; }

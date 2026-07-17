@@ -61,11 +61,20 @@
         </div>
       </div>
     </div>
+    <SaveMediaDialog
+      :visible="saveDialogVisible"
+      @update:visible="saveDialogVisible = $event"
+      :url="saveTargetUrl"
+      :default-name="saveDefaultName"
+      :default-dir="saveDefaultDir"
+      :type="type"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import SaveMediaDialog from './SaveMediaDialog.vue';
 import { useMessage } from '../composables/useMessage';
 
 const props = defineProps<{
@@ -178,6 +187,11 @@ import { useDownloads } from '../composables/useDownloads';
 const { addDownload } = useDownloads();
 const { state } = useSettings();
 
+const saveDialogVisible = ref(false);
+const saveTargetUrl = ref('');
+const saveDefaultName = ref('');
+const saveDefaultDir = ref('');
+
 const saveLocal = (url: string) => {
   const name = getBasename(url);
   let dir = state.fileDirectory;
@@ -185,12 +199,14 @@ const saveLocal = (url: string) => {
   else if (props.type === 'video') dir = state.videoDirectory;
   else if (props.type === 'audio') dir = state.audioDirectory;
 
-  const savePath = dir ? `${dir}/${name}` : name;
-  addDownload(url, name, savePath);
-  showMessage('已添加到下载任务', 'success');
+  saveTargetUrl.value = url;
+  saveDefaultName.value = name;
+  saveDefaultDir.value = dir;
+  saveDialogVisible.value = true;
+  
+  // Close the dropdown when opening dialog
+  close();
 }
-
-
 </script>
 
 <style scoped lang="less">

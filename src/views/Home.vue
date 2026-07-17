@@ -94,26 +94,24 @@
           <div class="task-icon" :class="`status-${task.status}`">
             <img v-if="isImageTask(task)" :src="task.url" class="task-thumbnail" referrerpolicy="no-referrer" />
             <template v-else>
-              <svg v-if="task.status === 'completed'" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              <svg v-if="isAudioTask(task)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
               </svg>
-              <svg v-else-if="task.status === 'error'" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="15" y1="9" x2="9" y2="15"></line>
-                <line x1="9" y1="9" x2="15" y2="15"></line>
-              </svg>
-              <svg v-else-if="task.status === 'paused'" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2">
-                <rect x="6" y="4" width="4" height="16"></rect>
-                <rect x="14" y="4" width="4" height="16"></rect>
+              <svg v-else-if="isVideoTask(task)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                <line x1="7" y1="2" x2="7" y2="22"></line>
+                <line x1="17" y1="2" x2="17" y2="22"></line>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <line x1="2" y1="7" x2="7" y2="7"></line>
+                <line x1="2" y1="17" x2="7" y2="17"></line>
+                <line x1="17" y1="17" x2="22" y2="17"></line>
+                <line x1="17" y1="7" x2="22" y2="7"></line>
               </svg>
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
+                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                <polyline points="13 2 13 9 20 9"></polyline>
               </svg>
             </template>
           </div>
@@ -133,6 +131,12 @@
                   @click.stop="resumeTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                </button>
+                <button v-if="task.status === 'completed'" class="action-icon" title="打开文件" @click.stop="openTask(task)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                    <polyline points="13 2 13 9 20 9"></polyline>
                   </svg>
                 </button>
                 <button class="action-icon" title="打开所在目录" @click.stop="openDirectory(task)">
@@ -181,6 +185,21 @@
         </div>
       </div>
     </div>
+    
+    <ImagePreviewDialog v-if="activeImagePreviewUrl" :id="'home-preview'" :url="activeImagePreviewUrl"
+      :urls="[activeImagePreviewUrl]" :zIndex="9999" @close="activeImagePreviewUrl = null" />
+      
+    <AudioPlayerDialog v-if="activeAudioPreviewUrl" :url="activeAudioPreviewUrl" 
+      @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" />
+
+    <SaveMediaDialog
+      :visible="saveDialogVisible"
+      @update:visible="saveDialogVisible = $event"
+      :url="saveTargetUrl"
+      :default-name="saveDefaultName"
+      :default-dir="saveDefaultDir"
+      :type="'audio'"
+    />
   </div>
 </template>
 
@@ -189,10 +208,39 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
+import ImagePreviewDialog from '../components/ImagePreviewDialog.vue';
+import AudioPlayerDialog from '../components/AudioPlayerDialog.vue';
+import SaveMediaDialog from '../components/SaveMediaDialog.vue';
+import { useSettings } from '../composables/useSettings';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized } = useDownloads();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
+const { state: settingsState } = useSettings();
+
+const activeImagePreviewUrl = ref<string | null>(null);
+const activeAudioPreviewUrl = ref<string | null>(null);
+
+const saveDialogVisible = ref(false);
+const saveTargetUrl = ref('');
+const saveDefaultName = ref('');
+const saveDefaultDir = ref('');
+
+const onDownloadAudio = (url: string) => {
+  let name = '';
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/');
+    name = parts[parts.length - 1] || 'audio.mp3';
+  } catch {
+    name = 'audio.mp3';
+  }
+  
+  saveTargetUrl.value = url;
+  saveDefaultName.value = name;
+  saveDefaultDir.value = settingsState.audioDirectory;
+  saveDialogVisible.value = true;
+};
 
 const handleMouseUp = () => {
   isSelecting.value = false;
@@ -340,6 +388,33 @@ const isImageTask = (task: any) => {
   if (!task.name) return false;
   const ext = task.name.split('.').pop()?.toLowerCase();
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'].includes(ext || '');
+};
+
+const isAudioTask = (task: any) => {
+  if (!task.name) return false;
+  const ext = task.name.split('.').pop()?.toLowerCase();
+  return ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext || '');
+};
+
+const isVideoTask = (task: any) => {
+  if (!task.name) return false;
+  const ext = task.name.split('.').pop()?.toLowerCase();
+  return ['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(ext || '');
+};
+
+const openTask = (task: any) => {
+  if (!task.savePath) {
+    showMessage('文件路径不存在', 'error');
+    return;
+  }
+  const localUrl = `velora://${task.savePath}`;
+  if (isImageTask(task)) {
+    activeImagePreviewUrl.value = localUrl;
+  } else if (isAudioTask(task)) {
+    activeAudioPreviewUrl.value = localUrl;
+  } else {
+    showMessage('暂不支持打开此类文件', 'info');
+  }
 };
 
 const sortedTasks = computed(() => {
