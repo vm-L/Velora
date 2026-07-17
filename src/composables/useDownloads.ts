@@ -3,6 +3,7 @@ import { db, type DownloadTask } from '../db'
 
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
+let isListenersInitialized = false;
 
 export const useDownloads = () => {
   const loadTasks = async () => {
@@ -20,6 +21,9 @@ export const useDownloads = () => {
   }
 
   const initListeners = () => {
+    if (isListenersInitialized) return;
+    isListenersInitialized = true;
+    
     if (window.electronAPI && window.electronAPI.onDownloadProgress) {
       window.electronAPI.onDownloadProgress(async (data: any) => {
         const index = tasks.value.findIndex(t => t.id === data.id)

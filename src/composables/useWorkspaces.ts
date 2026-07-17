@@ -9,6 +9,7 @@ export interface Tab {
   webContentsId?: number
   sniffedImages: { url: string, timestamp: number }[]
   sniffedVideos: { url: string, timestamp: number }[]
+  sniffedAudios: { url: string, timestamp: number }[]
 }
 
 export interface Workspace {
@@ -33,7 +34,8 @@ export const useWorkspaces = () => {
           loading: true,
           favicon,
           sniffedImages: [],
-          sniffedVideos: []
+          sniffedVideos: [],
+          sniffedAudios: []
         }]
       }
     }
@@ -53,7 +55,8 @@ export const useWorkspaces = () => {
       loading: true,
       favicon,
       sniffedImages: [],
-      sniffedVideos: []
+      sniffedVideos: [],
+      sniffedAudios: []
     })
     ws.activeTabId = tabId
     return tabId

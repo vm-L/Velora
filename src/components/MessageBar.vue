@@ -63,7 +63,7 @@ const containerStyle = computed(() => {
   };
 });
 
-const getStyle = (index: number) => {
+const getStyle = (index: number): any => {
   const total = messages.value.length;
   // reverseIndex: 0 is the newest (visually in the front)
   const reverseIndex = total - 1 - index;

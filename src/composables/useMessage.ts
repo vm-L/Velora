@@ -14,7 +14,7 @@ export interface MessageData {
 const messages = ref<MessageData[]>([])
 
 export const useMessage = () => {
-  const showMessage = (text: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', duration = 3000, action?: {text: string, callback: () => void}) => {
+  const showMessage = (text: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', duration = 2000, action?: {text: string, callback: () => void}) => {
     const id = Math.random().toString(36).substr(2, 9)
     messages.value.push({ id, text, type, duration, action })
     

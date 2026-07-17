@@ -22,9 +22,12 @@
         <span class="menu-text">主页</span>
       </router-link>
 
-      <div class="menu-group" v-if="state.cmsResources.length > 0">
+      <div class="menu-group">
         <div class="group-title">
           <AnimatedText text="CMS 资源" :isCollapsed="isCollapsed" />
+        </div>
+        <div v-if="state.cmsResources.length === 0" class="empty-item">
+          <span class="menu-text">暂未配置资源</span>
         </div>
         <router-link
           v-for="item in state.cmsResources"
@@ -47,9 +50,12 @@
         </router-link>
       </div>
 
-      <div class="menu-group" v-if="state.externalSites.length > 0">
+      <div class="menu-group">
         <div class="group-title">
           <AnimatedText text="网站资源" :isCollapsed="isCollapsed" />
+        </div>
+        <div v-if="state.externalSites.length === 0" class="empty-item">
+          <span class="menu-text">暂未配置资源</span>
         </div>
         <router-link
           v-for="item in state.externalSites"
@@ -256,5 +262,23 @@ const toggleSidebar = () => {
   color: #1890ff;
   box-shadow: inset -3px 0 0 #1890ff;
   font-weight: 500;
+}
+
+.empty-item {
+  padding: 8px 22px;
+  color: #94a3b8;
+  font-size: 13px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .empty-item {
+  padding: 0;
+  height: 0;
+  opacity: 0;
 }
 </style>

@@ -185,7 +185,7 @@ import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
 
-const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, initListeners } = useDownloads();
+const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized } = useDownloads();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 
@@ -197,7 +197,6 @@ onMounted(async () => {
   window.addEventListener('mouseup', handleMouseUp);
   if (!isInitialized.value) {
     await loadTasks();
-    initListeners();
   }
 });
 
@@ -330,7 +329,7 @@ const globalSpeed = computed(() => {
 });
 
 const globalReceivedBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.receivedBytes || 0), 0));
-const globalTotalBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.totalBytes || 0), 0));
+// const globalTotalBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.totalBytes || 0), 0));
 
 const isImageTask = (task: any) => {
   if (!task.name) return false;

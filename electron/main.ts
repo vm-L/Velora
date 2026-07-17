@@ -184,18 +184,52 @@ function createWindow() {
     mainWindow?.show()
   })
 
-  // Network Sniffer
-  session.defaultSession.webRequest.onResponseStarted(
+  // Network Sniffer - Early detection for cached media via extension
+  session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
-    (details) => {
-      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') return;
+    (details, callback) => {
+      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
+        return callback({});
+      }
+
+      let url = details.url;
+      const lowerUrl = url.toLowerCase();
+      let type = '';
+
+      const isAudioExt = lowerUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
+      const isVideoExt = lowerUrl.match(/\.(mp4|webm|m3u8|ts|flv|mkv|avi)(\?.*)?$/i);
+
+      if (isAudioExt) type = 'audio';
+      else if (isVideoExt) type = 'video';
+
+      if (type && mainWindow) {
+        mainWindow.webContents.send('media-sniffed', {
+          webContentsId: details.webContentsId,
+          url,
+          type,
+          timestamp: Date.now()
+        });
+      }
+
+      callback({});
+    }
+  )
+
+  // Network Sniffer - Catch by Headers
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['*://*/*'] },
+    (details, callback) => {
+      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
+        return callback({});
+      }
 
       let url = details.url;
       const lowerUrl = url.toLowerCase();
       let type = '';
 
       const isImage = details.resourceType === 'image' || lowerUrl.match(/\.(png|jpe?g|gif|webp|svg|ico)(\?.*)?$/i);
-      const isVideo = details.resourceType === 'media' || lowerUrl.match(/\.(mp4|webm|ogg|m3u8|ts|flv|mp3|wav)(\?.*)?$/i);
+      const isAudioExt = lowerUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
+      const isVideoExt = lowerUrl.match(/\.(mp4|webm|m3u8|ts|flv|mkv|avi)(\?.*)?$/i);
 
       let contentType = '';
       if (details.responseHeaders) {
@@ -208,16 +242,19 @@ function createWindow() {
       }
 
       if (isImage || contentType.startsWith('image/')) type = 'image';
-      else if (isVideo || contentType.startsWith('video/') || contentType.includes('mpegurl') || contentType.includes('application/x-mpegurl') || contentType.includes('application/vnd.apple.mpegurl')) type = 'video';
+      else if (isAudioExt || contentType.startsWith('audio/')) type = 'audio';
+      else if (isVideoExt || contentType.startsWith('video/') || contentType.includes('mpegurl') || contentType.includes('application/x-mpegurl') || contentType.includes('application/vnd.apple.mpegurl')) type = 'video';
+      else if (details.resourceType === 'media') type = 'video'; // fallback
 
       if (type === 'image') {
-        // 去除 query 参数、fragment 和 @ 后的内容，只保留最短可访问地址
+        // 保留 query 参数，但去除 @ 后的缩放等特殊后缀
         try {
           const parsed = new URL(url);
           url = parsed.origin + parsed.pathname;
+          const atIndex = url.indexOf('@');
+          if (atIndex !== -1) url = url.substring(0, atIndex);
+          url += parsed.search; // Retain query parameters
         } catch {}
-        const atIndex = url.indexOf('@');
-        if (atIndex !== -1) url = url.substring(0, atIndex);
       }
 
       if (type && mainWindow) {
@@ -228,6 +265,8 @@ function createWindow() {
           timestamp: Date.now()
         });
       }
+
+      callback({});
     }
   )
 }

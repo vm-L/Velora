@@ -67,7 +67,7 @@ import { ref, computed, watch } from 'vue'
 import { useMessage } from '../composables/useMessage'
 
 const props = defineProps<{
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
   title: string
   tooltip: string
   items: { url: string, timestamp: number }[]
@@ -170,8 +170,22 @@ const copyData = async (url: string) => {
   }
 }
 
+import { useSettings } from '../composables/useSettings';
+import { useDownloads } from '../composables/useDownloads';
+
+const { addDownload } = useDownloads();
+const { state } = useSettings();
+
 const saveLocal = (url: string) => {
-  console.log('Save to local logic goes here', url)
+  const name = getBasename(url);
+  let dir = state.fileDirectory;
+  if (props.type === 'image') dir = state.imageDirectory;
+  else if (props.type === 'video') dir = state.videoDirectory;
+  else if (props.type === 'audio') dir = state.audioDirectory;
+  
+  const savePath = dir ? `${dir}/${name}` : name;
+  addDownload(url, name, savePath);
+  showMessage('已添加到下载任务', 'success');
 }
 
 

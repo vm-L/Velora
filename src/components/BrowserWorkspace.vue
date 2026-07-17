@@ -38,7 +38,7 @@
           </svg>
         </button>
 
-        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="选取图片"
+        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="捕获图片"
           @click="pickElementImage">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
@@ -65,6 +65,18 @@
               <line x1="2" y1="17" x2="7" y2="17"></line>
               <line x1="17" y1="17" x2="22" y2="17"></line>
               <line x1="17" y1="7" x2="22" y2="7"></line>
+            </svg>
+          </template>
+        </SnifferDropdown>
+
+        <SnifferDropdown type="audio" title="音频嗅探器" tooltip="音频嗅探器" :items="activeTab?.sniffedAudios || []"
+          @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
             </svg>
           </template>
         </SnifferDropdown>
@@ -113,6 +125,9 @@
         @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups></webview>
     </div>
 
+    <!-- Audio Player Dialog -->
+    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" @close="activeAudioPreview = null" @download="onDownloadAudio" />
+
     <!-- Inspector Dialog -->
     <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
       :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules" 
@@ -135,7 +150,7 @@
           <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
           <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" fill="none"></path>
         </svg>
-        <span>选取图片</span>
+        <span>捕获图片</span>
       </div>
     </div>
   </div>
@@ -146,10 +161,15 @@ import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { useWorkspaces } from '../composables/useWorkspaces';
 import { useSettings } from '../composables/useSettings';
 import { useMessage } from '../composables/useMessage';
+const { showMessage } = useMessage();
 
 import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
+import AudioPlayerDialog from './AudioPlayerDialog.vue';
+import { useDownloads } from '../composables/useDownloads';
+
+const { addDownload } = useDownloads();
 import { APP_PREFIX } from '../constants';
 
 
@@ -224,6 +244,10 @@ onMounted(() => {
           } else if (data.type === 'video') {
             if (!tab.sniffedVideos.some(m => m.url === data.url)) {
               tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
+            }
+          } else if (data.type === 'audio') {
+            if (!tab.sniffedAudios.some(m => m.url === data.url)) {
+              tab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
             }
           }
           break;
@@ -462,12 +486,14 @@ const onDevTools = () => {
 
 
 
-const onClearSniffed = (type: 'image' | 'video') => {
+const onClearSniffed = (type: 'image' | 'video' | 'audio') => {
   if (activeTab.value) {
     if (type === 'image') {
       activeTab.value.sniffedImages = [];
-    } else {
+    } else if (type === 'video') {
       activeTab.value.sniffedVideos = [];
+    } else if (type === 'audio') {
+      activeTab.value.sniffedAudios = [];
     }
   }
 };
@@ -495,6 +521,26 @@ const onFocusPreview = (id: string) => {
     highestZIndex++;
     img.zIndex = highestZIndex;
   }
+};
+
+const activeAudioPreview = ref<string | null>(null);
+
+const onPreviewSniffedAudio = (url: string) => {
+  activeAudioPreview.value = url;
+};
+
+const onDownloadAudio = (url: string) => {
+  let name = '';
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/');
+    name = parts[parts.length - 1] || 'audio.mp3';
+  } catch {
+    name = 'audio.mp3';
+  }
+  const savePath = settingsState.value.audioDirectory ? `${settingsState.value.audioDirectory}/${name}` : name;
+  addDownload(url, name, savePath);
+  showMessage('已添加到下载任务', 'success');
 };
 
 // Element Picker Logic
