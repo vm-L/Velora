@@ -1,6 +1,6 @@
 <template>
   <div class="dropdown-container">
-    <button class="func-btn" :class="{ 'active': isOpen }" :data-tooltip="tooltip" @click="toggle">
+    <button class="func-btn" :class="{ 'active': isOpen }" v-tooltip="isOpen ? '' : tooltip" @click="toggle">
       <slot name="icon"></slot>
     </button>
     <div v-if="isOpen" class="dropdown-backdrop" @click.stop="close"></div>
@@ -14,7 +14,8 @@
         <div v-for="group in groupedItems" :key="group.format" class="group-container">
           <div class="group-header" @click="toggleGroup(group.format)">
             <span class="group-title">{{ group.format }} ({{ group.items.length }})</span>
-            <svg class="group-chevron" :class="{ 'is-open': expandedGroup === group.format }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="group-chevron" :class="{ 'is-open': expandedGroup === group.format }" width="14" height="14"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </div>
@@ -39,7 +40,8 @@
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
                 </button>
-                <button v-if="type === 'image'" class="icon-action-btn" @click.stop="copyData(item.url)" title="复制图片到剪贴板">
+                <button v-if="type === 'image'" class="icon-action-btn" @click.stop="copyData(item.url)"
+                  title="复制图片到剪贴板">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -63,112 +65,112 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useMessage } from '../composables/useMessage'
+import { ref, computed, watch } from 'vue';
+import { useMessage } from '../composables/useMessage';
 
 const props = defineProps<{
-  type: 'image' | 'video' | 'audio'
-  title: string
-  tooltip: string
-  items: { url: string, timestamp: number }[]
-}>()
+  type: 'image' | 'video' | 'audio';
+  title: string;
+  tooltip: string;
+  items: { url: string, timestamp: number; }[];
+}>();
 
-const emit = defineEmits(['clear', 'preview'])
-const { showMessage } = useMessage()
+const emit = defineEmits(['clear', 'preview']);
+const { showMessage } = useMessage();
 
-const isOpen = ref(false)
-const expandedGroup = ref<string | null>(null)
+const isOpen = ref(false);
+const expandedGroup = ref<string | null>(null);
 
 watch(isOpen, (newVal) => {
   if (!newVal) {
-    expandedGroup.value = null
+    expandedGroup.value = null;
   }
-})
+});
 
 const groupedItems = computed(() => {
-  const groups: Record<string, typeof props.items> = {}
+  const groups: Record<string, typeof props.items> = {};
   props.items.forEach(item => {
-    let ext = 'Other'
+    let ext = 'Other';
     try {
-      const parsed = new URL(item.url)
-      const pathname = parsed.pathname
-      const match = pathname.match(/\.([a-zA-Z0-9]+)$/)
+      const parsed = new URL(item.url);
+      const pathname = parsed.pathname;
+      const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
       if (match) {
-        ext = match[1].toUpperCase()
+        ext = match[1].toUpperCase();
       } else {
-        ext = 'Other'
+        ext = 'Other';
       }
     } catch {
-      ext = 'Other'
+      ext = 'Other';
     }
-    
+
     if (!groups[ext]) {
-      groups[ext] = []
+      groups[ext] = [];
     }
-    groups[ext].push(item)
-  })
+    groups[ext].push(item);
+  });
 
   return Object.keys(groups).map(format => ({
     format,
     items: [...groups[format]].sort((a, b) => b.timestamp - a.timestamp)
-  })).sort((a, b) => b.items.length - a.items.length)
-})
+  })).sort((a, b) => b.items.length - a.items.length);
+});
 
 const toggleGroup = (format: string) => {
   if (expandedGroup.value === format) {
-    expandedGroup.value = null
+    expandedGroup.value = null;
   } else {
-    expandedGroup.value = format
+    expandedGroup.value = format;
   }
-}
+};
 
 const toggle = () => {
-  isOpen.value = !isOpen.value
-}
+  isOpen.value = !isOpen.value;
+};
 
 const close = () => {
-  isOpen.value = false
-}
+  isOpen.value = false;
+};
 
 const clear = () => {
-  emit('clear')
-}
+  emit('clear');
+};
 
 const onItemClick = (url: string) => {
-  emit('preview', url)
-}
+  emit('preview', url);
+};
 
 const getBasename = (urlStr: string) => {
   try {
-    const u = new URL(urlStr)
-    const parts = u.pathname.split('/')
-    const base = parts[parts.length - 1]
-    return base || u.hostname
+    const u = new URL(urlStr);
+    const parts = u.pathname.split('/');
+    const base = parts[parts.length - 1];
+    return base || u.hostname;
   } catch (e) {
-    return urlStr.substring(0, 30) + '...'
+    return urlStr.substring(0, 30) + '...';
   }
-}
+};
 
 const formatTime = (ts: number) => {
-  const d = new Date(ts)
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
-}
+  const d = new Date(ts);
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+};
 
 const copyUrl = (url: string) => {
-  navigator.clipboard.writeText(url)
-  showMessage('链接已复制', 'success')
-}
+  navigator.clipboard.writeText(url);
+  showMessage('链接已复制', 'success');
+};
 
 const copyData = async (url: string) => {
   if (window.electronAPI && window.electronAPI.copyImage) {
-    const success = await window.electronAPI.copyImage(url)
+    const success = await window.electronAPI.copyImage(url);
     if (success) {
-      showMessage('图片已复制到剪贴板', 'success')
+      showMessage('图片已复制到剪贴板', 'success');
     } else {
-      showMessage('复制失败：剪贴板可能不支持该格式或加载超时', 'error')
+      showMessage('复制失败：剪贴板可能不支持该格式或加载超时', 'error');
     }
   }
-}
+};
 
 import { useSettings } from '../composables/useSettings';
 import { useDownloads } from '../composables/useDownloads';
@@ -182,7 +184,7 @@ const saveLocal = (url: string) => {
   if (props.type === 'image') dir = state.imageDirectory;
   else if (props.type === 'video') dir = state.videoDirectory;
   else if (props.type === 'audio') dir = state.audioDirectory;
-  
+
   const savePath = dir ? `${dir}/${name}` : name;
   addDownload(url, name, savePath);
   showMessage('已添加到下载任务', 'success');
@@ -208,7 +210,7 @@ const saveLocal = (url: string) => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-secondary);
   transition: all 0.2s ease;
 }
 
@@ -216,9 +218,10 @@ const saveLocal = (url: string) => {
   display: block;
 }
 
-.func-btn:hover, .func-btn.active {
-  background: #f1f5f9;
-  color: #0f172a;
+.func-btn:hover,
+.func-btn.active {
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 .func-btn::before,
@@ -243,43 +246,6 @@ const saveLocal = (url: string) => {
   cursor: default;
 }
 
-/* Tooltip text */
-.func-btn::before {
-  content: attr(data-tooltip);
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px) scale(0.95);
-  background: #1e293b;
-  color: #ffffff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.func-btn::after {
-  content: '';
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-2px);
-  border-width: 6px;
-  border-style: solid;
-  border-color: transparent transparent #1e293b transparent;
-}
-
-.func-btn:hover::before {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(8px) scale(1);
-}
-
-.func-btn:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(2px);
-}
 
 .dropdown-menu {
   position: absolute;
@@ -287,10 +253,10 @@ const saveLocal = (url: string) => {
   left: 50%;
   transform: translateX(-50%);
   margin-top: 8px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-soft);
   width: 280px;
   z-index: 1000;
   display: flex;
@@ -303,14 +269,14 @@ const saveLocal = (url: string) => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .dropdown-title {
   font-size: 12px;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
 }
 
 .text-btn {
@@ -329,7 +295,7 @@ const saveLocal = (url: string) => {
 .dropdown-empty {
   padding: 24px 12px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -350,25 +316,25 @@ const saveLocal = (url: string) => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
   cursor: pointer;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
   user-select: none;
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-primary);
   position: sticky;
   top: 0;
   z-index: 2;
 }
 
 .group-header:hover {
-  background: #f1f5f9;
+  background: var(--border-light);
 }
 
 .group-chevron {
   transition: transform 0.2s;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .group-chevron.is-open {
@@ -387,7 +353,7 @@ const saveLocal = (url: string) => {
   gap: 10px;
   cursor: pointer;
   transition: background 0.2s;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .dropdown-item:last-child {
@@ -395,14 +361,14 @@ const saveLocal = (url: string) => {
 }
 
 .dropdown-item:hover {
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
 }
 
 .media-preview {
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  background: #e2e8f0;
+  background: var(--border-color);
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -417,7 +383,7 @@ const saveLocal = (url: string) => {
 }
 
 .video-icon {
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .item-info {
@@ -430,7 +396,7 @@ const saveLocal = (url: string) => {
 
 .item-url {
   font-size: 12px;
-  color: #0f172a;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -439,7 +405,7 @@ const saveLocal = (url: string) => {
 
 .item-time {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .item-actions {
@@ -456,7 +422,7 @@ const saveLocal = (url: string) => {
 .icon-action-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -467,7 +433,7 @@ const saveLocal = (url: string) => {
 }
 
 .icon-action-btn:hover {
-  background: #e2e8f0;
-  color: #3b82f6;
+  background: var(--border-color);
+  color: var(--color-accent);
 }
 </style>

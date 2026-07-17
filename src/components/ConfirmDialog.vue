@@ -53,11 +53,11 @@ const { state, proceed, cancel } = useConfirm()
 }
 
 .dialog-content {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 12px;
   width: 400px;
   max-width: 90vw;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -83,7 +83,7 @@ const { state, proceed, cancel } = useConfirm()
 }
 .dialog-icon.danger { background: #fee2e2; color: #ef4444; }
 .dialog-icon.warning { background: #fef3c7; color: #f59e0b; }
-.dialog-icon.info { background: #e0f2fe; color: #0ea5e9; }
+.dialog-icon.info { background: var(--bg-surface-active); color: var(--color-accent); }
 .dialog-icon svg {
   display: block;
   width: 20px;
@@ -100,13 +100,13 @@ const { state, proceed, cancel } = useConfirm()
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   line-height: 20px;
 }
 .dialog-text p {
   margin: 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -129,19 +129,19 @@ button {
 }
 
 .btn-cancel {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--border-light);
+  color: var(--text-primary);
 }
-.btn-cancel:hover { background: #e2e8f0; color: #0f172a; }
+.btn-cancel:hover { background: var(--border-color); color: var(--text-primary); }
 
-.btn-confirm.danger { background: #ef4444; color: #ffffff; }
+.btn-confirm.danger { background: #ef4444; color: var(--bg-surface); }
 .btn-confirm.danger:hover { background: #dc2626; }
 
-.btn-confirm.warning { background: #f59e0b; color: #ffffff; }
+.btn-confirm.warning { background: #f59e0b; color: var(--bg-surface); }
 .btn-confirm.warning:hover { background: #d97706; }
 
-.btn-confirm.info { background: #3b82f6; color: #ffffff; }
-.btn-confirm.info:hover { background: #2563eb; }
+.btn-confirm.info { background: var(--color-accent); color: var(--bg-surface); }
+.btn-confirm.info:hover { background: var(--color-accent-hover); }
 
 /* Transitions */
 .dialog-fade-enter-active, .dialog-fade-leave-active {

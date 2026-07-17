@@ -6,7 +6,8 @@
           <div class="metric-label">全部任务</div>
           <div class="metric-value">{{ tasks.length }}</div>
         </div>
-        <div class="metric-card" :class="{ active: activeFilter === 'downloading' }" @click="toggleFilter('downloading')">
+        <div class="metric-card" :class="{ active: activeFilter === 'downloading' }"
+          @click="toggleFilter('downloading')">
           <div class="metric-label">
             <span class="status-dot downloading"></span>下载中
           </div>
@@ -25,7 +26,7 @@
           <div class="metric-value">{{ errorCount }}</div>
         </div>
       </div>
-      
+
       <div class="operation-panel">
         <div class="batch-actions-bar" v-if="sortedTasks.length > 0">
           <label class="select-all-checkbox">
@@ -47,7 +48,8 @@
               </svg>
               继续
             </button>
-            <button class="action-btn delete-btn" :disabled="selectedTasks.length === 0" @click="batchDelete" title="删除所选">
+            <button class="action-btn delete-btn" :disabled="selectedTasks.length === 0" @click="batchDelete"
+              title="删除所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -83,7 +85,9 @@
 
       <div v-else class="task-list">
 
-        <div v-for="task in sortedTasks" :key="task.id" class="task-card" :class="{ 'is-selected': selectedTasks.includes(task.id) }" @mousedown="startSelection(task.id, $event)" @mouseenter="enterSelection(task.id)">
+        <div v-for="task in sortedTasks" :key="task.id" class="task-card"
+          :class="{ 'is-selected': selectedTasks.includes(task.id) }" @mousedown="startSelection(task.id, $event)"
+          @mouseenter="enterSelection(task.id)">
           <div class="task-checkbox" @click.stop>
             <input type="checkbox" :value="task.id" v-model="selectedTasks" />
           </div>
@@ -118,7 +122,8 @@
             <div class="task-header">
               <div class="task-name" :title="task.name">{{ task.name }}</div>
               <div class="task-actions">
-                <button v-if="task.status === 'downloading'" class="action-icon" title="暂停" @click.stop="pauseTask(task.id)">
+                <button v-if="task.status === 'downloading'" class="action-icon" title="暂停"
+                  @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
                     <rect x="14" y="4" width="4" height="16"></rect>
@@ -245,11 +250,11 @@ const startSelection = (id: string, event: MouseEvent) => {
   if (event.button !== 0) return;
   const target = event.target as HTMLElement;
   if (target.closest('button') || target.closest('.task-checkbox')) return;
-  
+
   isSelecting.value = true;
   const index = selectedTasks.value.indexOf(id);
   selectMode.value = index === -1;
-  
+
   if (selectMode.value) {
     selectedTasks.value.push(id);
   } else {
@@ -259,7 +264,7 @@ const startSelection = (id: string, event: MouseEvent) => {
 
 const enterSelection = (id: string) => {
   if (!isSelecting.value) return;
-  
+
   const index = selectedTasks.value.indexOf(id);
   if (selectMode.value && index === -1) {
     selectedTasks.value.push(id);
@@ -270,12 +275,12 @@ const enterSelection = (id: string) => {
 
 const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
-  
+
   const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && t.status === 'downloading');
   const skippedCount = selectedTasks.value.length - eligibleTasks.length;
-  
+
   eligibleTasks.forEach(t => pauseTask(t.id));
-  
+
   if (skippedCount > 0) {
     showMessage(`成功暂停 ${eligibleTasks.length} 个任务，跳过 ${skippedCount} 个状态不符的任务`, eligibleTasks.length > 0 ? 'success' : 'info');
   } else {
@@ -285,12 +290,12 @@ const batchPause = () => {
 
 const batchResume = () => {
   if (selectedTasks.value.length === 0) return;
-  
+
   const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['paused', 'error'].includes(t.status));
   const skippedCount = selectedTasks.value.length - eligibleTasks.length;
-  
+
   eligibleTasks.forEach(t => resumeTask(t.id));
-  
+
   if (skippedCount > 0) {
     showMessage(`成功继续 ${eligibleTasks.length} 个任务，跳过 ${skippedCount} 个状态不符的任务`, eligibleTasks.length > 0 ? 'success' : 'info');
   } else {
@@ -300,7 +305,7 @@ const batchResume = () => {
 
 const batchDelete = async () => {
   if (selectedTasks.value.length === 0) return;
-  
+
   const confirmed = await confirm({
     title: '批量删除',
     message: `确定要删除选中的 ${selectedTasks.value.length} 个任务及对应的本地文件吗？`,
@@ -308,7 +313,7 @@ const batchDelete = async () => {
     cancelText: '取消',
     type: 'danger'
   });
-  
+
   if (confirmed) {
     for (const id of selectedTasks.value) {
       deleteTask(id, true);
@@ -461,8 +466,8 @@ const confirmDelete = async (task: any) => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 
@@ -473,8 +478,8 @@ const confirmDelete = async (task: any) => {
 }
 
 .metric-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px 20px;
   cursor: pointer;
@@ -482,27 +487,27 @@ const confirmDelete = async (task: any) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  box-shadow: var(--shadow-sm);
 
   &:hover {
-    border-color: #cbd5e1;
-    background: #f8fafc;
+    border-color: var(--border-color);
+    background: var(--bg-surface-hover);
     transform: translateY(-1px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-sm);
   }
 
   &.active {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 1px #3b82f6;
-    
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+
     .metric-value {
-      color: #0f172a;
+      color: var(--text-primary);
     }
   }
 
   .metric-label {
     font-size: 13px;
-    color: #64748b;
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -512,7 +517,7 @@ const confirmDelete = async (task: any) => {
   .metric-value {
     font-size: 28px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--text-primary);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     line-height: 1;
     letter-spacing: -0.5px;
@@ -523,10 +528,18 @@ const confirmDelete = async (task: any) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  
-  &.downloading { background: #3b82f6; }
-  &.completed { background: #10b981; }
-  &.error { background: #ef4444; }
+
+  &.downloading {
+    background: var(--color-accent);
+  }
+
+  &.completed {
+    background: #10b981;
+  }
+
+  &.error {
+    background: #ef4444;
+  }
 }
 
 .global-stats {
@@ -543,14 +556,14 @@ const confirmDelete = async (task: any) => {
   }
 
   .stat-label {
-    color: #64748b;
+    color: var(--text-secondary);
     font-weight: 500;
   }
 
   .stat-value {
-    color: #334155;
+    color: var(--text-primary);
     font-weight: 600;
-    
+
     &.mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
@@ -559,7 +572,7 @@ const confirmDelete = async (task: any) => {
   .stat-divider {
     width: 1px;
     height: 14px;
-    background: #cbd5e1;
+    background: var(--border-color);
   }
 }
 
@@ -575,15 +588,18 @@ const confirmDelete = async (task: any) => {
 .downloads-container::-webkit-scrollbar {
   width: 8px;
 }
+
 .downloads-container::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .downloads-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border-color);
   border-radius: 4px;
 }
+
 .downloads-container::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-secondary);
 }
 
 .empty-state {
@@ -592,7 +608,7 @@ const confirmDelete = async (task: any) => {
   align-items: center;
   justify-content: center;
   height: 300px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 
   svg {
     margin-bottom: 16px;
@@ -621,18 +637,18 @@ const confirmDelete = async (task: any) => {
   background: white;
   border-radius: 12px;
   border: 1px solid transparent;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s;
   cursor: pointer;
 
   &:hover {
-    border-color: #cbd5e1;
+    border-color: var(--border-color);
     transform: translateY(-1px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+    box-shadow: var(--shadow-soft);
   }
 
   &.is-selected {
-    border-color: #3b82f6;
+    border-color: var(--color-accent);
   }
 
   .task-checkbox {
@@ -640,7 +656,7 @@ const confirmDelete = async (task: any) => {
     align-items: center;
     justify-content: center;
     padding-top: 14px;
-    
+
     input {
       cursor: pointer;
       margin: 0;
@@ -659,9 +675,9 @@ const confirmDelete = async (task: any) => {
     gap: 8px;
     cursor: pointer;
     font-size: 14px;
-    color: #475569;
+    color: var(--text-primary);
     user-select: none;
-    
+
     input {
       cursor: pointer;
     }
@@ -671,13 +687,13 @@ const confirmDelete = async (task: any) => {
     display: flex;
     align-items: center;
     gap: 12px;
-    
+
     .selected-count {
       font-size: 13px;
-      color: #64748b;
+      color: var(--text-secondary);
       margin-right: 8px;
     }
-    
+
     .action-btn {
       display: flex;
       align-items: center;
@@ -685,21 +701,21 @@ const confirmDelete = async (task: any) => {
       padding: 6px 12px;
       font-size: 13px;
       border-radius: 6px;
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      color: #334155;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
       cursor: pointer;
       transition: all 0.2s;
-      
+
       &:hover:not(:disabled) {
-        background: #f1f5f9;
-        border-color: #94a3b8;
+        background: var(--border-light);
+        border-color: var(--text-secondary);
       }
-      
+
       &.delete-btn {
         color: #ef4444;
         border-color: #fca5a5;
-        
+
         &:hover:not(:disabled) {
           background: #fef2f2;
           border-color: #f87171;
@@ -709,7 +725,7 @@ const confirmDelete = async (task: any) => {
       &:disabled {
         opacity: 0.5;
         cursor: not-allowed;
-        background: #f8fafc;
+        background: var(--bg-surface-hover);
       }
     }
   }
@@ -732,13 +748,13 @@ const confirmDelete = async (task: any) => {
   }
 
   &.status-downloading {
-    background: #eff6ff;
-    color: #3b82f6;
+    background: var(--bg-surface-active);
+    color: var(--color-accent);
   }
 
   &.status-paused {
-    background: #f1f5f9;
-    color: #64748b;
+    background: var(--border-light);
+    color: var(--text-secondary);
   }
 
   &.status-completed {
@@ -770,7 +786,7 @@ const confirmDelete = async (task: any) => {
 .task-name {
   font-size: 15px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -784,9 +800,9 @@ const confirmDelete = async (task: any) => {
 }
 
 .action-icon {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   width: 28px;
   height: 28px;
   border-radius: 6px;
@@ -797,8 +813,8 @@ const confirmDelete = async (task: any) => {
   transition: all 0.2s;
 
   &:hover {
-    background: #e2e8f0;
-    color: #3b82f6;
+    background: var(--border-color);
+    color: var(--color-accent);
   }
 
   &.delete:hover {
@@ -814,7 +830,7 @@ const confirmDelete = async (task: any) => {
 
 .progress-bar {
   height: 6px;
-  background: #e2e8f0;
+  background: var(--border-color);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -825,11 +841,11 @@ const confirmDelete = async (task: any) => {
   transition: width 0.3s ease;
 
   &.downloading {
-    background: #3b82f6;
+    background: var(--color-accent);
   }
 
   &.paused {
-    background: #94a3b8;
+    background: var(--text-secondary);
   }
 
   &.completed {
@@ -847,11 +863,11 @@ const confirmDelete = async (task: any) => {
   flex-wrap: wrap;
   gap: 6px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .meta-divider {
-  color: #cbd5e1;
+  color: var(--border-color);
 }
 
 .path-text {
@@ -862,11 +878,11 @@ const confirmDelete = async (task: any) => {
   font-weight: 500;
 
   &.downloading {
-    color: #3b82f6;
+    color: var(--color-accent);
   }
 
   &.paused {
-    color: #64748b;
+    color: var(--text-secondary);
   }
 
   &.completed {

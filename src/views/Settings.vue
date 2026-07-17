@@ -40,7 +40,7 @@
         </div>
 
         <!-- 图片目录 -->
-        <div class="settings-row" style="border-top: 1px solid #f1f5f9;">
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>图片目录</h3>
             <p>图片的默认下载目录</p>
@@ -53,7 +53,7 @@
         </div>
 
         <!-- 音频目录 -->
-        <div class="settings-row" style="border-top: 1px solid #f1f5f9;">
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>音频目录</h3>
             <p>音频的默认下载目录</p>
@@ -66,7 +66,7 @@
         </div>
 
         <!-- 视频目录 -->
-        <div class="settings-row" style="border-top: 1px solid #f1f5f9;">
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>视频目录</h3>
             <p>视频的默认下载目录</p>
@@ -79,7 +79,7 @@
         </div>
 
         <!-- 文件目录 -->
-        <div class="settings-row" style="border-top: 1px solid #f1f5f9;">
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>文件目录</h3>
             <p>其他类型文件的默认下载目录</p>
@@ -100,7 +100,7 @@
           @drop="onDrop($event, 'cms', index)">
 
           <div class="drag-handle" title="拖动排序">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="8" y1="6" x2="21" y2="6"></line>
               <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -149,7 +149,7 @@
           @drop="onDrop($event, 'ext', index)">
 
           <div class="drag-handle" title="拖动排序">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="8" y1="6" x2="21" y2="6"></line>
               <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -223,7 +223,7 @@
               </div>
               <div class="rule-item">
                 <div class="rule-content">
-                  <pre class="rule-css" style="white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; margin: 0; color: #475569;">{{ cssString }}</pre>
+                  <pre class="rule-css" style="white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; margin: 0; color: var(--text-primary);">{{ cssString }}</pre>
                 </div>
               </div>
             </div>
@@ -466,7 +466,7 @@ const deleteDomainStyle = async (domain: string) => {
 .settings-section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-bottom: 12px;
   margin-top: 24px;
   text-transform: uppercase;
@@ -478,10 +478,10 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .settings-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -494,7 +494,7 @@ const deleteDomainStyle = async (domain: string) => {
   align-items: center;
   padding: var(--row-padding-v) var(--row-padding-h);
   transition: background-color 0.2s ease;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .settings-row:last-child {
@@ -502,7 +502,7 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .settings-row:hover {
-  background-color: #f8fafc;
+  background-color: var(--bg-surface-hover);
 }
 
 .settings-row[draggable="true"] {
@@ -535,13 +535,13 @@ const deleteDomainStyle = async (domain: string) => {
   margin: 0 0 6px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .settings-info p {
   margin: 0;
   font-size: 14px;
-  color: #64748b;
+  color: var(--text-secondary);
   max-width: 400px;
   line-height: 1.5;
 }
@@ -552,7 +552,7 @@ const deleteDomainStyle = async (domain: string) => {
 
 .resource-info p {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .edit-mode-info {
@@ -564,7 +564,7 @@ const deleteDomainStyle = async (domain: string) => {
 
 /* Inline form for adding */
 .add-row {
-  background-color: #f8fafc;
+  background-color: var(--bg-surface-hover);
   gap: 12px;
 }
 
@@ -574,7 +574,7 @@ const deleteDomainStyle = async (domain: string) => {
 
 .inline-input {
   padding: 8px 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
   outline: none;
@@ -583,23 +583,23 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .inline-input:focus {
-  border-color: #3b82f6;
+  border-color: var(--color-accent);
 }
 
 .inline-select {
   padding: 8px 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
   outline: none;
-  background-color: #fff;
+  background-color: var(--bg-surface);
   cursor: pointer;
   transition: border-color 0.2s;
   min-width: 120px;
 }
 
 .inline-select:focus {
-  border-color: #3b82f6;
+  border-color: var(--color-accent);
 }
 
 .flex-1 {
@@ -622,13 +622,13 @@ const deleteDomainStyle = async (domain: string) => {
 
 .add-btn,
 .save-btn {
-  background: #3b82f6;
+  background: var(--color-accent);
   color: white;
 }
 
 .add-btn:hover:not(:disabled),
 .save-btn:hover {
-  background: #2563eb;
+  background: var(--color-accent-hover);
 }
 
 .add-btn:disabled {
@@ -637,22 +637,22 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .edit-btn {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 .edit-btn:hover {
-  background: #e2e8f0;
+  background: var(--border-color);
 }
 
 .cancel-btn {
-  background: #f8fafc;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-btn:hover {
-  background: #f1f5f9;
+  background: var(--border-light);
 }
 
 .delete-btn {
@@ -666,7 +666,7 @@ const deleteDomainStyle = async (domain: string) => {
 
 .segmented-control {
   display: flex;
-  background: #f1f5f9;
+  background: var(--border-light);
   padding: 4px;
   border-radius: 8px;
   position: relative;
@@ -683,7 +683,7 @@ const deleteDomainStyle = async (domain: string) => {
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: color 0.2s ease;
   user-select: none;
@@ -692,7 +692,7 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .segmented-control input[type="radio"]:checked+span {
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .selection-pill {
@@ -701,9 +701,9 @@ const deleteDomainStyle = async (domain: string) => {
   bottom: 4px;
   left: 4px;
   width: 106px;
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
   z-index: 1;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -728,19 +728,19 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .modal-content {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 12px;
   width: 600px;
   max-width: 90vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
 }
 
 .modal-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -749,13 +749,13 @@ const deleteDomainStyle = async (domain: string) => {
 .modal-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .modal-close-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -770,8 +770,8 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .modal-close-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 
@@ -783,7 +783,7 @@ const deleteDomainStyle = async (domain: string) => {
 
 .empty-state {
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-secondary);
   padding: 40px 0;
   font-size: 14px;
 }
@@ -795,25 +795,25 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .domain-group {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .domain-title {
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
   padding: 10px 16px;
   font-weight: 600;
   font-size: 13px;
-  color: #334155;
-  border-bottom: 1px solid #e2e8f0;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .empty-rule {
   padding: 12px 16px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .rule-item {
@@ -821,7 +821,7 @@ const deleteDomainStyle = async (domain: string) => {
   justify-content: space-between;
   align-items: flex-start;
   padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .rule-item:last-child {
@@ -837,14 +837,14 @@ const deleteDomainStyle = async (domain: string) => {
 .rule-selector {
   font-weight: 600;
   font-size: 13px;
-  color: #0f172a;
+  color: var(--text-primary);
   margin-bottom: 4px;
   word-break: break-all;
 }
 
 .rule-css {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   white-space: pre-wrap;
   word-break: break-all;

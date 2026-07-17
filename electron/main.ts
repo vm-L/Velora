@@ -32,15 +32,15 @@ const clearPrivacyData = async () => {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 720,
+    width: 1400,
+    height: 850,
     resizable: true,
-    title: "Hello Electron",
+    title: "Velora",
     autoHideMenuBar: true,
     frame: false,
     hasShadow: false,
     show: false,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: '#FDFBF7',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

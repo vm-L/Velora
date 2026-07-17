@@ -12,14 +12,8 @@
       </router-view>
 
       <!-- Global Workspaces for true keep-alive (prevents webview reload) -->
-      <BrowserWorkspace 
-        v-for="res in openedResources" 
-        :key="res.id"
-        :resourceId="res.id"
-        :resourceUrl="res.url"
-        v-show="$route.params.type === 'ext' && $route.params.id === res.id"
-        class="global-workspace"
-      />
+      <BrowserWorkspace v-for="res in openedResources" :key="res.id" :resourceId="res.id" :resourceUrl="res.url"
+        v-show="$route.params.type === 'ext' && $route.params.id === res.id" class="global-workspace" />
     </div>
   </div>
   <ConfirmDialog />
@@ -28,28 +22,34 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import TitleBar from './components/TitleBar.vue'
-import Sidebar from './components/Sidebar.vue'
-import ConfirmDialog from './components/ConfirmDialog.vue'
-import MessageBar from './components/MessageBar.vue'
-import NotificationBar from './components/NotificationBar.vue'
-import BrowserWorkspace from './components/BrowserWorkspace.vue'
-import { useSettings } from './composables/useSettings'
-import { useDownloads } from './composables/useDownloads'
-import { useOpenedResources } from './composables/useOpenedResources'
+import { onMounted, watch } from 'vue';
+import TitleBar from './components/TitleBar.vue';
+import Sidebar from './components/Sidebar.vue';
+import ConfirmDialog from './components/ConfirmDialog.vue';
+import MessageBar from './components/MessageBar.vue';
+import NotificationBar from './components/NotificationBar.vue';
+import BrowserWorkspace from './components/BrowserWorkspace.vue';
+import { useSettings } from './composables/useSettings';
+import { useDownloads } from './composables/useDownloads';
+import { useOpenedResources } from './composables/useOpenedResources';
 
-const { loadSettings } = useSettings()
-const { loadTasks, initListeners, isInitialized } = useDownloads()
-const { openedResources } = useOpenedResources()
+const { state, loadSettings } = useSettings();
+const { loadTasks, initListeners, isInitialized } = useDownloads();
+const { openedResources } = useOpenedResources();
 
 onMounted(async () => {
-  loadSettings()
+  await loadSettings();
+  document.documentElement.dataset.theme = state.theme;
+
   if (!isInitialized.value) {
-    await loadTasks()
-    initListeners()
+    await loadTasks();
+    initListeners();
   }
-})
+});
+
+watch(() => state.theme, (newTheme) => {
+  document.documentElement.dataset.theme = newTheme;
+});
 </script>
 
 <style lang="less">
@@ -57,20 +57,88 @@ onMounted(async () => {
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  --spacing-2xl: 40px;
+  --spacing-lg: 32px;
+  /* Increased from 24px for more whitespace */
+  --spacing-xl: 48px;
+  /* Increased from 32px */
+  --spacing-2xl: 64px;
+  /* Increased from 40px */
 
   --view-padding: var(--spacing-lg);
   --card-padding: var(--spacing-lg);
   --row-padding-v: var(--spacing-md);
   --row-padding-h: var(--spacing-lg);
+
+  /* Pristine Elegance Theme Variables (OKLCH) */
+  --bg-app: oklch(98.5% 0.005 90);
+  /* Warm Ivory */
+  --bg-surface: oklch(100% 0 0);
+  /* Crisp White */
+  --bg-surface-hover: oklch(97.5% 0.008 90);
+  --bg-surface-active: oklch(96.5% 0.01 90);
+
+  --text-primary: oklch(38% 0.01 90);
+  /* Deep Charcoal / Espresso */
+  --text-secondary: oklch(62% 0.01 90);
+  /* Warm Gray */
+  --text-tertiary: oklch(76% 0.01 90);
+
+  --color-accent: oklch(30% 0.01 90);
+  /* Deep Slate / Off-Black */
+  --color-accent-hover: oklch(20% 0.01 90);
+
+  --border-color: oklch(93% 0.01 90);
+  /* Soft Stone */
+  --border-light: oklch(96% 0.006 90);
+
+  --shadow-soft: 0 12px 36px rgba(0, 0, 0, 0.03), 0 4px 12px rgba(0, 0, 0, 0.02);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.02);
+
+  /* System Colors */
+  --color-success: oklch(68% 0.16 160);
+  --color-error: oklch(62% 0.22 25);
+  --color-warning: oklch(74% 0.17 70);
 }
+
+[data-theme='dark'] {
+  --bg-app: oklch(15% 0.005 90);
+  /* Dark Espresso / Obsidian */
+  --bg-surface: oklch(18% 0.005 90);
+  /* Near-Black */
+  --bg-surface-hover: oklch(22% 0.005 90);
+  --bg-surface-active: oklch(26% 0.005 90);
+
+  --text-primary: oklch(95% 0.005 90);
+  /* Soft Ivory */
+  --text-secondary: oklch(75% 0.005 90);
+  /* Warm Slate */
+  --text-tertiary: oklch(60% 0.005 90);
+
+  --color-accent: oklch(90% 0.01 90);
+  /* Glowing Warm Ivory */
+  --color-accent-hover: oklch(98.5% 0.01 90);
+
+  --border-color: oklch(28% 0.005 90);
+  /* Deep Slate */
+  --border-light: oklch(24% 0.005 90);
+
+  --shadow-soft: 0 12px 36px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 
 * {
   box-sizing: border-box;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE 10+ */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE 10+ */
 }
 
 ::-webkit-scrollbar {
@@ -85,13 +153,14 @@ body {
   flex-direction: column;
   height: 100vh;
   font-family: "Segoe UI", Arial, sans-serif;
-  background: #f5f7fa;
+  background: var(--bg-app);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
 }
 
-input, textarea {
+input,
+textarea {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -111,8 +180,9 @@ input, textarea {
 
 .main-panel {
   flex: 1;
-  padding: 0; /* Views will handle their own view-padding */
-  background: #f5f7fa;
+  padding: 0;
+  /* Views will handle their own view-padding */
+  background: var(--bg-app);
   container-type: size;
   display: flex;
   flex-direction: column;
@@ -127,7 +197,7 @@ input, textarea {
   width: 100%;
   height: 100%;
   z-index: 10;
-  background: #f5f7fa;
+  background: var(--bg-app);
 }
 
 .fade-enter-active,

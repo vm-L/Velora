@@ -618,9 +618,9 @@ onUnmounted(() => {
 <style scoped lang="less">
 .image-preview-dialog {
   position: fixed;
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -632,8 +632,8 @@ onUnmounted(() => {
 
 .dialog-header {
   height: 32px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -649,7 +649,7 @@ onUnmounted(() => {
 .header-title {
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -668,7 +668,7 @@ onUnmounted(() => {
 .action-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -682,8 +682,8 @@ onUnmounted(() => {
 }
 
 .action-btn:hover {
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--border-color);
+  color: var(--text-primary);
 }
 
 .close-btn:hover {
@@ -700,10 +700,10 @@ onUnmounted(() => {
 }
 
 .checkerboard {
-  background-color: #f1f5f9;
+  background-color: var(--border-light);
   background-image:
-    linear-gradient(45deg, #e2e8f0 25%, transparent 25%, transparent 75%, #e2e8f0 75%, #e2e8f0),
-    linear-gradient(45deg, #e2e8f0 25%, transparent 25%, transparent 75%, #e2e8f0 75%, #e2e8f0);
+    linear-gradient(45deg, var(--border-color) 25%, transparent 25%, transparent 75%, var(--border-color) 75%, var(--border-color)),
+    linear-gradient(45deg, var(--border-color) 25%, transparent 25%, transparent 75%, var(--border-color) 75%, var(--border-color));
   background-size: 20px 20px;
   background-position: 0 0, 10px 10px;
 }
@@ -777,7 +777,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
   pointer-events: none;
   z-index: 10;
 }
@@ -798,8 +798,8 @@ onUnmounted(() => {
 .dialog-footer {
   height: 40px;
   padding: 0 12px;
-  background: #f8fafc;
-  border-top: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -810,16 +810,16 @@ onUnmounted(() => {
 
 .image-info {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .multi-index {
-  color: #3b82f6;
+  color: var(--color-accent);
   font-weight: 600;
   margin-right: 6px;
   display: inline-block;
-  background: #eff6ff;
+  background: var(--bg-surface-active);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -832,7 +832,7 @@ onUnmounted(() => {
 .icon-action-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: 4px;
@@ -843,16 +843,16 @@ onUnmounted(() => {
 }
 
 .icon-action-btn:hover {
-  background: #e2e8f0;
-  color: #3b82f6;
+  background: var(--border-color);
+  color: var(--color-accent);
 }
 
 .thumbnails-bar {
   display: flex;
   gap: 8px;
   padding: 8px 12px;
-  background: #f1f5f9;
-  border-top: 1px solid #e2e8f0;
+  background: var(--border-light);
+  border-top: 1px solid var(--border-color);
   overflow-x: auto;
   flex-shrink: 0;
   height: 52px;
@@ -894,12 +894,12 @@ onUnmounted(() => {
 }
 
 .thumbnail-item:hover {
-  border-color: #cbd5e1;
+  border-color: var(--border-color);
 }
 
 .thumbnail-item.active {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .resize-handle {
@@ -909,14 +909,14 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   cursor: nwse-resize;
-  color: #cbd5e1;
+  color: var(--border-color);
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
 .resize-handle:hover {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 /* Save Overlay Styles */
@@ -938,7 +938,7 @@ onUnmounted(() => {
   max-width: 500px;
   max-height: 90%;
   border-radius: 8px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -946,18 +946,18 @@ onUnmounted(() => {
 
 .save-header {
   padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
 }
 
 .save-header h3 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .save-body {
@@ -974,7 +974,7 @@ onUnmounted(() => {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -986,31 +986,31 @@ onUnmounted(() => {
 .location-input-row input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 13px;
-  color: #334155;
+  color: var(--text-primary);
   outline: none;
   transition: border-color 0.2s;
 }
 
 .location-input-row input:focus {
-  border-color: #3b82f6;
+  border-color: var(--color-accent);
 }
 
 .select-dir-btn {
   padding: 8px 12px;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
+  background: var(--border-light);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 13px;
-  color: #475569;
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .select-dir-btn:hover {
-  background: #e2e8f0;
+  background: var(--border-color);
 }
 
 .save-items-header {
@@ -1025,13 +1025,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #475569;
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .count {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .save-items-grid {
@@ -1055,7 +1055,7 @@ onUnmounted(() => {
   overflow: hidden;
   border: 2px solid transparent;
   transition: all 0.2s;
-  background: #f1f5f9;
+  background: var(--border-light);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1068,7 +1068,7 @@ onUnmounted(() => {
 }
 
 .save-item.selected .save-item-thumb {
-  border-color: #3b82f6;
+  border-color: var(--color-accent);
 }
 
 .checkbox-indicator {
@@ -1078,7 +1078,7 @@ onUnmounted(() => {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.8);
   display: flex;
   align-items: center;
@@ -1087,8 +1087,8 @@ onUnmounted(() => {
 }
 
 .save-item.selected .checkbox-indicator {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .save-item-name {
@@ -1098,24 +1098,24 @@ onUnmounted(() => {
   border-radius: 3px;
   text-align: center;
   background: transparent;
-  color: #475569;
+  color: var(--text-primary);
   transition: all 0.2s;
 }
 
 .save-item-name:hover,
 .save-item-name:focus {
-  border-color: #cbd5e1;
+  border-color: var(--border-color);
   background: white;
   outline: none;
 }
 
 .save-footer {
   padding: 12px 16px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
 }
 
 .cancel-btn, .confirm-btn {
@@ -1129,27 +1129,27 @@ onUnmounted(() => {
 
 .cancel-btn {
   background: white;
-  border: 1px solid #cbd5e1;
-  color: #64748b;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 .cancel-btn:hover {
-  background: #f1f5f9;
+  background: var(--border-light);
 }
 
 .confirm-btn {
-  background: #3b82f6;
-  border: 1px solid #3b82f6;
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
   color: white;
 }
 
 .confirm-btn:hover {
-  background: #2563eb;
+  background: var(--color-accent-hover);
 }
 
 .confirm-btn:disabled {
-  background: #94a3b8;
-  border-color: #94a3b8;
+  background: var(--text-secondary);
+  border-color: var(--text-secondary);
   cursor: not-allowed;
 }
 </style>

@@ -70,20 +70,20 @@ watch(() => item.value, (newVal) => {
 .skeleton-card {
   background: white;
   border-radius: 12px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
   width: 100%;
   max-width: 600px;
   padding: var(--card-padding);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
 }
 
 .pulse-header {
   width: 40%;
   height: 24px;
-  background: #e2e8f0;
+  background: var(--border-color);
   border-radius: 4px;
   margin-bottom: 24px;
   animation: pulse 1.5s infinite ease-in-out;
@@ -92,7 +92,7 @@ watch(() => item.value, (newVal) => {
 .pulse-line {
   width: 100%;
   height: 12px;
-  background: #f1f5f9;
+  background: var(--border-light);
   border-radius: 4px;
   margin-bottom: 12px;
   animation: pulse 1.5s infinite ease-in-out;
@@ -105,27 +105,27 @@ watch(() => item.value, (newVal) => {
 .resource-info {
   margin-top: 40px;
   padding-top: 24px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--border-color);
   width: 100%;
 }
 
 h1 {
   font-size: 24px;
-  color: #1e293b;
+  color: var(--text-primary);
   margin: 0 0 8px 0;
 }
 
 .url-text {
   font-size: 14px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin: 0 0 16px 0;
   font-family: monospace;
 }
 
 .badge {
   display: inline-block;
-  background: #eff6ff;
-  color: #3b82f6;
+  background: var(--bg-surface-active);
+  color: var(--color-accent);
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 12px;

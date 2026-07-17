@@ -45,7 +45,7 @@
             <div class="label-row" style="margin-bottom: 8px;">
               <label>自定义 CSS 样式</label>
             </div>
-            <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #fff; min-height: 280px; display: flex; flex-direction: column;">
+            <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-surface); min-height: 280px; display: flex; flex-direction: column;">
               <!-- CodeMirror will attach here -->
             </div>
           </div>
@@ -306,10 +306,10 @@ const stopDrag = () => {
 .inspector-dialog {
   position: fixed;
   width: 420px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-soft);
   z-index: 2147483647;
   display: flex;
   flex-direction: column;
@@ -319,8 +319,8 @@ const stopDrag = () => {
 
 .inspector-header {
   height: 36px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -332,7 +332,7 @@ const stopDrag = () => {
 .header-title {
   font-size: 13px;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -352,13 +352,13 @@ const stopDrag = () => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .action-btn:hover {
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--border-color);
+  color: var(--text-primary);
 }
 
 .action-btn.close-btn:hover {
@@ -391,20 +391,20 @@ const stopDrag = () => {
 .label {
   font-size: 12px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--text-secondary);
   width: 55px;
   flex-shrink: 0;
 }
 
 .value-input {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   outline: none;
-  color: #334155;
+  color: var(--text-primary);
 }
 
 .value-input:focus {
-  border-color: #3b82f6;
+  border-color: var(--color-accent);
 }
 
 .mono-input {
@@ -425,13 +425,13 @@ const stopDrag = () => {
 .label-row label {
   font-size: 12px;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
 }
 
 .text-btn {
   background: transparent;
   border: none;
-  color: #3b82f6;
+  color: var(--color-accent);
   font-size: 12px;
   cursor: pointer;
   padding: 2px 4px;
@@ -439,13 +439,13 @@ const stopDrag = () => {
 }
 
 .text-btn:hover {
-  background: #eff6ff;
+  background: var(--bg-surface-active);
 }
 
 .inspector-footer {
   padding: 12px 16px;
-  background: #f8fafc;
-  border-top: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -463,21 +463,21 @@ const stopDrag = () => {
 
 .btn-secondary {
   background: transparent;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-  background: #f1f5f9;
+  background: var(--border-light);
 }
 
 .btn-primary {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--bg-surface);
 }
 
 .btn-primary:hover {
-  background: #2563eb;
+  background: var(--color-accent-hover);
 }
 
 /* Dropdown */
@@ -490,10 +490,10 @@ const stopDrag = () => {
   top: 100%;
   right: 0;
   margin-top: 4px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   min-width: 150px;
   max-height: 200px;
   overflow-y: auto;
@@ -503,7 +503,7 @@ const stopDrag = () => {
 .dropdown-empty {
   padding: 8px 12px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -513,12 +513,12 @@ const stopDrag = () => {
   align-items: center;
   padding: 6px 12px;
   font-size: 12px;
-  color: #334155;
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .dropdown-item:hover {
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
 }
 
 .dropdown-text {

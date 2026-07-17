@@ -131,9 +131,9 @@ const getStyle = (index: number): any => {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 12px;
-  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-soft);
   pointer-events: auto;
   font-size: 14px;
   font-weight: 500;
@@ -142,7 +142,7 @@ const getStyle = (index: number): any => {
 }
 
 .message-text {
-  color: #334155;
+  color: var(--text-primary);
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-all;
@@ -153,7 +153,7 @@ const getStyle = (index: number): any => {
   margin-left: 12px;
   background: rgba(0,0,0,0.05);
   border: 1px solid rgba(0,0,0,0.1);
-  color: #334155;
+  color: var(--text-primary);
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
@@ -171,7 +171,7 @@ const getStyle = (index: number): any => {
   justify-content: center;
 }
 
-.message-info .message-icon { color: #3b82f6; }
+.message-info .message-icon { color: var(--color-accent); }
 .message-success .message-icon { color: #10b981; }
 .message-warning .message-icon { color: #f59e0b; }
 .message-error .message-icon { color: #ef4444; }
@@ -179,7 +179,7 @@ const getStyle = (index: number): any => {
 .message-close {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   margin-left: 8px;
@@ -191,8 +191,8 @@ const getStyle = (index: number): any => {
 }
 
 .message-close:hover {
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 /* Transitions */

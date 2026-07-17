@@ -107,8 +107,8 @@ const toggleSidebar = () => {
 <style scoped lang="less">
 .sidebar {
   width: 180px;
-  background: #ffffff;
-  border-right: 1px solid #e0e0e0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.02);
@@ -127,7 +127,7 @@ const toggleSidebar = () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-color);
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
@@ -140,7 +140,7 @@ const toggleSidebar = () => {
   top: 50%;
   transform: translateY(-50%);
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   font-size: 15px;
   display: flex;
   pointer-events: none;
@@ -150,7 +150,7 @@ const toggleSidebar = () => {
   background: transparent;
   border: none;
   cursor: pointer;
-  color: #555;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -162,7 +162,7 @@ const toggleSidebar = () => {
 }
 
 .toggle-btn:hover {
-  color: #1890ff;
+  color: var(--color-accent);
 }
 
 .toggle-btn svg {
@@ -188,7 +188,7 @@ const toggleSidebar = () => {
   margin-bottom: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   letter-spacing: 0.5px;
   text-transform: uppercase;
   user-select: none;
@@ -218,7 +218,7 @@ const toggleSidebar = () => {
 .menu-item {
   padding: 12px 22px;
   cursor: pointer;
-  color: #555;
+  color: var(--text-secondary);
   font-size: 15px;
   transition: all 0.2s;
   display: flex;
@@ -226,6 +226,15 @@ const toggleSidebar = () => {
   white-space: nowrap;
   height: 48px;
   text-decoration: none;
+}
+
+button.menu-item {
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  outline: none;
 }
 
 .menu-item svg,
@@ -253,20 +262,20 @@ const toggleSidebar = () => {
 }
 
 .menu-item:hover {
-  background: #f5f7fa;
-  color: #333;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .menu-item.active {
-  background: #e6f7ff;
-  color: #1890ff;
-  box-shadow: inset -3px 0 0 #1890ff;
+  background: var(--bg-surface-active);
+  color: var(--color-accent);
+  box-shadow: inset -3px 0 0 var(--color-accent);
   font-weight: 500;
 }
 
 .empty-item {
   padding: 8px 22px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 13px;
   white-space: nowrap;
   display: flex;

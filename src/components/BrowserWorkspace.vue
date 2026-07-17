@@ -32,13 +32,15 @@
     <div class="function-bar">
       <div class="func-spacer"></div>
       <div class="func-group">
-        <button class="func-btn" data-tooltip="注入样式" @click="inspectorVisible = true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="11" fill="currentColor" stroke="none">CSS</text>
+        <button class="func-btn" v-tooltip="'注入样式'" @click="inspectorVisible = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
+              font-weight="800" font-size="11" fill="currentColor" stroke="none">CSS</text>
           </svg>
         </button>
 
-        <button class="func-btn" :class="{ 'active': isPickingElementImage }" data-tooltip="捕获图片"
+        <button class="func-btn" :class="{ 'active': isPickingElementImage }" v-tooltip="'捕获图片'"
           @click="pickElementImage">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
@@ -81,21 +83,21 @@
           </template>
         </SnifferDropdown>
         <div class="func-divider"></div>
-        <button class="func-btn" data-tooltip="后退" @click="onBack">
+        <button class="func-btn tooltip-left" v-tooltip="'后退'" @click="onBack">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
         </button>
-        <button class="func-btn" data-tooltip="前进" @click="onForward">
+        <button class="func-btn tooltip-left" v-tooltip="'前进'" @click="onForward">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"></line>
             <polyline points="12 5 19 12 12 19"></polyline>
           </svg>
         </button>
-        <button class="func-btn" data-tooltip="刷新" @click="onRefresh">
+        <button class="func-btn tooltip-left" v-tooltip="'刷新'" @click="onRefresh">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
@@ -104,7 +106,7 @@
           </svg>
         </button>
         <div class="func-divider"></div>
-        <button class="func-btn" data-tooltip="开发者工具" @click="onDevTools">
+        <button class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6"></polyline>
@@ -119,20 +121,20 @@
     <div class="webview-container" :class="{ 'pointer-disabled': isInteracting }">
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
         :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
-        @load-commit="onLoadCommit($event, tab.id)"
-        @page-title-updated="onTitleUpdated($event, tab.id)" @page-favicon-updated="onFaviconUpdated($event, tab.id)"
-        @did-start-loading="onStartLoading(tab.id)" @did-stop-loading="onStopLoading(tab.id)"
-        @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups></webview>
+        @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
+        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)"
+        @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
+      </webview>
     </div>
 
     <!-- Audio Player Dialog -->
-    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" @close="activeAudioPreview = null" @download="onDownloadAudio" />
+    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" @close="activeAudioPreview = null"
+      @download="onDownloadAudio" />
 
     <!-- Inspector Dialog -->
     <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
-      :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules" 
-      @interaction-start="isInteracting = true"
-      @interaction-end="isInteracting = false" />
+      :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules"
+      @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Image Preview Dialogs -->
     <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" :id="img.id" :url="img.url" :urls="img.urls"
@@ -179,7 +181,7 @@ const props = defineProps<{
 }>();
 
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
+const { state: settingsState, setTheme, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -356,7 +358,7 @@ const matchPattern = (pattern: string, url: string) => {
   let regexPattern = pattern
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\\\*/g, '.*');
-  
+
   regexPattern = regexPattern.replace(/:\/\/\.\*\\\./g, '://(?:.*\\.)?');
   const regex = new RegExp(`^${regexPattern}$`);
   return regex.test(url);
@@ -375,7 +377,30 @@ const refreshWebviewStyles = async (tabId: string) => {
   try {
     const urlStr = webview.getURL();
     const stylesObj = settingsState.customStyles[props.resourceId];
-    let cssText = '';
+    let cssText = `
+      /* Global Scrollbar Beautification */
+      ::-webkit-scrollbar {
+        width: 14px !important;
+        height: 14px !important;
+        background: transparent !important;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15) !important;
+        border-radius: 10px !important;
+        background-clip: padding-box !important;
+        border: 4px solid transparent !important;
+        min-height: 40px !important;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.3) !important;
+        border-radius: 10px !important;
+        background-clip: padding-box !important;
+        border: 4px solid transparent !important;
+      }
+      ::-webkit-scrollbar-corner {
+        background: transparent !important;
+      }
+    `;
 
     if (stylesObj) {
       for (const [pattern, rules] of Object.entries(stylesObj)) {
@@ -383,7 +408,7 @@ const refreshWebviewStyles = async (tabId: string) => {
         if (!pattern.includes('*') && !pattern.includes('/')) {
           try {
             isMatch = new URL(urlStr).hostname.endsWith(pattern);
-          } catch(e) {}
+          } catch (e) { }
         } else {
           isMatch = matchPattern(pattern, urlStr);
         }
@@ -433,7 +458,7 @@ const onFaviconUpdated = async (event: any, tabId: string) => {
 
     let updated = false;
     const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
-    
+
     if (isExt && (isExt.iconOriginalUrl !== faviconUrl || !isExt.icon || isExt.icon.length < 50)) {
       const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
       if (base64) {
@@ -585,15 +610,15 @@ const pickElementImage = async () => {
       overlay.style.pointerEvents = 'none';
       overlay.style.zIndex = '2147483647';
       overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
-      overlay.style.border = '2px solid #3b82f6';
+      overlay.style.border = '2px solid var(--color-accent)';
       overlay.style.transition = 'all 0.1s ease';
       document.body.appendChild(overlay);
 
       const tooltip = document.createElement('div');
       tooltip.style.position = 'fixed';
       tooltip.style.zIndex = '2147483647';
-      tooltip.style.backgroundColor = '#1e293b';
-      tooltip.style.color = '#ffffff';
+      tooltip.style.backgroundColor = 'var(--text-primary)';
+      tooltip.style.color = 'var(--bg-surface)';
       tooltip.style.padding = '4px 8px';
       tooltip.style.borderRadius = '4px';
       tooltip.style.fontSize = '12px';
@@ -698,9 +723,9 @@ const pickElementImage = async () => {
         tooltip.textContent = tagName + className + levelText + ' - 包含图片: ' + imgCount + ' 张';
 
         let h = 220; // brand blue
-        overlay.style.borderColor = '#3b82f6';
+        overlay.style.borderColor = 'var(--color-accent)';
         overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        tooltip.style.backgroundColor = '#1e293b';
+        tooltip.style.backgroundColor = 'var(--text-primary)';
 
         // Child highlighting for multiple levels
         childOverlays.forEach(o => o.style.display = 'none');
@@ -713,7 +738,7 @@ const pickElementImage = async () => {
               childOverlay.style.position = 'fixed';
               childOverlay.style.pointerEvents = 'none';
               childOverlay.style.zIndex = '2147483646';
-              childOverlay.style.border = '1px dashed #3b82f6'; // dashed blue border
+              childOverlay.style.border = '1px dashed var(--color-accent)'; // dashed blue border
               childOverlay.style.backgroundColor = 'transparent';
               childOverlay.style.transition = 'all 0.1s ease';
               document.body.appendChild(childOverlay);
@@ -857,7 +882,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 
   const newStyles = { ...settingsState.customStyles };
   if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {};
-  
+
   if (cssString.trim()) {
     newStyles[props.resourceId][domain] = cssString;
   } else {
@@ -879,7 +904,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #f1f5f9;
+  background: var(--border-light);
   overflow: hidden;
 }
 
@@ -887,7 +912,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   display: flex;
   align-items: flex-end;
   height: 44px;
-  background: #e2e8f0;
+  background: var(--border-color);
   padding: 0 8px;
   gap: 4px;
   flex-shrink: 0;
@@ -915,7 +940,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .tab.active {
-  background: #ffffff;
+  background: var(--bg-surface);
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.02);
   z-index: 2;
 }
@@ -932,12 +957,12 @@ const onSaveRules = async (domain: string, cssString: string) => {
 /* Rounded inverted corners for active tab */
 .tab.active::before {
   left: -10px;
-  background: radial-gradient(circle at 0 0, transparent 10px, #ffffff 10px);
+  background: radial-gradient(circle at 0 0, transparent 10px, var(--bg-surface) 10px);
 }
 
 .tab.active::after {
   right: -10px;
-  background: radial-gradient(circle at 10px 0, transparent 10px, #ffffff 10px);
+  background: radial-gradient(circle at 10px 0, transparent 10px, var(--bg-surface) 10px);
 }
 
 .tab-favicon {
@@ -960,13 +985,13 @@ const onSaveRules = async (domain: string, cssString: string) => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: var(--border-color);
 }
 
 .favicon-placeholder.loading {
   background: transparent;
-  border: 2px solid #cbd5e1;
-  border-top-color: #3b82f6;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--color-accent);
   animation: spin 1s linear infinite;
 }
 
@@ -978,7 +1003,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 
 .tab-title {
   font-size: 13px;
-  color: #334155;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -987,7 +1012,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .tab.active .tab-title {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -1001,7 +1026,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-secondary);
   opacity: 0;
   transition: opacity 0.2s, background-color 0.2s;
   margin-left: 4px;
@@ -1017,7 +1042,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .tab-close:hover {
-  background: #e2e8f0;
+  background: var(--border-color);
   color: #ef4444;
 }
 
@@ -1031,7 +1056,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-left: 4px;
   margin-bottom: 3px;
   transition: background-color 0.2s;
@@ -1039,7 +1064,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 
 .new-tab-btn:hover {
   background: rgba(255, 255, 255, 0.5);
-  color: #334155;
+  color: var(--text-primary);
 }
 
 /* Function Bar */
@@ -1047,9 +1072,9 @@ const onSaveRules = async (domain: string, cssString: string) => {
   display: flex;
   align-items: center;
   height: 40px;
-  background: #ffffff;
+  background: var(--bg-surface);
   padding: 0 12px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
 }
 
@@ -1062,7 +1087,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 .func-divider {
   width: 1px;
   height: 16px;
-  background-color: #cbd5e1;
+  background-color: var(--border-color);
   margin: 0 4px;
 }
 
@@ -1081,7 +1106,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-secondary);
   transition: all 0.2s ease;
 }
 
@@ -1090,81 +1115,37 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .func-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 .func-btn.active {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--bg-surface);
 }
 
 .func-btn.active:hover {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--color-accent-hover);
+  color: var(--bg-surface);
 }
 
-/* Custom CSS Tooltip */
-.func-btn::before,
-.func-btn::after {
-  position: absolute;
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  transition-delay: 0.1s;
-  pointer-events: none;
-  z-index: 100;
-}
 
-/* Tooltip text */
-.func-btn::before {
-  content: attr(data-tooltip);
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px) scale(0.95);
-  background: #1e293b;
-  color: #ffffff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-}
-
-/* Tooltip arrow */
-.func-btn::after {
-  content: '';
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-2px);
-  border-width: 6px;
-  border-style: solid;
-  border-color: transparent transparent #1e293b transparent;
-}
-
-.func-btn:hover::before {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(8px) scale(1);
-}
-
-.func-btn:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(2px);
-}
 
 .webview-container {
   flex: 1;
   position: relative;
-  background: #ffffff;
+  background: var(--bg-app);
+  padding: 16px;
 }
 
 .webview-el {
   width: 100%;
   height: 100%;
   border: none;
+  background: var(--bg-surface);
+  border-radius: 0;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 
 .pointer-disabled webview {
@@ -1179,7 +1160,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(226, 232, 240, 0.8);
   border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-soft);
   padding: 4px;
   width: 140px;
   z-index: 99999;
@@ -1208,15 +1189,15 @@ const onSaveRules = async (domain: string, cssString: string) => {
   gap: 8px;
   padding: 6px 8px;
   font-size: 12px;
-  color: #334155;
+  color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .menu-item:hover {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--bg-surface);
 }
 
 .menu-item svg {

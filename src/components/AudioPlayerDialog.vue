@@ -191,9 +191,9 @@ const close = () => {
 <style scoped>
 .audio-player-dialog {
   position: fixed;
-  background: var(--bg-color, #ffffff);
+  background: var(--bg-color, var(--bg-surface));
   border-radius: 8px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -203,13 +203,13 @@ const close = () => {
 
 :global(body.dark) .audio-player-dialog {
   background: #1e1e20;
-  border-color: #333;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  border-color: var(--text-primary);
+  box-shadow: var(--shadow-soft);
 }
 
 .dialog-header {
   height: 36px;
-  background: var(--bg-color, #ffffff);
+  background: var(--bg-color, var(--bg-surface));
   border-bottom: 1px solid var(--border-color, #e4e7ed);
   display: flex;
   align-items: center;
@@ -221,7 +221,7 @@ const close = () => {
 
 :global(body.dark) .dialog-header {
   background: #252527;
-  border-color: #333;
+  border-color: var(--text-primary);
 }
 
 .dialog-header:active {
@@ -262,7 +262,7 @@ const close = () => {
 }
 
 .action-btn:hover {
-  background: var(--hover-bg, #f5f7fa);
+  background: var(--hover-bg, var(--bg-app));
   color: var(--text-color, #303133);
 }
 
@@ -272,7 +272,7 @@ const close = () => {
 }
 
 :global(body.dark) .action-btn:hover {
-  background: #333;
+  background: var(--text-primary);
   color: #e5eaf3;
 }
 
@@ -298,7 +298,7 @@ const close = () => {
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: #409eff;
+  background: var(--color-accent-hover);
   color: white;
   display: flex;
   align-items: center;
@@ -309,7 +309,7 @@ const close = () => {
 }
 
 .play-btn:hover {
-  background: #66b1ff;
+  background: var(--color-accent-hover);
   transform: scale(1.05);
 }
 
@@ -352,7 +352,7 @@ const close = () => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #409eff;
+  background: var(--color-accent-hover);
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -365,7 +365,7 @@ const close = () => {
   padding: 4px 8px;
   border-radius: 4px;
   border: 1px solid var(--border-color, #e4e7ed);
-  background: var(--bg-color, #ffffff);
+  background: var(--bg-color, var(--bg-surface));
   color: var(--text-color, #303133);
   font-size: 12px;
   outline: none;

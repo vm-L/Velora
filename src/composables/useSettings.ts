@@ -10,6 +10,7 @@ export interface ResourceItem {
 
 export const state = reactive({
   closeBehavior: 'tray',
+  theme: 'light',
   imageDirectory: '',
   audioDirectory: '',
   videoDirectory: '',
@@ -24,6 +25,7 @@ export const state = reactive({
 export const useSettings = () => {
   const loadSettings = async () => {
     state.closeBehavior = (await window.electronAPI.getSetting('closeBehavior')) || 'tray'
+    state.theme = (await window.electronAPI.getSetting('theme')) || 'light'
     state.imageDirectory = (await window.electronAPI.getSetting('imageDirectory')) || ''
     state.audioDirectory = (await window.electronAPI.getSetting('audioDirectory')) || ''
     state.videoDirectory = (await window.electronAPI.getSetting('videoDirectory')) || ''
@@ -38,6 +40,11 @@ export const useSettings = () => {
   const setCloseBehavior = async (behavior: string) => {
     state.closeBehavior = behavior
     await window.electronAPI.setSetting('closeBehavior', behavior)
+  }
+
+  const setTheme = async (theme: 'light' | 'dark') => {
+    state.theme = theme
+    await window.electronAPI.setSetting('theme', theme)
   }
 
   const saveImageDirectory = async (dir: string) => {
@@ -84,6 +91,7 @@ export const useSettings = () => {
     state, 
     loadSettings, 
     setCloseBehavior, 
+    setTheme,
     saveImageDirectory, 
     saveAudioDirectory,
     saveVideoDirectory,

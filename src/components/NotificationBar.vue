@@ -163,21 +163,21 @@ const goToSource = (notif: NotificationItem) => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 20px;
   padding: 6px 14px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s;
   
   &:hover {
-    background: #f8fafc;
+    background: var(--bg-surface-hover);
     color: #ef4444;
     border-color: #fca5a5;
-    box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 }
 
@@ -208,11 +208,11 @@ const goToSource = (notif: NotificationItem) => {
 }
 
 .notif-dialog-modal {
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 12px;
   width: 90%;
   max-width: 450px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -229,20 +229,20 @@ const goToSource = (notif: NotificationItem) => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
   
   h3 {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--text-primary);
   }
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -252,8 +252,8 @@ const goToSource = (notif: NotificationItem) => {
   transition: all 0.2s;
   
   &:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--border-light);
+    color: var(--text-primary);
   }
 }
 
@@ -266,13 +266,13 @@ const goToSource = (notif: NotificationItem) => {
 .dialog-message {
   margin: 0 0 16px 0;
   font-size: 14px;
-  color: #334155;
+  color: var(--text-primary);
   line-height: 1.5;
 }
 
 .dialog-detail {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 12px;
   
@@ -288,11 +288,11 @@ const goToSource = (notif: NotificationItem) => {
 
 .dialog-footer {
   padding: 16px 20px;
-  background: #f8fafc;
+  background: var(--bg-surface-hover);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--border-color);
 }
 
 .btn {
@@ -306,22 +306,22 @@ const goToSource = (notif: NotificationItem) => {
 }
 
 .btn-secondary {
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   
   &:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--border-light);
+    color: var(--text-primary);
   }
 }
 
 .btn-primary {
-  background: #3b82f6;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--bg-surface);
   
   &:hover {
-    background: #2563eb;
+    background: var(--color-accent-hover);
   }
 }
 </style>
