@@ -2,6 +2,7 @@
   <div class="dropdown-container">
     <button class="func-btn" :class="{ 'active': isOpen }" v-tooltip="isOpen ? '' : tooltip" @click="toggle">
       <slot name="icon"></slot>
+      <div v-if="items.length > 0" class="sniff-badge">{{ items.length > 99 ? '99+' : items.length }}</div>
     </button>
     <div v-if="isOpen" class="dropdown-backdrop" @click.stop="close"></div>
     <div v-if="isOpen" class="dropdown-menu">
@@ -247,6 +248,25 @@ const saveLocal = (url: string) => {
   transition-delay: 0.1s;
   pointer-events: none;
   z-index: 100;
+}
+
+.sniff-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background-color: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+  pointer-events: none;
 }
 
 .dropdown-backdrop {

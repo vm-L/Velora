@@ -30,7 +30,7 @@
     </div>
 
     <div class="dialog-content">
-      <audio ref="audioRef" :src="url" @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="isPlaying = false" @play="isPlaying = true" @pause="isPlaying = false"></audio>
+      <audio ref="audioRef" :src="url" autoplay @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="isPlaying = false" @play="isPlaying = true" @pause="isPlaying = false"></audio>
       
       <div class="player-controls">
         <button class="play-btn" @click="togglePlay">
