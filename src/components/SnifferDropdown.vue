@@ -11,53 +11,42 @@
         <button class="text-btn" @click.stop="clear">清空</button>
       </div>
       <div class="dropdown-items">
-        <div v-if="items.length === 0" class="dropdown-empty">暂无捕获记录</div>
-        <div v-for="group in groupedItems" :key="group.format" class="group-container">
-          <div class="group-header" @click="toggleGroup(group.format)">
-            <span class="group-title">{{ group.format }} ({{ group.items.length }})</span>
-            <svg class="group-chevron" :class="{ 'is-open': expandedGroup === group.format }" width="14" height="14"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
+        <div v-if="processedItems.length === 0" class="dropdown-empty">暂无捕获记录</div>
+        <div v-for="item in processedItems" :key="item.url" class="dropdown-item" @click="onItemClick(item.url)">
+          <div class="media-preview" v-if="type === 'image'">
+            <img :src="item.url" referrerpolicy="no-referrer" />
+          </div>
+          <div class="media-preview video-icon" v-else>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
           </div>
-          <div class="group-body" v-show="expandedGroup === group.format">
-            <div v-for="item in group.items" :key="item.url" class="dropdown-item" @click="onItemClick(item.url)">
-              <div class="media-preview" v-if="type === 'image'">
-                <img :src="item.url" referrerpolicy="no-referrer" />
-              </div>
-              <div class="media-preview video-icon" v-else>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-              </div>
-              <div class="item-info">
-                <div class="item-url">{{ getBasename(item.url) }}</div>
-                <div class="item-time">{{ formatTime(item.timestamp) }}</div>
-              </div>
-              <div class="item-actions">
-                <button class="icon-action-btn" @click.stop="copyUrl(item.url)" title="复制链接">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </button>
-                <button v-if="type === 'image'" class="icon-action-btn" @click.stop="copyData(item.url)"
-                  title="复制图片到剪贴板">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21 15 16 10 5 21"></polyline>
-                  </svg>
-                </button>
-                <button class="icon-action-btn" @click.stop="saveLocal(item.url)" title="保存到本地">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                </button>
-              </div>
-            </div>
+          <div class="item-info">
+            <div class="item-url">{{ getBasename(item.url) }}</div>
+            <div class="item-time">{{ formatTime(item.timestamp) }}</div>
+          </div>
+          <div class="item-actions">
+            <button class="icon-action-btn" @click.stop="copyUrl(item.url)" title="复制链接">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button v-if="type === 'image'" class="icon-action-btn" @click.stop="copyData(item.url)"
+              title="复制图片到剪贴板">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+            </button>
+            <button class="icon-action-btn" @click.stop="saveLocal(item.url)" title="保存到本地">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -74,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import SaveMediaDialog from './SaveMediaDialog.vue';
 import { useMessage } from '../composables/useMessage';
 
@@ -89,50 +78,56 @@ const emit = defineEmits(['clear', 'preview']);
 const { showMessage } = useMessage();
 
 const isOpen = ref(false);
-const expandedGroup = ref<string | null>(null);
 
-watch(isOpen, (newVal) => {
-  if (!newVal) {
-    expandedGroup.value = null;
-  }
-});
-
-const groupedItems = computed(() => {
-  const groups: Record<string, typeof props.items> = {};
-  props.items.forEach(item => {
-    let ext = 'Other';
+const processedItems = computed(() => {
+  const manifests = props.items.filter(item => {
     try {
-      const parsed = new URL(item.url);
-      const pathname = parsed.pathname;
-      const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
-      if (match) {
-        ext = match[1].toUpperCase();
-      } else {
-        ext = 'Other';
-      }
-    } catch {
-      ext = 'Other';
-    }
-
-    if (!groups[ext]) {
-      groups[ext] = [];
-    }
-    groups[ext].push(item);
+      const pathname = new URL(item.url).pathname.toLowerCase();
+      return pathname.endsWith('.m3u8') || pathname.endsWith('.mpd');
+    } catch { return false; }
   });
 
-  return Object.keys(groups).map(format => ({
-    format,
-    items: [...groups[format]].sort((a, b) => b.timestamp - a.timestamp)
-  })).sort((a, b) => b.items.length - a.items.length);
-});
+  const manifestPaths = manifests.map(m => {
+    try {
+      const u = new URL(m.url);
+      const parts = u.pathname.split('/');
+      parts.pop();
+      return { host: u.host, dir: parts.join('/') };
+    } catch { return null; }
+  }).filter(Boolean);
 
-const toggleGroup = (format: string) => {
-  if (expandedGroup.value === format) {
-    expandedGroup.value = null;
-  } else {
-    expandedGroup.value = format;
-  }
-};
+  const clustered = new Map<string, typeof props.items[0]>();
+
+  props.items.forEach(item => {
+    try {
+      const u = new URL(item.url);
+      const pathname = u.pathname.toLowerCase();
+      
+      if (pathname.endsWith('.ts') || pathname.endsWith('.m4s') || pathname.endsWith('.m4a') || pathname.endsWith('.mp4')) {
+        const parts = u.pathname.split('/');
+        parts.pop();
+        const dir = parts.join('/');
+        if (manifestPaths.some(m => m?.host === u.host && m?.dir === dir)) {
+          return;
+        }
+      }
+
+      let base = u.origin + u.pathname;
+      base = base.replace(/[-_]?(?:part|seg|segment|frag|fragment)?[-_]?\d+\.([a-zA-Z0-9]+)$/i, '.$1');
+      
+      const clusterKey = base;
+
+      const existing = clustered.get(clusterKey);
+      if (!existing || item.timestamp > existing.timestamp) {
+        clustered.set(clusterKey, item);
+      }
+    } catch {
+      clustered.set(item.url, item);
+    }
+  });
+
+  return Array.from(clustered.values()).sort((a, b) => b.timestamp - a.timestamp);
+});
 
 const toggle = () => {
   isOpen.value = !isOpen.value;
@@ -336,46 +331,6 @@ const saveLocal = (url: string) => {
 .dropdown-items {
   max-height: 400px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.group-container {
-  display: flex;
-  flex-direction: column;
-}
-
-.group-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: var(--bg-surface-hover);
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
-  user-select: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.group-header:hover {
-  background: var(--border-light);
-}
-
-.group-chevron {
-  transition: transform 0.2s;
-  color: var(--text-secondary);
-}
-
-.group-chevron.is-open {
-  transform: rotate(180deg);
-}
-
-.group-body {
   display: flex;
   flex-direction: column;
 }
