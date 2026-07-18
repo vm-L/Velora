@@ -103,7 +103,7 @@ const processedItems = computed(() => {
       const u = new URL(item.url);
       const pathname = u.pathname.toLowerCase();
       
-      if (pathname.endsWith('.ts') || pathname.endsWith('.m4s') || pathname.endsWith('.m4a') || pathname.endsWith('.mp4')) {
+      if (pathname.endsWith('.ts') || pathname.endsWith('.m4a') || pathname.endsWith('.mp4')) {
         const parts = u.pathname.split('/');
         parts.pop();
         const dir = parts.join('/');

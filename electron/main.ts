@@ -214,11 +214,20 @@ function createWindow() {
       }
 
       let url = details.url;
-      const lowerUrl = url.toLowerCase();
+      let pathname = '';
+      try {
+        pathname = new URL(url).pathname.toLowerCase();
+      } catch {
+        pathname = url.split('?')[0].toLowerCase();
+      }
       let type = '';
 
-      const isAudioExt = lowerUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
-      const isVideoExt = lowerUrl.match(/\.(mp4|webm|m3u8|ts|flv|mkv|avi)(\?.*)?$/i);
+      if (pathname.endsWith('.m4s') || pathname.endsWith('.mpd') || pathname.endsWith('.ts')) {
+        return callback({});
+      }
+
+      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/i);
+      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|mkv|avi)$/i);
 
       if (isAudioExt) type = 'audio';
       else if (isVideoExt) type = 'video';
@@ -245,12 +254,26 @@ function createWindow() {
       }
 
       let url = details.url;
-      const lowerUrl = url.toLowerCase();
+      let pathname = '';
+      try {
+        pathname = new URL(url).pathname.toLowerCase();
+      } catch {
+        pathname = url.split('?')[0].toLowerCase();
+      }
       let type = '';
 
-      const isImage = details.resourceType === 'image' || lowerUrl.match(/\.(png|jpe?g|gif|webp|svg|ico)(\?.*)?$/i);
-      const isAudioExt = lowerUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
-      const isVideoExt = lowerUrl.match(/\.(mp4|webm|m3u8|ts|flv|mkv|avi)(\?.*)?$/i);
+      const isImageExt = pathname.match(/\.(png|jpe?g|gif|webp|svg|ico)$/i);
+      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/i);
+      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|mkv|avi)$/i);
+
+      // Require a whitelisted suffix, otherwise block/ignore from sniffing
+      if (!isImageExt && !isAudioExt && !isVideoExt) {
+        return callback({});
+      }
+
+      if (pathname.endsWith('.m4s') || pathname.endsWith('.mpd') || pathname.endsWith('.ts')) {
+        return callback({});
+      }
 
       let contentType = '';
       if (details.responseHeaders) {
@@ -262,10 +285,17 @@ function createWindow() {
         }
       }
 
-      if (isImage || contentType.startsWith('image/')) type = 'image';
-      else if (isAudioExt || contentType.startsWith('audio/')) type = 'audio';
-      else if (isVideoExt || contentType.startsWith('video/') || contentType.includes('mpegurl') || contentType.includes('application/x-mpegurl') || contentType.includes('application/vnd.apple.mpegurl')) type = 'video';
-      else if (details.resourceType === 'media') type = 'video'; // fallback
+      const audioMimeWhitelist = ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/aac', 'audio/flac', 'audio/x-m4a', 'audio/mp4'];
+      const videoMimeWhitelist = ['video/mp4', 'video/webm', 'video/x-flv', 'video/avi', 'video/mpeg', 'application/x-mpegurl', 'application/vnd.apple.mpegurl'];
+      const imageMimeWhitelist = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'image/x-icon'];
+
+      if (isImageExt && (details.resourceType === 'image' || imageMimeWhitelist.some(mime => contentType.startsWith(mime)))) {
+        type = 'image';
+      } else if (isAudioExt && audioMimeWhitelist.some(mime => contentType.startsWith(mime))) {
+        type = 'audio';
+      } else if (isVideoExt && videoMimeWhitelist.some(mime => contentType.startsWith(mime) || contentType.includes('mpegurl'))) {
+        type = 'video';
+      }
 
       if (type === 'image') {
         // 保留 query 参数，但去除 @ 后的缩放等特殊后缀
