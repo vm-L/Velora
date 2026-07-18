@@ -13,7 +13,7 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
   : process.env.DIST
 
 import { storeManager, setupStoreHandlers } from './store'
-import { downloader } from './downloader'
+import { downloader, logToFile } from './downloader'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
@@ -23,10 +23,12 @@ const iconBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAA
 const clearPrivacyData = async () => {
   try {
     await session.defaultSession.clearCache()
-    await session.defaultSession.clearStorageData()
-    console.log('[Privacy] Browser cache and storage data cleared successfully.')
-  } catch (e) {
-    console.error('[Privacy] Failed to clear privacy data:', e)
+    await session.defaultSession.clearStorageData({
+      storages: ['cookies', 'localstorage', 'websql', 'cachestorage', 'serviceworkers']
+    })
+    logToFile('[Privacy] Browser cache and storage data (excluding IndexedDB) cleared successfully.')
+  } catch (e: any) {
+    logToFile(`[Privacy] Failed to clear privacy data: ${e.message}`)
   }
 }
 
@@ -144,6 +146,10 @@ function createWindow() {
 
   // Downloader IPCs
   downloader.setWindow(mainWindow)
+  
+  ipcMain.on('write-log', (_, message: string) => {
+    logToFile(message)
+  })
   
   ipcMain.on('start-download', (_, cmd) => {
     downloader.startDownload(cmd)

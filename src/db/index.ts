@@ -5,7 +5,7 @@ export interface DownloadTask {
   url: string;
   name: string;
   savePath: string; // Full path where the file is saved
-  status: 'downloading' | 'paused' | 'completed' | 'error';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'waiting';
   progress: number; // 0-100
   receivedBytes: number;
   totalBytes: number;

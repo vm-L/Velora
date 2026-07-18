@@ -182,9 +182,7 @@ const copyData = async (url: string) => {
 };
 
 import { useSettings } from '../composables/useSettings';
-import { useDownloads } from '../composables/useDownloads';
 
-const { addDownload } = useDownloads();
 const { state } = useSettings();
 
 const saveDialogVisible = ref(false);

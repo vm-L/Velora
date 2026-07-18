@@ -171,17 +171,12 @@
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { useWorkspaces } from '../composables/useWorkspaces';
 import { useSettings } from '../composables/useSettings';
-import { useMessage } from '../composables/useMessage';
-const { showMessage } = useMessage();
 
 import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
 import AudioPlayerDialog from './AudioPlayerDialog.vue';
 import SaveMediaDialog from './SaveMediaDialog.vue';
-import { useDownloads } from '../composables/useDownloads';
-
-const { addDownload } = useDownloads();
 import { APP_PREFIX } from '../constants';
 
 
@@ -247,22 +242,45 @@ onMounted(() => {
       // data: { webContentsId: number, url: string, type: 'image'|'video', timestamp: number }
       if (!workspace.value) return;
 
-      for (const tab of workspace.value.tabs) {
-        if (tab.webContentsId === data.webContentsId) {
-          if (data.type === 'image') {
-            if (!tab.sniffedImages.some(m => m.url === data.url)) {
-              tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
+      let matchedTab = workspace.value.tabs.find(t => t.webContentsId === data.webContentsId);
+
+      if (!matchedTab) {
+        const webviews = document.querySelectorAll('webview') as NodeListOf<any>;
+        for (const wv of webviews) {
+          try {
+            if (wv.getWebContentsId && wv.getWebContentsId() === data.webContentsId) {
+              const tabId = wv.id.replace('webview-', '');
+              matchedTab = workspace.value.tabs.find(t => t.id === tabId);
+              if (matchedTab) {
+                updateTab(props.resourceId, tabId, { webContentsId: data.webContentsId });
+              }
+              break;
             }
-          } else if (data.type === 'video') {
-            if (!tab.sniffedVideos.some(m => m.url === data.url)) {
-              tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
-            }
-          } else if (data.type === 'audio') {
-            if (!tab.sniffedAudios.some(m => m.url === data.url)) {
-              tab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
-            }
-          }
-          break;
+          } catch(e) {}
+        }
+      }
+
+      if (!matchedTab) {
+         const win = window as any;
+         if (!win._sniffedBuffer) win._sniffedBuffer = new Map();
+         if (!win._sniffedBuffer.has(data.webContentsId)) {
+           win._sniffedBuffer.set(data.webContentsId, []);
+         }
+         win._sniffedBuffer.get(data.webContentsId).push(data);
+         return;
+      }
+
+      if (data.type === 'image') {
+        if (!matchedTab.sniffedImages.some(m => m.url === data.url)) {
+          matchedTab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
+        }
+      } else if (data.type === 'video') {
+        if (!matchedTab.sniffedVideos.some(m => m.url === data.url)) {
+          matchedTab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
+        }
+      } else if (data.type === 'audio') {
+        if (!matchedTab.sniffedAudios.some(m => m.url === data.url)) {
+          matchedTab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
         }
       }
     });
@@ -444,6 +462,30 @@ const onStartLoading = (tabId: string) => {
     try {
       const wcId = webview.getWebContentsId();
       updateTab(props.resourceId, tabId, { webContentsId: wcId });
+      
+      const win = window as any;
+      if (win._sniffedBuffer && win._sniffedBuffer.has(wcId)) {
+        const buffered = win._sniffedBuffer.get(wcId);
+        const tab = workspace.value?.tabs.find(t => t.id === tabId);
+        if (tab) {
+          for (const data of buffered) {
+            if (data.type === 'image') {
+              if (!tab.sniffedImages.some((m: any) => m.url === data.url)) {
+                tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
+              }
+            } else if (data.type === 'video') {
+              if (!tab.sniffedVideos.some((m: any) => m.url === data.url)) {
+                tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
+              }
+            } else if (data.type === 'audio') {
+              if (!tab.sniffedAudios.some((m: any) => m.url === data.url)) {
+                tab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
+              }
+            }
+          }
+          win._sniffedBuffer.delete(wcId);
+        }
+      }
     } catch (e) {
       // ignore
     }

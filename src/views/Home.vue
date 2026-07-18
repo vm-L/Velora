@@ -120,7 +120,7 @@
             <div class="task-header">
               <div class="task-name" :title="task.name">{{ task.name }}</div>
               <div class="task-actions">
-                <button v-if="task.status === 'downloading'" class="action-icon" title="暂停"
+                <button v-if="task.status === 'downloading' || task.status === 'waiting'" class="action-icon" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
@@ -259,7 +259,8 @@ onUnmounted(() => {
 
 const getStatusWeight = (status: string) => {
   switch (status) {
-    case 'downloading': return 4;
+    case 'downloading': return 5;
+    case 'waiting': return 4;
     case 'paused': return 3;
     case 'error': return 2;
     case 'completed': return 1;
@@ -324,7 +325,7 @@ const enterSelection = (id: string) => {
 const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
 
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && t.status === 'downloading');
+  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'waiting'));
   const skippedCount = selectedTasks.value.length - eligibleTasks.length;
 
   eligibleTasks.forEach(t => pauseTask(t.id));
@@ -371,7 +372,7 @@ const batchDelete = async () => {
   }
 };
 
-const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading').length);
+const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'waiting').length);
 const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
 const errorCount = computed(() => tasks.value.filter(t => t.status === 'error').length);
 
@@ -420,7 +421,12 @@ const openTask = (task: any) => {
 const sortedTasks = computed(() => {
   let filtered = tasks.value;
   if (activeFilter.value) {
-    filtered = filtered.filter(t => t.status === activeFilter.value);
+    filtered = filtered.filter(t => {
+      if (activeFilter.value === 'downloading') {
+        return t.status === 'downloading' || t.status === 'waiting';
+      }
+      return t.status === activeFilter.value;
+    });
   }
   return [...filtered].sort((a, b) => {
     const wa = getStatusWeight(a.status);
@@ -433,6 +439,7 @@ const sortedTasks = computed(() => {
 const getStatusText = (status: string) => {
   switch (status) {
     case 'downloading': return '下载中';
+    case 'waiting': return '排队中';
     case 'paused': return '已暂停';
     case 'completed': return '已完成';
     case 'error': return '下载失败';
@@ -915,7 +922,7 @@ const confirmDelete = async (task: any) => {
   border-radius: 3px;
   transition: width 0.3s ease;
 
-  &.downloading {
+  &.downloading, &.waiting {
     background: var(--color-accent);
   }
 
@@ -954,6 +961,10 @@ const confirmDelete = async (task: any) => {
 
   &.downloading {
     color: var(--color-accent);
+  }
+
+  &.waiting {
+    color: #f59e0b;
   }
 
   &.paused {
