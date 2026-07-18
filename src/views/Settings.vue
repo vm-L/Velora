@@ -35,7 +35,7 @@
             <p>设置最大同时进行的下载任务数量 (支持范围 1-10)。</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <input type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
+            <VInput type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
           </div>
         </div>
 
@@ -46,9 +46,9 @@
             <p>图片的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <input v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
+            <VInput v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <button class="action-btn edit-btn" @click="handleSelectDirectory">选择目录</button>
+            <VButton variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</VButton>
           </div>
         </div>
 
@@ -59,9 +59,9 @@
             <p>音频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <input v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
+            <VInput v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <button class="action-btn edit-btn" @click="handleSelectAudioDirectory">选择目录</button>
+            <VButton variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</VButton>
           </div>
         </div>
 
@@ -72,9 +72,9 @@
             <p>视频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <input v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
+            <VInput v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <button class="action-btn edit-btn" @click="handleSelectVideoDirectory">选择目录</button>
+            <VButton variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</VButton>
           </div>
         </div>
 
@@ -85,9 +85,9 @@
             <p>其他类型文件的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <input v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
+            <VInput v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <button class="action-btn edit-btn" @click="handleSelectFileDirectory">选择目录</button>
+            <VButton variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</VButton>
           </div>
         </div>
       </div>
@@ -113,12 +113,12 @@
 
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info">
-              <input v-model="editTempName" type="text" class="inline-input" placeholder="名称" />
-              <input v-model="editTempUrl" type="text" class="inline-input flex-1" placeholder="URL" />
+              <VInput v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
+              <VInput v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
             </div>
             <div class="action-buttons">
-              <button class="action-btn cancel-btn" @click="cancelEdit">取消</button>
-              <button class="action-btn save-btn" @click="saveEdit('cms', index)">保存</button>
+              <VButton variant="secondary" class="cancel-btn" @click="cancelEdit">取消</VButton>
+              <VButton variant="primary" class="save-btn" @click="saveEdit('cms', index)">保存</VButton>
             </div>
           </template>
           <template v-else>
@@ -127,17 +127,17 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <button class="action-btn edit-btn" @click="startEdit(item)">编辑</button>
-              <button class="action-btn delete-btn" @click="removeCmsResource(index)">删除</button>
+              <VButton variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</VButton>
+              <VButton variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</VButton>
             </div>
           </template>
         </div>
 
         <!-- Add New CMS Resource -->
         <div class="settings-row add-row">
-          <input v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input" />
-          <input v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input flex-1" />
-          <button class="action-btn add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</button>
+          <VInput v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input name-input" />
+          <VInput v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <VButton variant="primary" class="add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</VButton>
         </div>
       </div>
 
@@ -162,12 +162,12 @@
 
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info">
-              <input v-model="editTempName" type="text" class="inline-input" placeholder="名称" />
-              <input v-model="editTempUrl" type="text" class="inline-input flex-1" placeholder="URL" />
+              <VInput v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
+              <VInput v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
             </div>
             <div class="action-buttons">
-              <button class="action-btn cancel-btn" @click="cancelEdit">取消</button>
-              <button class="action-btn save-btn" @click="saveEdit('ext', index)">保存</button>
+              <VButton variant="secondary" class="cancel-btn" @click="cancelEdit">取消</VButton>
+              <VButton variant="primary" class="save-btn" @click="saveEdit('ext', index)">保存</VButton>
             </div>
           </template>
           <template v-else>
@@ -176,18 +176,18 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <button class="action-btn edit-btn" @click="openStyleManager(item)">管理样式</button>
-              <button class="action-btn edit-btn" @click="startEdit(item)">编辑</button>
-              <button class="action-btn delete-btn" @click="removeExternalSite(index)">删除</button>
+              <VButton variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</VButton>
+              <VButton variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</VButton>
+              <VButton variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</VButton>
             </div>
           </template>
         </div>
 
         <!-- Add New External Site -->
         <div class="settings-row add-row">
-          <input v-model="newExtName" type="text" placeholder="网站名称" class="inline-input" />
-          <input v-model="newExtUrl" type="text" placeholder="https://" class="inline-input flex-1" />
-          <button class="action-btn add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</button>
+          <VInput v-model="newExtName" type="text" placeholder="网站名称" class="inline-input name-input" />
+          <VInput v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <VButton variant="primary" class="add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</VButton>
         </div>
       </div>
 
@@ -216,9 +216,9 @@
                 <div></div>
                 <span class="domain-name" style="text-align: center;">{{ domain }}</span>
                 <div style="display: flex; justify-content: flex-end;">
-                  <button class="action-btn delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">
+                  <VButton variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">
                     删除
-                  </button>
+                  </VButton>
                 </div>
               </div>
               <div class="rule-item">
@@ -238,6 +238,8 @@
 import { ref, computed } from 'vue';
 import { useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
+import VButton from '../components/VButton.vue';
+import VInput from '../components/VInput.vue';
 
 const { 
   state, 
@@ -556,6 +558,8 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .edit-mode-info {
+  flex: 1;
+  display: flex;
   flex-direction: row;
   gap: 12px;
   align-items: center;
@@ -564,26 +568,24 @@ const deleteDomainStyle = async (domain: string) => {
 
 /* Inline form for adding */
 .add-row {
+  display: flex;
+  align-items: center;
   background-color: var(--bg-surface-hover);
   gap: 12px;
 }
 
-.add-row .inline-input {
-  background: white;
-}
-
 .inline-input {
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
   min-width: 180px;
 }
 
-.inline-input:focus {
-  border-color: var(--color-accent);
+.inline-input.name-input {
+  flex: 0 0 140px;
+  min-width: 120px;
+}
+
+.inline-input.url-input {
+  flex: 1;
+  min-width: 200px;
 }
 
 .inline-select {
@@ -593,6 +595,7 @@ const deleteDomainStyle = async (domain: string) => {
   font-size: 14px;
   outline: none;
   background-color: var(--bg-surface);
+  color: var(--text-primary);
   cursor: pointer;
   transition: border-color 0.2s;
   min-width: 120px;
@@ -611,58 +614,7 @@ const deleteDomainStyle = async (domain: string) => {
   gap: 8px;
 }
 
-.action-btn {
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-}
-
-.add-btn,
-.save-btn {
-  background: var(--color-accent);
-  color: white;
-}
-
-.add-btn:hover:not(:disabled),
-.save-btn:hover {
-  background: var(--color-accent-hover);
-}
-
-.add-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.edit-btn {
-  background: var(--border-light);
-  color: var(--text-primary);
-}
-
-.edit-btn:hover {
-  background: var(--border-color);
-}
-
-.cancel-btn {
-  background: var(--bg-surface-hover);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-}
-
-.cancel-btn:hover {
-  background: var(--border-light);
-}
-
-.delete-btn {
-  background: #fee2e2;
-  color: #ef4444;
-}
-
-.delete-btn:hover {
-  background: #fecaca;
-}
+/* Buttons styled by VButton component */
 
 .segmented-control {
   display: flex;

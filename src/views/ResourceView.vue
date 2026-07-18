@@ -68,7 +68,7 @@ watch(() => item.value, (newVal) => {
 }
 
 .skeleton-card {
-  background: white;
+  background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: var(--shadow-soft);
   width: 100%;
@@ -80,25 +80,41 @@ watch(() => item.value, (newVal) => {
   border: 1px solid var(--border-color);
 }
 
-.pulse-header {
-  width: 40%;
-  height: 24px;
-  background: var(--border-color);
-  border-radius: 4px;
-  margin-bottom: 24px;
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--border-light);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
-.pulse-line {
-  width: 100%;
+.skeleton-text-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
   height: 12px;
   background: var(--border-light);
   border-radius: 4px;
-  margin-bottom: 12px;
   animation: pulse 1.5s infinite ease-in-out;
 }
 
-.pulse-line.short {
+.skeleton-line.title {
+  width: 40%;
+  height: 16px;
+}
+
+.skeleton-line.subtitle {
   width: 70%;
 }
 

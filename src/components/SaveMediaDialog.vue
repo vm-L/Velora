@@ -8,23 +8,23 @@
         <div class="save-location-group">
           <label>保存位置</label>
           <div class="location-input-row">
-            <input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
-            <button class="select-dir-btn" @click="selectSaveDirectory">选择</button>
+            <VInput v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+            <VButton variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</VButton>
           </div>
         </div>
 
         <div class="save-location-group" style="margin-top: 16px;">
           <label>文件名称</label>
           <div class="location-input-row">
-            <input v-model="fileName" type="text" placeholder="输入文件名称..." />
+            <VInput v-model="fileName" type="text" placeholder="输入文件名称..." />
           </div>
         </div>
       </div>
       <div class="save-footer">
-        <button class="cancel-btn" @click="close" :disabled="isSaving">取消</button>
-        <button class="confirm-btn" @click="confirmSave" :disabled="isSaving">
+        <VButton variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</VButton>
+        <VButton variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
           {{ isSaving ? '保存中...' : '确认保存' }}
-        </button>
+        </VButton>
       </div>
     </div>
   </div>
@@ -34,6 +34,8 @@
 import { ref, computed, watch } from 'vue';
 import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
+import VButton from './VButton.vue';
+import VInput from './VInput.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -186,37 +188,6 @@ const confirmSave = async () => {
   gap: 8px;
 }
 
-.location-input-row input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 13px;
-  color: var(--text-primary);
-  background: var(--bg-body);
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.location-input-row input:focus {
-  border-color: var(--color-accent);
-}
-
-.select-dir-btn {
-  padding: 8px 12px;
-  background: var(--border-light);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.select-dir-btn:hover {
-  background: var(--border-color);
-}
-
 .save-footer {
   padding: 12px 16px;
   border-top: 1px solid var(--border-color);
@@ -225,39 +196,5 @@ const confirmSave = async () => {
   gap: 12px;
   background: var(--bg-surface-hover);
 }
-
-.cancel-btn, .confirm-btn {
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cancel-btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-}
-
-.cancel-btn:hover {
-  background: var(--border-light);
-}
-
-.confirm-btn {
-  background: var(--color-accent);
-  border: 1px solid var(--color-accent);
-  color: white;
-}
-
-.confirm-btn:hover {
-  background: var(--color-accent-hover);
-}
-
-.confirm-btn:disabled {
-  background: var(--text-secondary);
-  border-color: var(--text-secondary);
-  cursor: not-allowed;
-}
+/* Styled by custom VButton and VInput components */
 </style>

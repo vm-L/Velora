@@ -11,8 +11,9 @@ const createTooltipNode = (text: string): HTMLDivElement => {
   const node = document.createElement('div');
   node.textContent = text;
   node.style.position = 'fixed';
-  node.style.background = 'var(--text-primary, #3F3D39)';
-  node.style.color = 'var(--bg-surface, #FFFFFF)';
+  node.style.background = 'var(--bg-surface, #FFFFFF)';
+  node.style.color = 'var(--text-primary, #3F3D39)';
+  node.style.border = '1px solid var(--border-color, #E4E7ED)';
   node.style.padding = '6px 10px';
   node.style.borderRadius = '6px';
   node.style.fontSize = '12px';

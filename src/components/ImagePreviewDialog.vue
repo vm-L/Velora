@@ -120,16 +120,13 @@
             <div class="save-location-group">
               <label>保存位置</label>
               <div class="location-input-row">
-                <input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
-                <button class="select-dir-btn" @click="selectSaveDirectory">浏览</button>
+                <VInput v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+                <VButton variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">浏览</VButton>
               </div>
             </div>
             <div class="save-items-container">
               <div class="save-items-header">
-                <label class="checkbox-label">
-                  <input type="checkbox" :checked="saveItems.every(i => i.checked)" @change="toggleAllSaveItems" />
-                  <span>全选</span>
-                </label>
+                <VCheckbox :checked="saveItems.every(i => i.checked)" @change="toggleAllSaveItems">全选</VCheckbox>
                 <span class="count">{{ saveItems.filter(i => i.checked).length }} / {{ saveItems.length }} 项</span>
               </div>
               <div class="save-items-grid">
@@ -137,7 +134,7 @@
                   <div class="save-item-thumb">
                     <img :src="item.url" referrerpolicy="no-referrer" />
                     <div class="checkbox-indicator">
-                      <svg v-if="item.checked" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
+                      <svg v-if="item.checked" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                     </div>
@@ -148,10 +145,10 @@
             </div>
           </div>
           <div class="save-footer">
-            <button class="cancel-btn" @click="closeSaveOverlay">取消</button>
-            <button class="confirm-btn" :disabled="isSaving" @click="confirmSave">
+            <VButton variant="secondary" class="cancel-btn" @click="closeSaveOverlay">取消</VButton>
+            <VButton variant="primary" class="confirm-btn" :disabled="isSaving" @click="confirmSave">
               {{ isSaving ? '下载中...' : '确认下载' }}
-            </button>
+            </VButton>
           </div>
         </div>
       </div>
@@ -163,6 +160,9 @@
 import { ref, onUnmounted, computed } from 'vue';
 import { useMessage } from '../composables/useMessage';
 import { useSettings } from '../composables/useSettings';
+import VButton from './VButton.vue';
+import VInput from './VInput.vue';
+import VCheckbox from './VCheckbox.vue';
 
 const props = defineProps<{
   id: string;
@@ -934,7 +934,8 @@ onUnmounted(() => {
 }
 
 .save-modal {
-  background: white;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   width: 90%;
   max-width: 500px;
   max-height: 90%;
@@ -991,6 +992,7 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 13px;
   color: var(--text-primary);
+  background: var(--bg-app);
   outline: none;
   transition: border-color 0.2s;
 }
@@ -1019,15 +1021,6 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
 }
 
 .count {
@@ -1083,7 +1076,7 @@ onUnmounted(() => {
   height: 16px;
   border-radius: 4px;
   border: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-surface-hover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1091,8 +1084,9 @@ onUnmounted(() => {
 }
 
 .save-item.selected .checkbox-indicator {
-  background: var(--color-accent);
+  background: var(--bg-surface-hover);
   border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .save-item-name {
@@ -1109,7 +1103,7 @@ onUnmounted(() => {
 .save-item-name:hover,
 .save-item-name:focus {
   border-color: var(--border-color);
-  background: white;
+  background: var(--bg-surface);
   outline: none;
 }
 
@@ -1122,38 +1116,5 @@ onUnmounted(() => {
   background: var(--bg-surface-hover);
 }
 
-.cancel-btn, .confirm-btn {
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cancel-btn {
-  background: white;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-}
-
-.cancel-btn:hover {
-  background: var(--border-light);
-}
-
-.confirm-btn {
-  background: var(--color-accent);
-  border: 1px solid var(--color-accent);
-  color: white;
-}
-
-.confirm-btn:hover {
-  background: var(--color-accent-hover);
-}
-
-.confirm-btn:disabled {
-  background: var(--text-secondary);
-  border-color: var(--text-secondary);
-  cursor: not-allowed;
-}
+/* Styled by custom VButton component */
 </style>

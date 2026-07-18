@@ -28,9 +28,9 @@
           <div class="info-row domain-info" style="align-items: center;">
             <span class="label">匹配规则</span>
             <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
-              <input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
+              <VInput v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
               <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
-                <button class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</button>
+                <VButton variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</VButton>
                 <div v-if="dropdownOpen" class="dropdown-menu">
                   <div v-if="!domainRules || Object.keys(domainRules).length === 0" class="dropdown-empty">暂无保存的样式</div>
                   <div v-for="(cssString, ruleDomain) in domainRules" :key="ruleDomain" class="dropdown-item">
@@ -52,8 +52,8 @@
         </div>
 
         <div class="inspector-footer">
-          <button class="btn btn-secondary" @click="close">取消</button>
-          <button class="btn btn-primary" @click="save">保存规则</button>
+          <VButton variant="secondary" class="btn" @click="close">取消</VButton>
+          <VButton variant="primary" class="btn" @click="save">保存规则</VButton>
         </div>
       </div>
     </div>
@@ -62,6 +62,8 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
+import VButton from './VButton.vue';
+import VInput from './VInput.vue';
 import type { SyntaxNode } from '@lezer/common';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';
@@ -363,8 +365,8 @@ const stopDrag = () => {
 }
 
 .action-btn.close-btn:hover {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--color-error, #ef4444);
+  color: white;
 }
 
 .inspector-content {
@@ -452,34 +454,7 @@ const stopDrag = () => {
   gap: 8px;
 }
 
-.btn {
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-}
-
-.btn-secondary {
-  background: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-  background: var(--border-light);
-}
-
-.btn-primary {
-  background: var(--color-accent);
-  color: var(--bg-surface);
-}
-
-.btn-primary:hover {
-  background: var(--color-accent-hover);
-}
+/* Styled by custom VButton component */
 
 /* Dropdown */
 .dropdown {

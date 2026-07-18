@@ -192,37 +192,26 @@ const close = () => {
 <style scoped>
 .audio-player-dialog {
   position: fixed;
-  background: var(--bg-color, var(--bg-surface));
+  background: var(--bg-surface);
   border-radius: 8px;
   box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-color, #e4e7ed);
+  border: 1px solid var(--border-color);
   min-width: 400px;
-}
-
-:global(body.dark) .audio-player-dialog {
-  background: #1e1e20;
-  border-color: var(--text-primary);
-  box-shadow: var(--shadow-soft);
 }
 
 .dialog-header {
   height: 36px;
-  background: var(--bg-color, var(--bg-surface));
-  border-bottom: 1px solid var(--border-color, #e4e7ed);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
   cursor: grab;
   user-select: none;
-}
-
-:global(body.dark) .dialog-header {
-  background: #252527;
-  border-color: var(--text-primary);
 }
 
 .dialog-header:active {
@@ -235,11 +224,7 @@ const close = () => {
   gap: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-color, #303133);
-}
-
-:global(body.dark) .header-title {
-  color: #e5eaf3;
+  color: var(--text-primary);
 }
 
 .header-actions {
@@ -258,27 +243,17 @@ const close = () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   transition: all 0.2s;
 }
 
 .action-btn:hover {
-  background: var(--hover-bg, var(--bg-app));
-  color: var(--text-color, #303133);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 
 .close-btn:hover {
-  background: #f56c6c;
-  color: white;
-}
-
-:global(body.dark) .action-btn:hover {
-  background: var(--text-primary);
-  color: #e5eaf3;
-}
-
-:global(body.dark) .close-btn:hover {
-  background: #f56c6c;
+  background: var(--color-error, #f56c6c);
   color: white;
 }
 
@@ -299,8 +274,8 @@ const close = () => {
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: var(--color-accent-hover);
-  color: white;
+  background: var(--color-accent);
+  color: var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -327,7 +302,7 @@ const close = () => {
 
 .time {
   font-size: 12px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   min-width: 40px;
 }
@@ -337,14 +312,10 @@ const close = () => {
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--border-color, #e4e7ed);
+  background: var(--border-light);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
-}
-
-:global(body.dark) .progress-bar {
-  background: #444;
 }
 
 .progress-bar::-webkit-slider-thumb {
@@ -353,7 +324,7 @@ const close = () => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--color-accent-hover);
+  background: var(--color-accent);
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -365,17 +336,11 @@ const close = () => {
 .speed-control select {
   padding: 4px 8px;
   border-radius: 4px;
-  border: 1px solid var(--border-color, #e4e7ed);
-  background: var(--bg-color, var(--bg-surface));
-  color: var(--text-color, #303133);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: 12px;
   outline: none;
   cursor: pointer;
-}
-
-:global(body.dark) .speed-control select {
-  background: #252527;
-  border-color: #444;
-  color: #e5eaf3;
 }
 </style>

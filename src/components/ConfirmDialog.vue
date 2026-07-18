@@ -26,8 +26,8 @@
           </div>
         </div>
         <div class="dialog-actions">
-          <button class="btn-cancel" @click="cancel">{{ state.cancelText }}</button>
-          <button class="btn-confirm" :class="state.type" @click="proceed">{{ state.confirmText }}</button>
+          <VButton variant="secondary" class="btn-cancel" @click="cancel">{{ state.cancelText }}</VButton>
+          <VButton :variant="state.type === 'danger' ? 'danger' : (state.type === 'warning' ? 'warning' : 'primary')" class="btn-confirm" @click="proceed">{{ state.confirmText }}</VButton>
         </div>
       </div>
     </div>
@@ -36,6 +36,7 @@
 
 <script setup lang="ts">
 import { useConfirm } from '../composables/useConfirm'
+import VButton from './VButton.vue'
 
 const { state, proceed, cancel } = useConfirm()
 </script>
@@ -117,31 +118,7 @@ const { state, proceed, cancel } = useConfirm()
   gap: 10px;
 }
 
-button {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-  font-family: inherit;
-}
-
-.btn-cancel {
-  background: var(--border-light);
-  color: var(--text-primary);
-}
-.btn-cancel:hover { background: var(--border-color); color: var(--text-primary); }
-
-.btn-confirm.danger { background: #ef4444; color: var(--bg-surface); }
-.btn-confirm.danger:hover { background: #dc2626; }
-
-.btn-confirm.warning { background: #f59e0b; color: var(--bg-surface); }
-.btn-confirm.warning:hover { background: #d97706; }
-
-.btn-confirm.info { background: var(--color-accent); color: var(--bg-surface); }
-.btn-confirm.info:hover { background: var(--color-accent-hover); }
+/* Styled by custom VButton component */
 
 /* Transitions */
 .dialog-fade-enter-active, .dialog-fade-leave-active {

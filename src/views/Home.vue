@@ -29,33 +29,32 @@
 
       <div class="operation-panel">
         <div class="batch-actions-bar" v-if="sortedTasks.length > 0">
-          <label class="select-all-checkbox">
-            <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" style="margin: 0;" />
-            <span style="line-height: 1;">{{ isAllSelected ? '反选' : '全选' }}</span>
-          </label>
+          <VCheckbox :checked="isAllSelected" @change="toggleSelectAll" class="select-all-checkbox">
+            {{ isAllSelected ? '反选' : '全选' }}
+          </VCheckbox>
           <div class="batch-buttons">
             <span class="selected-count" v-show="selectedTasks.length > 0">已选择 {{ selectedTasks.length }} 项</span>
-            <button class="action-btn" :disabled="selectedTasks.length === 0" @click="batchPause" title="暂停所选">
+            <VButton variant="secondary" :disabled="selectedTasks.length === 0" @click="batchPause" title="暂停所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="6" y="4" width="4" height="16"></rect>
                 <rect x="14" y="4" width="4" height="16"></rect>
               </svg>
               暂停
-            </button>
-            <button class="action-btn" :disabled="selectedTasks.length === 0" @click="batchResume" title="继续所选">
+            </VButton>
+            <VButton variant="secondary" :disabled="selectedTasks.length === 0" @click="batchResume" title="继续所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
               继续
-            </button>
-            <button class="action-btn delete-btn" :disabled="selectedTasks.length === 0" @click="batchDelete"
+            </VButton>
+            <VButton variant="danger-soft" :disabled="selectedTasks.length === 0" @click="batchDelete"
               title="删除所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
               删除
-            </button>
+            </VButton>
           </div>
         </div>
 
@@ -89,7 +88,7 @@
           :class="{ 'is-selected': selectedTasks.includes(task.id) }" @mousedown="startSelection(task.id, $event)"
           @mouseenter="enterSelection(task.id)">
           <div class="task-checkbox" @click.stop>
-            <input type="checkbox" :value="task.id" v-model="selectedTasks" />
+            <VCheckbox :value="task.id" v-model="selectedTasks" />
           </div>
           <div class="task-icon" :class="`status-${task.status}`">
             <img v-if="isImageTask(task)" :src="task.url" class="task-thumbnail" referrerpolicy="no-referrer" />
@@ -120,42 +119,42 @@
             <div class="task-header">
               <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
-                <button v-if="task.status === 'downloading' || task.status === 'waiting'" class="action-icon" title="暂停"
+                <VButton v-if="task.status === 'downloading' || task.status === 'waiting'" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
                     <rect x="14" y="4" width="4" height="16"></rect>
                   </svg>
-                </button>
-                <button v-if="['paused', 'error', 'file_removed', 'file_corrupted'].includes(task.status)" class="action-icon" title="继续"
+                </VButton>
+                <VButton v-slot:icon v-if="['paused', 'error', 'file_removed', 'file_corrupted'].includes(task.status)" variant="icon-secondary" title="继续"
                   @click.stop="resumeTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                </button>
-                <button v-if="task.status === 'completed'" class="action-icon" title="打开文件" @click.stop="openTask(task)">
+                </VButton>
+                <VButton v-slot:icon v-if="task.status === 'completed'" variant="icon-secondary" title="打开文件" @click.stop="openTask(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                     <polyline points="13 2 13 9 20 9"></polyline>
                   </svg>
-                </button>
-                <button class="action-icon" title="打开所在目录" @click.stop="openDirectory(task)">
+                </VButton>
+                <VButton variant="icon-secondary" title="打开所在目录" @click.stop="openDirectory(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
-                </button>
-                <button class="action-icon" title="复制链接" @click.stop="copyUrl(task.url)">
+                </VButton>
+                <VButton variant="icon-secondary" title="复制链接" @click.stop="copyUrl(task.url)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                </button>
-                <button class="action-icon delete" title="删除任务" @click.stop="confirmDelete(task)">
+                </VButton>
+                <VButton variant="icon-danger" title="删除任务" @click.stop="confirmDelete(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                   </svg>
-                </button>
+                </VButton>
               </div>
             </div>
 
@@ -210,6 +209,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
+import VButton from '../components/VButton.vue';
+import VCheckbox from '../components/VCheckbox.vue';
 import ImagePreviewDialog from '../components/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../components/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../components/VideoPlayerDialog.vue';
@@ -755,7 +756,7 @@ const confirmDelete = async (task: any) => {
   align-items: flex-start;
   gap: 16px;
   padding: 20px;
-  background: white;
+  background: var(--bg-surface);
   border-radius: 12px;
   border: 1px solid transparent;
   box-shadow: var(--shadow-sm);
@@ -815,40 +816,7 @@ const confirmDelete = async (task: any) => {
       margin-right: 8px;
     }
 
-    .action-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      font-size: 13px;
-      border-radius: 6px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      cursor: pointer;
-      transition: all 0.2s;
-
-      &:hover:not(:disabled) {
-        background: var(--border-light);
-        border-color: var(--text-secondary);
-      }
-
-      &.delete-btn {
-        color: #ef4444;
-        border-color: #fca5a5;
-
-        &:hover:not(:disabled) {
-          background: #fef2f2;
-          border-color: #f87171;
-        }
-      }
-
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        background: var(--bg-surface-hover);
-      }
-    }
+    /* Buttons styled by VButton component */
   }
 }
 
@@ -927,30 +895,7 @@ const confirmDelete = async (task: any) => {
   flex-shrink: 0;
 }
 
-.action-icon {
-  background: var(--bg-surface-hover);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: var(--border-color);
-    color: var(--color-accent);
-  }
-
-  &.delete:hover {
-    color: #ef4444;
-    border-color: #fca5a5;
-    background: #fef2f2;
-  }
-}
+/* Action icons styled by VButton component */
 
 .task-progress-wrap {
   margin-bottom: 10px;

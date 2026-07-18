@@ -754,8 +754,9 @@ const pickElementImage = async () => {
       const tooltip = document.createElement('div');
       tooltip.style.position = 'fixed';
       tooltip.style.zIndex = '2147483647';
-      tooltip.style.backgroundColor = 'var(--text-primary)';
-      tooltip.style.color = 'var(--bg-surface)';
+      tooltip.style.backgroundColor = 'var(--bg-surface)';
+      tooltip.style.color = 'var(--text-primary)';
+      tooltip.style.border = '1px solid var(--border-color)';
       tooltip.style.padding = '4px 8px';
       tooltip.style.borderRadius = '4px';
       tooltip.style.fontSize = '12px';
@@ -862,7 +863,7 @@ const pickElementImage = async () => {
         let h = 220; // brand blue
         overlay.style.borderColor = 'var(--color-accent)';
         overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        tooltip.style.backgroundColor = 'var(--text-primary)';
+        tooltip.style.backgroundColor = 'var(--bg-surface)';
 
         // Child highlighting for multiple levels
         childOverlays.forEach(o => o.style.display = 'none');
@@ -1073,7 +1074,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .tab:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--bg-surface-hover);
 }
 
 .tab.active {
@@ -1200,7 +1201,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .new-tab-btn:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 
@@ -1292,10 +1293,10 @@ const onSaveRules = async (domain: string, cssString: string) => {
 /* Custom Context Menu */
 .context-menu {
   position: fixed;
-  background: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
   border-radius: 8px;
   box-shadow: var(--shadow-soft);
   padding: 4px;
@@ -1333,8 +1334,8 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .menu-item:hover {
-  background: var(--color-accent);
-  color: var(--bg-surface);
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 
 .menu-item svg {
@@ -1370,7 +1371,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
 
 .url-opener-dropdown input {
   flex: 1;
-  background: var(--bg-base);
+  background: var(--bg-app);
   border: 1px solid var(--border-light);
   border-radius: 6px;
   padding: 0 12px;
