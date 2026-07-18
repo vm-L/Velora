@@ -88,6 +88,21 @@ function createWindow() {
     shell.showItemInFolder(filePath)
   })
 
+  ipcMain.handle('open-file', async (_, filePath: string) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, code: 'NOT_FOUND' };
+      }
+      const err = await shell.openPath(filePath);
+      if (err) {
+        return { success: false, code: 'OPEN_FAILED', error: err };
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, code: 'ERROR', error: e.message };
+    }
+  })
+
   ipcMain.handle('fetch-image-base64', async (_, url: string) => {
     try {
       const response = await net.fetch(url, { headers: { 'Referer': '' } })
@@ -278,16 +293,24 @@ function createWindow() {
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'velora', privileges: { bypassCSP: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'velora', privileges: { secure: true, bypassCSP: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
 ])
 
 app.whenReady().then(async () => {
   protocol.handle('velora', (request) => {
-    let filePath = request.url.slice('velora://'.length)
+    logToFile(`[Protocol velora] Raw request url: ${request.url}`)
+    let prefix = request.url.startsWith('velora://local/') ? 'velora://local/' : 'velora://'
+    let filePath = decodeURIComponent(request.url.slice(prefix.length))
+    logToFile(`[Protocol velora] Decoded path before processing: ${filePath}`)
+    
     if (process.platform === 'win32' && filePath.startsWith('/')) {
       filePath = filePath.slice(1) // Remove leading slash on Windows (e.g. /C:/foo -> C:/foo)
     }
-    return net.fetch('file://' + filePath)
+    const { pathToFileURL } = require('url');
+    const finalUrl = pathToFileURL(filePath).toString();
+    logToFile(`[Protocol velora] Final path: ${filePath} -> File URL: ${finalUrl}`)
+    
+    return net.fetch(finalUrl)
   })
 
   await clearPrivacyData()

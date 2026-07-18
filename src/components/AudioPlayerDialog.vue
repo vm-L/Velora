@@ -12,7 +12,7 @@
         音频播放器
       </div>
       <div class="header-actions">
-        <button class="action-btn" @click.stop="downloadAudio" title="下载">
+        <button v-if="!hideDownload" class="action-btn" @click.stop="downloadAudio" title="下载">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
@@ -68,6 +68,7 @@ import { ref, watch } from 'vue';
 
 const props = defineProps<{
   url: string | null;
+  hideDownload?: boolean;
 }>();
 
 const emit = defineEmits<{

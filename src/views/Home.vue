@@ -118,7 +118,7 @@
 
           <div class="task-content">
             <div class="task-header">
-              <div class="task-name" :title="task.name">{{ task.name }}</div>
+              <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
                 <button v-if="task.status === 'downloading' || task.status === 'waiting'" class="action-icon" title="暂停"
                   @click.stop="pauseTask(task.id)">
@@ -127,7 +127,7 @@
                     <rect x="14" y="4" width="4" height="16"></rect>
                   </svg>
                 </button>
-                <button v-if="['paused', 'error'].includes(task.status)" class="action-icon" title="继续"
+                <button v-if="['paused', 'error', 'file_removed', 'file_corrupted'].includes(task.status)" class="action-icon" title="继续"
                   @click.stop="resumeTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -187,10 +187,10 @@
     </div>
     
     <ImagePreviewDialog v-if="activeImagePreviewUrl" :id="'home-preview'" :url="activeImagePreviewUrl"
-      :urls="[activeImagePreviewUrl]" :zIndex="9999" @close="activeImagePreviewUrl = null" />
+      :urls="[activeImagePreviewUrl]" :zIndex="9999" @close="activeImagePreviewUrl = null" :hideDownload="true" />
       
     <AudioPlayerDialog v-if="activeAudioPreviewUrl" :url="activeAudioPreviewUrl" 
-      @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" />
+      @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" :hideDownload="true" />
 
     <SaveMediaDialog
       :visible="saveDialogVisible"
@@ -213,7 +213,7 @@ import AudioPlayerDialog from '../components/AudioPlayerDialog.vue';
 import SaveMediaDialog from '../components/SaveMediaDialog.vue';
 import { useSettings } from '../composables/useSettings';
 
-const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized } = useDownloads();
+const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
@@ -262,7 +262,10 @@ const getStatusWeight = (status: string) => {
     case 'downloading': return 5;
     case 'waiting': return 4;
     case 'paused': return 3;
-    case 'error': return 2;
+    case 'error': 
+    case 'file_removed':
+    case 'file_corrupted':
+      return 2;
     case 'completed': return 1;
     default: return 0;
   }
@@ -326,13 +329,10 @@ const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
 
   const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'waiting'));
-  const skippedCount = selectedTasks.value.length - eligibleTasks.length;
 
   eligibleTasks.forEach(t => pauseTask(t.id));
 
-  if (skippedCount > 0) {
-    showMessage(`成功暂停 ${eligibleTasks.length} 个任务，跳过 ${skippedCount} 个状态不符的任务`, eligibleTasks.length > 0 ? 'success' : 'info');
-  } else {
+  if (eligibleTasks.length > 0) {
     showMessage(`已成功暂停 ${eligibleTasks.length} 个任务`, 'success');
   }
 };
@@ -340,14 +340,11 @@ const batchPause = () => {
 const batchResume = () => {
   if (selectedTasks.value.length === 0) return;
 
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['paused', 'error'].includes(t.status));
-  const skippedCount = selectedTasks.value.length - eligibleTasks.length;
+  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['paused', 'error', 'file_removed', 'file_corrupted'].includes(t.status));
 
   eligibleTasks.forEach(t => resumeTask(t.id));
 
-  if (skippedCount > 0) {
-    showMessage(`成功继续 ${eligibleTasks.length} 个任务，跳过 ${skippedCount} 个状态不符的任务`, eligibleTasks.length > 0 ? 'success' : 'info');
-  } else {
+  if (eligibleTasks.length > 0) {
     showMessage(`已成功继续 ${eligibleTasks.length} 个任务`, 'success');
   }
 };
@@ -403,18 +400,51 @@ const isVideoTask = (task: any) => {
   return ['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(ext || '');
 };
 
-const openTask = (task: any) => {
+const openTask = async (task: any) => {
   if (!task.savePath) {
     showMessage('文件路径不存在', 'error');
     return;
   }
-  const localUrl = `velora://${task.savePath}`;
-  if (isImageTask(task)) {
-    activeImagePreviewUrl.value = localUrl;
-  } else if (isAudioTask(task)) {
-    activeAudioPreviewUrl.value = localUrl;
-  } else {
-    showMessage('暂不支持打开此类文件', 'info');
+  
+  if (window.electronAPI) {
+    const exists = await window.electronAPI.fileExists(task.savePath);
+    if (!exists) {
+      task.status = 'file_removed';
+      showMessage('本地文件已移除', 'error');
+      await updateTaskDb(task);
+      return;
+    }
+
+    const safePath = task.savePath.replace(/\\/g, '/');
+    const localUrl = `velora://local/${safePath}`;
+    if (isImageTask(task)) {
+      activeImagePreviewUrl.value = localUrl;
+      return;
+    } else if (isAudioTask(task)) {
+      activeAudioPreviewUrl.value = localUrl;
+      return;
+    }
+
+    const userConfirmed = await confirm({
+      title: '使用系统应用打开',
+      message: '当前应用不支持该格式，是否使用系统默认应用打开该文件？',
+      confirmText: '打开',
+      cancelText: '取消'
+    });
+
+    if (userConfirmed) {
+      const res = await window.electronAPI.openFile(task.savePath);
+      if (!res.success) {
+        if (res.code === 'NOT_FOUND') {
+          task.status = 'file_removed';
+          showMessage('本地文件已移除', 'error');
+        } else {
+          task.status = 'file_corrupted';
+          showMessage('本地文件已损坏或无法打开', 'error');
+        }
+        await updateTaskDb(task);
+      }
+    }
   }
 };
 
@@ -443,6 +473,8 @@ const getStatusText = (status: string) => {
     case 'paused': return '已暂停';
     case 'completed': return '已完成';
     case 'error': return '下载失败';
+    case 'file_removed': return '本地文件已移除';
+    case 'file_corrupted': return '本地文件已损坏';
     default: return '未知状态';
   }
 };
@@ -844,7 +876,9 @@ const confirmDelete = async (task: any) => {
     color: #10b981;
   }
 
-  &.status-error {
+  &.status-error,
+  &.status-file_removed,
+  &.status-file_corrupted {
     background: #fef2f2;
     color: #ef4444;
   }
@@ -873,6 +907,11 @@ const confirmDelete = async (task: any) => {
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 16px;
+
+  &.file-removed {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
 }
 
 .task-actions {
@@ -934,7 +973,9 @@ const confirmDelete = async (task: any) => {
     background: #10b981;
   }
 
-  &.error {
+  &.error,
+  &.file_removed,
+  &.file_corrupted {
     background: #ef4444;
   }
 }
@@ -975,7 +1016,9 @@ const confirmDelete = async (task: any) => {
     color: #10b981;
   }
 
-  &.error {
+  &.error,
+  &.file_removed,
+  &.file_corrupted {
     color: #ef4444;
   }
 }

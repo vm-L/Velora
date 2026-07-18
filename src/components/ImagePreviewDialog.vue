@@ -77,7 +77,7 @@
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </button>
-        <button class="icon-action-btn" @click="saveLocal" title="下载图片">
+        <button v-if="!hideDownload" class="icon-action-btn" @click="saveLocal" title="下载图片">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
@@ -171,6 +171,7 @@ const props = defineProps<{
   zIndex: number;
   initialX?: number;
   initialY?: number;
+  hideDownload?: boolean;
 }>();
 
 const emit = defineEmits(['close', 'focus', 'interaction-start', 'interaction-end']);

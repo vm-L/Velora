@@ -23,6 +23,7 @@ interface Window {
     fetchImageBase64: (url: string) => Promise<string | null>
     openExternal: (url: string) => void
     showItemInFolder: (filePath: string) => void
+    openFile: (filePath: string) => Promise<{ success: boolean, code?: string, error?: string }>
     selectDirectory: () => Promise<string | undefined>
     saveImages: (dirPath: string, files: { url: string, name: string }[]) => Promise<any[]>
     startDownload: (cmd: any) => void

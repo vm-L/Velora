@@ -186,6 +186,10 @@ export const useDownloads = () => {
   const resumeTask = async (id: string) => {
     const t = tasks.value.find(t => t.id === id)
     if (t && window.electronAPI) {
+      if (t.status === 'file_removed' || t.status === 'file_corrupted') {
+        t.receivedBytes = 0
+        t.progress = 0
+      }
       t.status = 'downloading'
       await db.downloads.put(JSON.parse(JSON.stringify(t)))
       window.electronAPI.startDownload({ 
@@ -195,6 +199,10 @@ export const useDownloads = () => {
         startBytes: t.receivedBytes 
       })
     }
+  }
+
+  const updateTaskDb = async (task: DownloadTask) => {
+    await db.downloads.put(JSON.parse(JSON.stringify(task)))
   }
 
   const deleteTask = async (id: string, deleteFile = false) => {
@@ -219,6 +227,7 @@ export const useDownloads = () => {
     addDownload,
     pauseTask,
     resumeTask,
-    deleteTask
+    deleteTask,
+    updateTaskDb
   }
 }

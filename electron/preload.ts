@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchImageBase64: (url: string) => ipcRenderer.invoke('fetch-image-base64', url),
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
   showItemInFolder: (filePath: string) => ipcRenderer.send('show-item-in-folder', filePath),
+  openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   saveImages: (dirPath: string, files: { url: string, name: string }[]) => ipcRenderer.invoke('save-images', dirPath, files),
   startDownload: (cmd: any) => ipcRenderer.send('start-download', cmd),
