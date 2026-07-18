@@ -31,7 +31,7 @@
                 </svg>
               </div>
               <div class="item-info">
-                <div class="item-url" :title="item.url">{{ getBasename(item.url) }}</div>
+                <div class="item-url">{{ getBasename(item.url) }}</div>
                 <div class="item-time">{{ formatTime(item.timestamp) }}</div>
               </div>
               <div class="item-actions">
