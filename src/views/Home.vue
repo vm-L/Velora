@@ -191,6 +191,8 @@
       
     <AudioPlayerDialog v-if="activeAudioPreviewUrl" :url="activeAudioPreviewUrl" 
       @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" :hideDownload="true" />
+    <VideoPlayerDialog v-if="activeVideoPreviewUrl" :url="activeVideoPreviewUrl"
+      @close="activeVideoPreviewUrl = null" :hideDownload="true" />
 
     <SaveMediaDialog
       :visible="saveDialogVisible"
@@ -210,6 +212,7 @@ import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
 import ImagePreviewDialog from '../components/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../components/AudioPlayerDialog.vue';
+import VideoPlayerDialog from '../components/VideoPlayerDialog.vue';
 import SaveMediaDialog from '../components/SaveMediaDialog.vue';
 import { useSettings } from '../composables/useSettings';
 
@@ -220,6 +223,7 @@ const { state: settingsState } = useSettings();
 
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);
+const activeVideoPreviewUrl = ref<string | null>(null);
 
 const saveDialogVisible = ref(false);
 const saveTargetUrl = ref('');
@@ -397,7 +401,7 @@ const isAudioTask = (task: any) => {
 const isVideoTask = (task: any) => {
   if (!task.name) return false;
   const ext = task.name.split('.').pop()?.toLowerCase();
-  return ['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(ext || '');
+  return ['mp4', 'webm', 'mkv', 'avi', 'mov', 'm3u8', 'ts'].includes(ext || '');
 };
 
 const openTask = async (task: any) => {
@@ -422,6 +426,9 @@ const openTask = async (task: any) => {
       return;
     } else if (isAudioTask(task)) {
       activeAudioPreviewUrl.value = localUrl;
+      return;
+    } else if (isVideoTask(task)) {
+      activeVideoPreviewUrl.value = localUrl;
       return;
     }
 

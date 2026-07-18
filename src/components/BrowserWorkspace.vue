@@ -55,7 +55,7 @@
         </button>
 
         <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
-          @clear="onClearSniffed('video')">
+          @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
           <template #icon>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -105,6 +105,25 @@
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
         </button>
+        <div class="url-opener-container">
+          <button class="func-btn tooltip-left" :class="{ 'active': urlOpenerVisible }" v-tooltip="urlOpenerVisible ? '' : '打开链接'" @click="toggleUrlOpener">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+          </button>
+          <div v-if="urlOpenerVisible" class="url-opener-backdrop" @click="urlOpenerVisible = false"></div>
+          <div v-if="urlOpenerVisible" class="url-opener-dropdown">
+            <input 
+              type="text" 
+              v-model="urlInput" 
+              placeholder="输入网址，如 https://bilibili.com" 
+              @keyup.enter="handleOpenUrl" 
+              ref="urlInputRef"
+            />
+            <button class="open-btn" @click="handleOpenUrl">打开</button>
+          </div>
+        </div>
         <div class="func-divider"></div>
         <button class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -131,6 +150,10 @@
     <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
 
+    <!-- Video Player Dialog -->
+    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" @close="activeVideoPreview = null"
+      @download="onDownloadVideo" />
+
     <!-- Inspector Dialog -->
     <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
       :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules"
@@ -147,7 +170,7 @@
       :url="saveTargetUrl"
       :default-name="saveDefaultName"
       :default-dir="saveDefaultDir"
-      :type="'audio'"
+      :type="saveType"
     />
 
     <!-- Custom Context Menu -->
@@ -176,6 +199,7 @@ import InspectorDialog from './InspectorDialog.vue';
 import SnifferDropdown from './SnifferDropdown.vue';
 import ImagePreviewDialog from './ImagePreviewDialog.vue';
 import AudioPlayerDialog from './AudioPlayerDialog.vue';
+import VideoPlayerDialog from './VideoPlayerDialog.vue';
 import SaveMediaDialog from './SaveMediaDialog.vue';
 import { APP_PREFIX } from '../constants';
 
@@ -561,6 +585,38 @@ const onDevTools = () => {
   if (wv) wv.openDevTools();
 };
 
+const urlOpenerVisible = ref(false);
+const urlInput = ref('');
+const urlInputRef = ref<HTMLInputElement | null>(null);
+
+const toggleUrlOpener = () => {
+  urlOpenerVisible.value = !urlOpenerVisible.value;
+  if (urlOpenerVisible.value) {
+    const wv = activeWebview();
+    urlInput.value = wv && wv.getURL ? wv.getURL() : (activeTab.value?.url || '');
+    setTimeout(() => {
+      urlInputRef.value?.focus();
+      urlInputRef.value?.select();
+    }, 50);
+  }
+};
+
+const handleOpenUrl = () => {
+  if (!urlInput.value.trim()) return;
+  let targetUrl = urlInput.value.trim();
+  if (!/^https?:\/\//i.test(targetUrl) && !targetUrl.startsWith('velora://')) {
+    targetUrl = 'https://' + targetUrl;
+  }
+  
+  const wv = activeWebview();
+  if (wv && wv.loadURL) {
+    wv.loadURL(targetUrl);
+  } else if (activeTab.value) {
+    activeTab.value.url = targetUrl;
+  }
+  urlOpenerVisible.value = false;
+};
+
 
 
 const onClearSniffed = (type: 'image' | 'video' | 'audio') => {
@@ -601,15 +657,21 @@ const onFocusPreview = (id: string) => {
 };
 
 const activeAudioPreview = ref<string | null>(null);
+const activeVideoPreview = ref<string | null>(null);
 
 const onPreviewSniffedAudio = (url: string) => {
   activeAudioPreview.value = url;
+};
+
+const onPreviewSniffedVideo = (url: string) => {
+  activeVideoPreview.value = url;
 };
 
 const saveDialogVisible = ref(false);
 const saveTargetUrl = ref('');
 const saveDefaultName = ref('');
 const saveDefaultDir = ref('');
+const saveType = ref<'audio' | 'video'>('audio');
 
 const onDownloadAudio = (url: string) => {
   let name = '';
@@ -620,10 +682,26 @@ const onDownloadAudio = (url: string) => {
   } catch {
     name = 'audio.mp3';
   }
-  
   saveTargetUrl.value = url;
   saveDefaultName.value = name;
   saveDefaultDir.value = settingsState.audioDirectory;
+  saveType.value = 'audio';
+  saveDialogVisible.value = true;
+};
+
+const onDownloadVideo = (url: string) => {
+  let name = '';
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split('/');
+    name = parts[parts.length - 1] || 'video.mp4';
+  } catch {
+    name = 'video.mp4';
+  }
+  saveTargetUrl.value = url;
+  saveDefaultName.value = name;
+  saveDefaultDir.value = settingsState.videoDirectory;
+  saveType.value = 'video';
   saveDialogVisible.value = true;
 };
 
@@ -1179,13 +1257,13 @@ const onSaveRules = async (domain: string, cssString: string) => {
 }
 
 .func-btn.active {
-  background: var(--color-accent);
-  color: var(--bg-surface);
+  background: var(--border-light);
+  color: var(--text-primary);
 }
 
 .func-btn.active:hover {
-  background: var(--color-accent-hover);
-  color: var(--bg-surface);
+  background: var(--border-color);
+  color: var(--text-primary);
 }
 
 
@@ -1261,5 +1339,66 @@ const onSaveRules = async (domain: string, cssString: string) => {
 
 .menu-item svg {
   flex-shrink: 0;
+}
+
+.url-opener-container {
+  position: relative;
+  display: flex;
+}
+
+.url-opener-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.url-opener-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  width: 320px;
+  box-shadow: var(--shadow-soft);
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.url-opener-dropdown input {
+  flex: 1;
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 0 12px;
+  height: 32px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.url-opener-dropdown input:focus {
+  border-color: var(--text-secondary);
+}
+
+.url-opener-dropdown .open-btn {
+  background: var(--border-light);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 6px;
+  padding: 0 12px;
+  height: 32px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 500;
+}
+
+.url-opener-dropdown .open-btn:hover {
+  background: var(--border-color);
 }
 </style>

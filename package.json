@@ -13,6 +13,7 @@
     "codemirror": "^6.0.2",
     "dexie": "^4.4.4",
     "electron-store": "^11.0.2",
+    "hls.js": "^1.6.16",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"
   },
