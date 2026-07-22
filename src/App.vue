@@ -261,6 +261,13 @@ textarea {
   background: var(--bg-app);
 }
 
+/* 拦截 Electron Webview 在 display: none 下隐式抢夺鼠标事件与遮挡路由弹窗的致命缺陷 */
+.global-workspace[style*="display: none"] {
+  z-index: -9999 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);

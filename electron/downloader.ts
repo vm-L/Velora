@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { Readable } from 'stream'
 import { storeManager } from './store'
+import { logger } from './logger'
 
 export interface DownloadCommand {
   id: string
@@ -15,17 +16,6 @@ export interface M3U8Segment {
   index: number
   url: string
   duration: number
-}
-
-export function logToFile(message: string) {
-  const logPath = path.join(process.cwd(), 'app.log')
-  const timestamp = new Date().toISOString()
-  const logLine = `[${timestamp}] ${message}\n`
-  try {
-    fs.appendFileSync(logPath, logLine, 'utf8')
-  } catch (err) {
-    console.error('Failed to write log to file:', err)
-  }
 }
 
 /**
@@ -57,7 +47,7 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
       }
     }
     if (subPlaylistUrl) {
-      logToFile(`[M3U8Parser] 发现 Master Playlist，转向二级子列表: ${subPlaylistUrl}`)
+      logger.info('Downloader', `[M3U8Parser] 发现 Master Playlist，转向二级子列表: ${subPlaylistUrl}`)
       return parseM3U8(subPlaylistUrl, originHeaders)
     }
   }
@@ -112,14 +102,14 @@ class Downloader {
 
   setWindow(window: any) {
     this.mainWindow = window
-    logToFile(`[Downloader] MainWindow 已成功绑定和初始化。`)
+    logger.info('Downloader', `[Downloader] MainWindow 已成功绑定和初始化。`)
   }
 
   async startDownload(cmd: DownloadCommand) {
-    logToFile(`[Downloader] startDownload ID: ${cmd.id}, URL: ${cmd.url}, savePath: ${cmd.savePath}`)
+    logger.info('Downloader', `[Downloader] startDownload ID: ${cmd.id}, URL: ${cmd.url}, savePath: ${cmd.savePath}, startBytes: ${cmd.startBytes}`)
 
     if (this.activeDownloads.has(cmd.id) || this.pendingQueue.some(c => c.id === cmd.id)) {
-      logToFile(`[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
+      logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
       return
     }
 
@@ -137,7 +127,7 @@ class Downloader {
       this.sendProgress({
         id: cmd.id,
         totalBytes: 0,
-        receivedBytes: 0,
+        receivedBytes: cmd.startBytes || 0,
         status: 'waiting',
         speed: 0
       })
@@ -162,7 +152,7 @@ class Downloader {
         await this.downloadDirectFileTask(cmd, abortController)
       }
     } catch (err: any) {
-      logToFile(`[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
+      logger.info('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
       if (err.name === 'AbortError') {
         this.sendProgress({ id: cmd.id, status: 'paused' })
       } else {
@@ -175,13 +165,12 @@ class Downloader {
   }
 
   /**
-   * M3U8 多分片并发下载、内存缓冲池 (Memory Buffer Flush) 保护磁盘、按序合并处理
+   * M3U8 断点续传、多分片并发下载、内存缓冲池 (Memory Buffer Flush) 顺序追加合并
    */
   private async downloadM3U8Task(cmd: DownloadCommand, abortController: AbortController) {
     const { id, url, savePath } = cmd
-    logToFile(`[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
+    logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
 
-    // 1. 读取最大内存限制设置 (默认为 1024MB = 1GB)
     let maxMemoryMB = 1024
     try {
       maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 1024
@@ -190,7 +179,6 @@ class Downloader {
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
-    // 2. 准备请求 Headers
     let origin = ''
     try {
       origin = new URL(url).origin
@@ -200,31 +188,56 @@ class Downloader {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
-    // 3. 解析分片
     const segments = await parseM3U8(url, headers)
     if (segments.length === 0) {
       throw new Error('M3U8 列表中未解析到任何可下载的分片视频')
     }
-    logToFile(`[M3U8Downloader] 成功解析出 ${segments.length} 个 TS 视频分片`)
+    logger.info('Downloader', `[M3U8Downloader] 成功解析出 ${segments.length} 个 TS 视频分片`)
 
-    // 保证保存目录存在
     const dir = path.dirname(savePath)
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    // 4. 建立物理合并流及内存缓冲池
-    const fd = fs.openSync(savePath, 'w')
+    // 检查断点续传：目标文件是否已存在及大小
+    let existingBytes = 0
+    let skipSegments = 0
+    let fileFlags = 'w'
+
+    if (fs.existsSync(savePath)) {
+      try {
+        const stat = fs.statSync(savePath)
+        existingBytes = stat.size
+        if (existingBytes > 0) {
+          // 假设之前的每个分片大小均值，推算已完成的分片数量
+          // 例如先拉取第 0 个分片测算大小，或根据现有字节比例推断
+          const testRes = await net.fetch(segments[0].url, { headers, signal: abortController.signal as any })
+          if (testRes.ok) {
+            const sampleBuf = await testRes.arrayBuffer()
+            const avgSize = Math.max(1024, sampleBuf.byteLength)
+            skipSegments = Math.min(segments.length - 1, Math.floor(existingBytes / avgSize))
+            if (skipSegments > 0) {
+              fileFlags = 'a' // 追加模式
+              existingBytes = skipSegments * avgSize // 纠正续传起点
+              logger.info('Downloader', `[M3U8Downloader] 触发断点续传: 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
+            }
+          }
+        }
+      } catch (e: any) {
+        logger.info('Downloader', `[M3U8Downloader] 检查续传状态失败: ${e.message}`)
+      }
+    }
+
+    const fd = fs.openSync(savePath, fileFlags)
     const bufferMap = new Map<number, Buffer>()
     let currentBufferedBytes = 0
-    let nextFlushIndex = 0
-    let downloadedCount = 0
-    let totalReceivedBytes = 0
+    let nextFlushIndex = skipSegments
+    let downloadedCount = skipSegments
+    let totalReceivedBytes = existingBytes
 
     let lastReportTime = Date.now()
-    let lastReportBytes = 0
+    let lastReportBytes = totalReceivedBytes
 
-    // 内存落盘刷新函数
     const flushMemoryToDisk = (forceAll: boolean = false) => {
       while (bufferMap.has(nextFlushIndex)) {
         const chunkBuf = bufferMap.get(nextFlushIndex)!
@@ -234,15 +247,13 @@ class Downloader {
         nextFlushIndex++
       }
 
-      // 如果内存超过设定上限，或者强制刷新
       if (forceAll || currentBufferedBytes >= maxMemoryBytes) {
-        logToFile(`[MemoryBuffer] 内存缓冲达到限制/完成 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)，执行批量写盘，清理内存。`)
+        logger.info('Downloader', `[MemoryBuffer] M3U8 内存缓冲达到限制/完成 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)，执行批量写盘清内存。`)
       }
     }
 
-    // 分段并发池逻辑 (并发数: 6)
-    const concurrency = 6
-    let segQueueIndex = 0
+    const concurrency = 8
+    let segQueueIndex = skipSegments
 
     const fetchNextSegment = async (): Promise<void> => {
       while (segQueueIndex < segments.length) {
@@ -263,24 +274,21 @@ class Downloader {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
             const buf = Buffer.from(await res.arrayBuffer())
 
-            // 写入内存缓冲池
             bufferMap.set(seg.index, buf)
             currentBufferedBytes += buf.length
             downloadedCount++
             totalReceivedBytes += buf.length
 
-            // 如果暂存的内存超过设置的限制（如 1GB），顺序落盘并释放内存
             if (currentBufferedBytes >= maxMemoryBytes) {
               flushMemoryToDisk(false)
             }
 
-            // 汇报进度
             const now = Date.now()
             if (now - lastReportTime > 400 || downloadedCount === segments.length) {
               const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
               this.sendProgress({
                 id,
-                totalBytes: 0, // M3U8 使用分片和实际字节动态更新
+                totalBytes: 0,
                 receivedBytes: totalReceivedBytes,
                 downloadedSegments: downloadedCount,
                 totalSegments: segments.length,
@@ -296,7 +304,7 @@ class Downloader {
             attempts++
             if (e.name === 'AbortError') throw e
             if (attempts >= 3) {
-              logToFile(`[M3U8Downloader] 分片 ${seg.index} 重试失败: ${e.message}`)
+              logger.info('Downloader', `[M3U8Downloader] 分片 ${seg.index} 重试失败: ${e.message}`)
               throw new Error(`分片 ${seg.index} 下载失败`)
             }
             await new Promise(r => setTimeout(r, 500 * attempts))
@@ -305,7 +313,6 @@ class Downloader {
       }
     }
 
-    // 启动并发并发工作池
     const workers: Promise<void>[] = []
     for (let c = 0; c < concurrency; c++) {
       workers.push(fetchNextSegment())
@@ -313,11 +320,10 @@ class Downloader {
 
     try {
       await Promise.all(workers)
-      // 强制刷入所有未落盘的内存 Buffer
       flushMemoryToDisk(true)
       fs.closeSync(fd)
 
-      logToFile(`[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片下载并合并完成。文件已落盘。`)
+      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并成功。`)
       this.sendProgress({
         id,
         totalBytes: totalReceivedBytes,
@@ -336,11 +342,19 @@ class Downloader {
   }
 
   /**
-   * 通用视频 (MP4 / AVI 等) 的流式下载与内存缓冲策略
+   * 通用视频 (MP4 / AVI 等) 的断点续传、HTTP Range 分块多线程加速与内存缓冲
    */
   private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController) {
-    const { id, url, savePath, startBytes } = cmd
-    logToFile(`[DirectDownloader] 开始单文件流式下载: ${url}, startBytes: ${startBytes}`)
+    const { id, url, savePath } = cmd
+
+    let startBytes = cmd.startBytes || 0
+    if (startBytes === 0 && fs.existsSync(savePath)) {
+      try {
+        startBytes = fs.statSync(savePath).size
+      } catch {}
+    }
+
+    logger.info('Downloader', `[DirectDownloader] 开始单文件流式/多线程分块下载: ${url}, startBytes: ${startBytes}`)
 
     let maxMemoryMB = 1024
     try {
@@ -365,6 +379,154 @@ class Downloader {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
+    // 1. 探测 Range 断点续传支持
+    let isRangeSupported = false
+    let totalBytes = 0
+
+    try {
+      const checkRes = await net.fetch(url, {
+        headers: { ...headers, 'Range': `bytes=${startBytes}-${startBytes + 1}` },
+        signal: abortController.signal as any
+      })
+      if (checkRes.status === 206) {
+        isRangeSupported = true
+        const cr = checkRes.headers.get('content-range')
+        if (cr) {
+          const match = cr.match(/\/(\d+)/)
+          if (match) {
+            totalBytes = parseInt(match[1], 10)
+          }
+        }
+      }
+    } catch (e: any) {
+      logger.info('Downloader', `[DirectDownloader] Range 探测未响应: ${e.message}`)
+    }
+
+    // 2. 若支持 Range 且剩余大于 2MB，支持断点续传 Range 8 线程并发加速
+    const remainingBytes = totalBytes > startBytes ? totalBytes - startBytes : 0
+
+    if (isRangeSupported && remainingBytes > 2 * 1024 * 1024) {
+      logger.info('Downloader', `[DirectDownloader] 支持 Range 断点续传。从 ${startBytes} 字节起开辟 8 线程加速下载，剩余: ${remainingBytes} bytes`)
+      const chunkSize = 4 * 1024 * 1024 // 4MB 一块
+      const chunksCount = Math.ceil(remainingBytes / chunkSize)
+      const chunks: Array<{ index: number; start: number; end: number }> = []
+      
+      for (let i = 0; i < chunksCount; i++) {
+        const start = startBytes + i * chunkSize
+        const end = Math.min(totalBytes - 1, startBytes + (i + 1) * chunkSize - 1)
+        chunks.push({ index: i, start, end })
+      }
+
+      const fileFlags = startBytes > 0 ? 'a' : 'w'
+      const fd = fs.openSync(savePath, fileFlags)
+      const bufferMap = new Map<number, Buffer>()
+      let currentBufferedBytes = 0
+      let nextFlushIndex = 0
+      let downloadedChunks = 0
+      let totalReceivedBytes = startBytes
+
+      let lastReportTime = Date.now()
+      let lastReportBytes = totalReceivedBytes
+
+      const flushMemoryToDisk = (forceAll = false) => {
+        while (bufferMap.has(nextFlushIndex)) {
+          const chunkBuf = bufferMap.get(nextFlushIndex)!
+          fs.writeSync(fd, chunkBuf)
+          currentBufferedBytes -= chunkBuf.length
+          bufferMap.delete(nextFlushIndex)
+          nextFlushIndex++
+        }
+        if (forceAll || currentBufferedBytes >= maxMemoryBytes) {
+          logger.info('Downloader', `[MemoryBuffer] 单文件分块内存达到限制 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)，批量写盘清内存。`)
+        }
+      }
+
+      let chunkQueueIndex = 0
+      const concurrency = 8
+
+      const fetchNextChunk = async (): Promise<void> => {
+        while (chunkQueueIndex < chunks.length) {
+          if (abortController.signal.aborted) {
+            throw new DOMException('User aborted download', 'AbortError')
+          }
+          const chunkItem = chunks[chunkQueueIndex++]
+          let attempts = 0
+          let success = false
+
+          while (attempts < 3 && !success) {
+            if (abortController.signal.aborted) {
+              throw new DOMException('User aborted download', 'AbortError')
+            }
+            try {
+              const chunkRes = await net.fetch(url, {
+                headers: { ...headers, 'Range': `bytes=${chunkItem.start}-${chunkItem.end}` },
+                signal: abortController.signal as any
+              })
+              if (!chunkRes.ok && chunkRes.status !== 206) throw new Error(`HTTP ${chunkRes.status}`)
+              const buf = Buffer.from(await chunkRes.arrayBuffer())
+
+              bufferMap.set(chunkItem.index, buf)
+              currentBufferedBytes += buf.length
+              downloadedChunks++
+              totalReceivedBytes += buf.length
+
+              if (currentBufferedBytes >= maxMemoryBytes) {
+                flushMemoryToDisk(false)
+              }
+
+              const now = Date.now()
+              if (now - lastReportTime > 400 || downloadedChunks === chunks.length) {
+                const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+                this.sendProgress({
+                  id,
+                  totalBytes,
+                  receivedBytes: totalReceivedBytes,
+                  speed,
+                  status: 'downloading'
+                })
+                lastReportTime = now
+                lastReportBytes = totalReceivedBytes
+              }
+
+              success = true
+            } catch (err: any) {
+              attempts++
+              if (err.name === 'AbortError') throw err
+              if (attempts >= 3) {
+                throw new Error(`分块 ${chunkItem.index} 下载失败`)
+              }
+              await new Promise(r => setTimeout(r, 500 * attempts))
+            }
+          }
+        }
+      }
+
+      const workers: Promise<void>[] = []
+      for (let c = 0; c < concurrency; c++) {
+        workers.push(fetchNextChunk())
+      }
+
+      try {
+        await Promise.all(workers)
+        flushMemoryToDisk(true)
+        fs.closeSync(fd)
+
+        logger.info('Downloader', `[DirectDownloader] 单文件 Range 8 线程断点续传完成: ${savePath}`)
+        this.sendProgress({
+          id,
+          totalBytes,
+          receivedBytes: totalBytes,
+          status: 'completed',
+          speed: 0
+        })
+        return
+      } catch (err) {
+        try { fs.closeSync(fd) } catch {}
+        throw err
+      }
+    }
+
+    // 3. 不支持 Range 时的退化降级：单线程流式下载
     if (startBytes > 0) {
       headers['Range'] = `bytes=${startBytes}-`
     }
@@ -375,7 +537,7 @@ class Downloader {
     }
 
     const contentLength = response.headers.get('content-length')
-    const totalBytes = contentLength ? parseInt(contentLength, 10) + startBytes : 0
+    const finalTotalBytes = contentLength ? parseInt(contentLength, 10) + startBytes : 0
 
     let flags = 'a'
     let actualStart = startBytes
@@ -388,7 +550,7 @@ class Downloader {
 
     this.sendProgress({
       id,
-      totalBytes,
+      totalBytes: finalTotalBytes,
       receivedBytes: actualStart,
       status: 'downloading'
     })
@@ -400,7 +562,6 @@ class Downloader {
     let lastReportTime = Date.now()
     let lastReportBytes = receivedBytes
 
-    // 内存缓冲
     let memoryChunks: Buffer[] = []
     let memoryChunkBytes = 0
 
@@ -418,7 +579,6 @@ class Downloader {
       memoryChunks.push(chunk)
       memoryChunkBytes += chunk.length
 
-      // 超过内存上限时落盘
       if (memoryChunkBytes >= maxMemoryBytes) {
         flushStreamBuffer()
       }
@@ -429,7 +589,7 @@ class Downloader {
         this.sendProgress({
           id,
           receivedBytes,
-          totalBytes,
+          totalBytes: finalTotalBytes,
           speed,
           status: 'downloading'
         })
@@ -455,7 +615,7 @@ class Downloader {
     this.sendProgress({
       id,
       receivedBytes,
-      totalBytes,
+      totalBytes: finalTotalBytes,
       status: 'completed',
       speed: 0
     })

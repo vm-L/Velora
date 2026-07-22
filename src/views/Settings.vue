@@ -7,7 +7,7 @@
         <div class="settings-row">
           <div class="settings-info">
             <h3>关闭窗口行为</h3>
-            <p>指定点击主窗口右上角关闭按钮时的默认系统行为。</p>
+            <p>指定点击主窗口右上角关闭按钮时的默认系统行为</p>
           </div>
           <div class="segmented-control" :class="{ 'state-quit': state.closeBehavior === 'quit' }">
             <label>
@@ -32,7 +32,7 @@
         <div class="settings-row">
           <div class="settings-info">
             <h3>同时下载任务数</h3>
-            <p>设置最大同时进行的下载任务数量 (支持范围 1-10)。</p>
+            <p>设置最大同时进行的下载任务数量 (支持范围 1-10)</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
@@ -43,7 +43,7 @@
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>最大内存空间 (MB)</h3>
-            <p>设置下载流与 M3U8 分片在内存中的缓冲容量上限 (默认 1024MB，超限时自动批量写盘以保护磁盘)。</p>
+            <p>设置下载流在内存中的缓冲容量上限，超限时自动批量写盘</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input type="number" min="64" max="8192" :value="state.maxMemoryBufferMB" @change="handleMaxMemoryChange" class="inline-input" style="width: 100px; min-width: 100px;" />
@@ -249,6 +249,7 @@
 import { ref, computed } from 'vue';
 import { useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
+import { logger } from '../services/logger';
 import VButton from '../components/base/VButton.vue';
 import VInput from '../components/base/VInput.vue';
 
@@ -422,7 +423,7 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
       saveExternalSites(items);
     }
   } catch (err) {
-    console.error('Drag and drop error', err);
+    logger.error('Settings', 'Drag and drop error: ' + err);
   }
 };
 

@@ -3,6 +3,7 @@ export interface CMSCategory {
   name: string
   parentId: number
 }
+import { logger } from './logger'
 
 export interface CMSVideo {
   id: number
@@ -122,7 +123,7 @@ export const cmsService = {
    */
   async getCategories(apiUrl: string): Promise<CMSCategory[]> {
     if (!isValidUrl(apiUrl)) {
-      console.warn('[CMS] getCategories skipped: invalid apiUrl', apiUrl)
+      logger.warn('CMS', '[CMS] getCategories skipped: invalid apiUrl: ' + apiUrl)
       return []
     }
     if (!window.electronAPI || !window.electronAPI.fetchUrl) {
@@ -146,7 +147,7 @@ export const cmsService = {
     params: { page?: number; categoryId?: number; keyword?: string }
   ): Promise<{ list: CMSVideo[]; total: number; pageCount: number; page: number }> {
     if (!isValidUrl(apiUrl)) {
-      console.warn('[CMS] getVideoList skipped: invalid apiUrl', apiUrl)
+      logger.warn('CMS', '[CMS] getVideoList skipped: invalid apiUrl: ' + apiUrl)
       return { list: [], total: 0, pageCount: 0, page: params.page || 1 }
     }
     if (!window.electronAPI || !window.electronAPI.fetchUrl) {
@@ -195,7 +196,7 @@ export const cmsService = {
    */
   async getVideoDetail(apiUrl: string, id: number): Promise<CMSVideoDetail | null> {
     if (!isValidUrl(apiUrl)) {
-      console.warn('[CMS] getVideoDetail skipped: invalid apiUrl', apiUrl)
+      logger.warn('CMS', '[CMS] getVideoDetail skipped: invalid apiUrl: ' + apiUrl)
       return null
     }
     if (!window.electronAPI || !window.electronAPI.fetchUrl) {

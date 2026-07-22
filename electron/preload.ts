@@ -30,5 +30,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
   onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download-progress', (_event, data) => callback(data)),
-  writeLog: (message: string) => ipcRenderer.send('write-log', message)
+  log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
 })

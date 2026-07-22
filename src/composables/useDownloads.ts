@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { db, type DownloadTask } from '../db'
+import { logger } from '../services/logger'
 
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
@@ -7,14 +8,11 @@ let isListenersInitialized = false
 
 export const useDownloads = () => {
   const loadTasks = async () => {
-    if (window.electronAPI && window.electronAPI.writeLog) {
-      window.electronAPI.writeLog(`[Renderer] loadTasks starting...`)
-    }
+    logger.info('Downloads', `[Renderer] loadTasks starting...`)
     try {
       const allTasks = await db.downloads.toArray()
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] loadTasks: Found ${allTasks.length} tasks in Dexie database.`)
-      }
+      logger.info('Downloads', `[Renderer] loadTasks: Found ${allTasks.length} tasks in Dexie database.`)
+      
       // Auto-pause downloading tasks on startup
       for (const t of allTasks) {
         if (t.status === 'downloading') {
@@ -25,42 +23,28 @@ export const useDownloads = () => {
       }
       tasks.value = await db.downloads.orderBy('createdAt').reverse().toArray()
       isInitialized.value = true
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] loadTasks finished. tasks.value loaded. size: ${tasks.value.length}`)
-      }
+      logger.info('Downloads', `[Renderer] loadTasks finished. tasks.value loaded. size: ${tasks.value.length}`)
       initListeners()
     } catch (err: any) {
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] ERROR in loadTasks: ${err.message}`)
-      }
-      console.error(err)
+      logger.error('Downloads', `[Renderer] ERROR in loadTasks: ${err.message}`)
     }
   }
 
   const initListeners = () => {
     if (isListenersInitialized) {
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] initListeners skipped: already initialized.`)
-      }
+      logger.info('Downloads', `[Renderer] initListeners skipped: already initialized.`)
       return
     }
     
-    if (window.electronAPI && window.electronAPI.writeLog) {
-      window.electronAPI.writeLog(`[Renderer] initListeners binding to onDownloadProgress...`)
-    }
+    logger.info('Downloads', `[Renderer] initListeners binding to onDownloadProgress...`)
     isListenersInitialized = true
 
     if (window.electronAPI && window.electronAPI.onDownloadProgress) {
       window.electronAPI.onDownloadProgress(async (data: any) => {
-        console.log('[useDownloads] Received download progress IPC data:', data)
-        if (window.electronAPI.writeLog) {
-          window.electronAPI.writeLog(`[Renderer] Received IPC progress message. ID: ${data.id}, status: ${data.status}, receivedBytes: ${data.receivedBytes}, totalBytes: ${data.totalBytes}`)
-        }
+        logger.info('Downloads', `[Renderer] Received IPC progress message. ID: ${data.id}, status: ${data.status}, receivedBytes: ${data.receivedBytes}, totalBytes: ${data.totalBytes}`)
         
         const index = tasks.value.findIndex(t => t.id === data.id)
-        if (window.electronAPI.writeLog) {
-          window.electronAPI.writeLog(`[Renderer] tasks.value search index: ${index}. current tasks list size: ${tasks.value.length}`)
-        }
+        logger.info('Downloads', `[Renderer] tasks.value search index: ${index}. current tasks list size: ${tasks.value.length}`)
 
         if (index !== -1) {
           const t = tasks.value[index]
@@ -83,9 +67,7 @@ export const useDownloads = () => {
           t.updatedAt = Date.now()
           await db.downloads.put(JSON.parse(JSON.stringify(t)))
           
-          if (window.electronAPI.writeLog) {
-            window.electronAPI.writeLog(`[Renderer] Local database & task status updated. status: ${t.status}, progress: ${t.progress}%`)
-          }
+          logger.info('Downloads', `[Renderer] Local database & task status updated. status: ${t.status}, progress: ${t.progress}%`)
           
           // Trigger notifications
           if (prevStatus === 'downloading' && t.status === 'completed') {
@@ -112,9 +94,7 @@ export const useDownloads = () => {
   }
 
   const addDownload = async (url: string, name: string, savePath: string): Promise<boolean> => {
-    if (window.electronAPI && window.electronAPI.writeLog) {
-      window.electronAPI.writeLog(`[Renderer] addDownload invoked. url: ${url}, name: ${name}, savePath: ${savePath}`)
-    }
+    logger.info('Downloads', `[Renderer] addDownload invoked. url: ${url}, name: ${name}, savePath: ${savePath}`)
     try {
       const fileExists = window.electronAPI ? await window.electronAPI.fileExists(savePath) : false
       
@@ -136,9 +116,7 @@ export const useDownloads = () => {
             await window.electronAPI.deleteFile(savePath)
           }
         } else {
-          if (window.electronAPI && window.electronAPI.writeLog) {
-            window.electronAPI.writeLog(`[Renderer] addDownload canceled: File already exists and user skipped.`)
-          }
+          logger.info('Downloads', `[Renderer] addDownload canceled: File already exists and user skipped.`)
           return false // Skip download
         }
       }
@@ -158,25 +136,19 @@ export const useDownloads = () => {
         updatedAt: Date.now()
       }
       
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] addDownload: Persisting task ID ${id} to Dexie...`)
-      }
+      logger.info('Downloads', `[Renderer] addDownload: Persisting task ID ${id} to Dexie...`)
       await db.downloads.add(task)
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] addDownload: Task ID ${id} persisted. unshifting task to tasks.value...`)
-      }
+      logger.info('Downloads', `[Renderer] addDownload: Task ID ${id} persisted. unshifting task to tasks.value...`)
       tasks.value.unshift(task)
       
       if (window.electronAPI) {
-        window.electronAPI.writeLog(`[Renderer] addDownload: Triggering startDownload IPC for ID: ${id}`)
+        logger.info('Downloads', `[Renderer] addDownload: Triggering startDownload IPC for ID: ${id}`)
         window.electronAPI.startDownload({ id, url, savePath, startBytes: 0 })
       }
       
       return true
     } catch (err: any) {
-      if (window.electronAPI && window.electronAPI.writeLog) {
-        window.electronAPI.writeLog(`[Renderer] ERROR in addDownload: ${err.message}`)
-      }
+      logger.error('Downloads', `[Renderer] ERROR in addDownload: ${err.message}`)
       throw err
     }
   }

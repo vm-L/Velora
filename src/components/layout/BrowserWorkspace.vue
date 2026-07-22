@@ -32,7 +32,7 @@
     <div class="function-bar">
       <div class="func-spacer"></div>
       <div class="func-group">
-        <button class="func-btn" v-tooltip="'注入样式'" @click="inspectorVisible = true">
+        <button class="func-btn" :class="{ 'active': inspectorVisible }" v-tooltip="'注入样式'" @click="toggleInspector">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
             stroke-linecap="round" stroke-linejoin="round">
             <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
@@ -49,8 +49,15 @@
             <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" stroke="currentColor" stroke-width="2"
               fill="none"></rect>
             <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
-            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-              stroke-linejoin="round" fill="none"></path>
+            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="2" fill="none"></path>
+          </svg>
+        </button>
+
+        <button class="func-btn" :class="{ 'active': isPickingElementText }" v-tooltip="'复制文本'"
+          @click="pickElementText">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
           </svg>
         </button>
 
@@ -175,7 +182,7 @@
 
     <!-- Custom Context Menu -->
     <div v-show="contextMenuVisible" class="context-menu"
-      :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }">
+      :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }" @click.stop>
       <div class="menu-item" @click="triggerPickImage">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
@@ -186,6 +193,13 @@
         </svg>
         <span>捕获图片</span>
       </div>
+      <div class="menu-item" @click="triggerCopyText">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span>复制文本</span>
+      </div>
     </div>
   </div>
 </template>
@@ -194,6 +208,7 @@
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { useWorkspaces } from '../../composables/useWorkspaces';
 import { useSettings } from '../../composables/useSettings';
+import { logger } from '../../services/logger';
 
 import InspectorDialog from '../features/InspectorDialog.vue';
 import SnifferDropdown from '../features/SnifferDropdown.vue';
@@ -202,13 +217,17 @@ import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../features/VideoPlayerDialog.vue';
 import SaveMediaDialog from '../features/SaveMediaDialog.vue';
 import { APP_PREFIX } from '../../constants';
+import { getPickerScript, getPickerCancelScript } from '../../utils/elementPicker';
 
+
+import { useMessage } from '../../composables/useMessage';
 
 const props = defineProps<{
   resourceId: string;
   resourceUrl: string;
 }>();
 
+const { showMessage } = useMessage();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
 const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
 
@@ -232,18 +251,25 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   contextMenuVisible.value = true;
 };
 
+const hideAllContextMenus = () => {
+  contextMenuVisible.value = false;
+};
+
 const triggerPickImage = () => {
   contextMenuVisible.value = false;
   pickElementImage();
 };
 
+const triggerCopyText = () => {
+  contextMenuVisible.value = false;
+  pickElementText();
+};
 const workspace = computed(() => getWorkspace(props.resourceId));
 const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId));
 
 const getResourceIcon = () => {
   const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
-  if (isExt?.icon) return isExt.icon;
-  return undefined;
+  return isExt?.icon;
 };
 
 const init = () => {
@@ -254,6 +280,7 @@ const init = () => {
 
 onMounted(() => {
   init();
+  document.addEventListener('click', hideAllContextMenus);
   if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
     window.electronAPI.onWebviewNewWindow((url) => {
       // Add as new tab in current workspace
@@ -317,6 +344,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener('click', hideAllContextMenus);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
@@ -475,7 +503,7 @@ const refreshWebviewStyles = async (tabId: string) => {
       await webview.insertCSS(cssText, { cssOrigin: 'user' });
     }
   } catch (e) {
-    console.warn('Failed to inject CSS via insertCSS', e);
+    logger.warn('BrowserWorkspace', 'Failed to inject CSS via insertCSS: ' + e);
   }
 };
 
@@ -589,8 +617,13 @@ const urlOpenerVisible = ref(false);
 const urlInput = ref('');
 const urlInputRef = ref<HTMLInputElement | null>(null);
 
-const toggleUrlOpener = () => {
-  urlOpenerVisible.value = !urlOpenerVisible.value;
+const toggleUrlOpener = async () => {
+  if (urlOpenerVisible.value) {
+    urlOpenerVisible.value = false;
+    return;
+  }
+  await deactivateOtherFeatures('url');
+  urlOpenerVisible.value = true;
   if (urlOpenerVisible.value) {
     const wv = activeWebview();
     urlInput.value = wv && wv.getURL ? wv.getURL() : (activeTab.value?.url || '');
@@ -710,8 +743,73 @@ const inspectorVisible = ref(false);
 
 const isInteracting = ref(false);
 const isPickingElementImage = ref(false);
+const isPickingElementText = ref(false);
 
+const deactivateOtherFeatures = async (exclude: string) => {
+  if (exclude !== 'css' && inspectorVisible.value) {
+    inspectorVisible.value = false;
+  }
+  if (exclude !== 'url' && urlOpenerVisible.value) {
+    urlOpenerVisible.value = false;
+  }
+  const webview = activeWebview();
+  if (exclude !== 'image' && isPickingElementImage.value) {
+    isPickingElementImage.value = false;
+    if (webview) {
+      try {
+        await webview.executeJavaScript(getPickerCancelScript());
+      } catch (e) {}
+    }
+  }
+  if (exclude !== 'text' && isPickingElementText.value) {
+    isPickingElementText.value = false;
+    if (webview) {
+      try {
+        await webview.executeJavaScript(getPickerCancelScript());
+      } catch (e) {}
+    }
+  }
+};
 
+const toggleInspector = async () => {
+  if (inspectorVisible.value) {
+    inspectorVisible.value = false;
+  } else {
+    await deactivateOtherFeatures('css');
+    inspectorVisible.value = true;
+  }
+};
+
+/**
+ * 选取文本：完全复刻“捕获图片”的操作逻辑，支持鼠标悬停定位、
+ * 鼠标滚轮(Wheel)滑动向上放大或缩小选取的 DOM 容器层级，点击抽取 selectedEl.innerText。
+ */
+const pickElementText = async () => {
+  if (!workspace.value?.activeTabId) return;
+  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+  if (!webview) return;
+
+  if (isPickingElementText.value) {
+    try {
+      await webview.executeJavaScript(getPickerCancelScript());
+    } catch (e) { }
+    isPickingElementText.value = false;
+    return;
+  }
+
+  await deactivateOtherFeatures('text');
+  isPickingElementText.value = true;
+
+  try {
+    const text = await webview.executeJavaScript(getPickerScript('text'));
+    isPickingElementText.value = false;
+    if (text) {
+      showMessage('已成功复制文本到剪贴板', 'success');
+    }
+  } catch (e: any) {
+    isPickingElementText.value = false;
+  }
+};
 
 /**
  * 选取图片：与选取元素操作流程相同，但点击后收集元素内所有图片资源，
@@ -725,257 +823,17 @@ const pickElementImage = async () => {
   // 再次点击则取消拾取模式
   if (isPickingElementImage.value) {
     try {
-      await webview.executeJavaScript(`
-        if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
-      `);
+      await webview.executeJavaScript(getPickerCancelScript());
     } catch (e) { }
     isPickingElementImage.value = false;
     return;
   }
 
+  await deactivateOtherFeatures('image');
   isPickingElementImage.value = true;
 
-  const pickerScript = `
-    new Promise((resolve) => {
-      if (window.__imgElementPickerActive) {
-        if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
-      }
-      window.__imgElementPickerActive = true;
-
-      const overlay = document.createElement('div');
-      overlay.style.position = 'fixed';
-      overlay.style.pointerEvents = 'none';
-      overlay.style.zIndex = '2147483647';
-      overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
-      overlay.style.border = '2px solid var(--color-accent)';
-      overlay.style.transition = 'all 0.1s ease';
-      document.body.appendChild(overlay);
-
-      const tooltip = document.createElement('div');
-      tooltip.style.position = 'fixed';
-      tooltip.style.zIndex = '2147483647';
-      tooltip.style.backgroundColor = 'var(--bg-surface)';
-      tooltip.style.color = 'var(--text-primary)';
-      tooltip.style.border = '1px solid var(--border-color)';
-      tooltip.style.padding = '4px 8px';
-      tooltip.style.borderRadius = '4px';
-      tooltip.style.fontSize = '12px';
-      tooltip.style.fontFamily = 'system-ui, sans-serif';
-      tooltip.style.pointerEvents = 'none';
-      tooltip.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-      tooltip.style.display = 'none';
-      tooltip.style.transition = 'all 0.1s ease';
-      document.body.appendChild(tooltip);
-
-      let currentEl = null;
-      let selectedEl = null;
-      let path = [];
-      let pathIndex = 0;
-      let childOverlays = [];
-
-      const cleanUrl = (raw) => {
-        if (!raw || raw.startsWith('data:')) return raw;
-        try {
-          const parsed = new URL(raw, window.location.href);
-          let clean = parsed.origin + parsed.pathname;
-          const atIdx = clean.indexOf('@');
-          if (atIdx !== -1) clean = clean.substring(0, atIdx);
-          return clean + parsed.search;
-        } catch {
-          return raw;
-        }
-      };
-
-      const collectImages = (root) => {
-        const urls = new Set();
-        const elements = [root, ...root.querySelectorAll('*')];
-        for (const el of elements) {
-          if (el.tagName && el.tagName.toLowerCase() === 'img') {
-            if (el.src) urls.add(cleanUrl(el.src));
-            if (el.srcset) {
-              el.srcset.split(',').forEach(part => {
-                const u = part.trim().split(/\\s+/)[0];
-                if (u) urls.add(cleanUrl(u));
-              });
-            }
-          }
-          try {
-            const style = window.getComputedStyle(el);
-            const bg = style.backgroundImage;
-            if (bg && bg !== 'none') {
-              const re = /url\\(["']?(.*?)["']?\\)/g;
-              let m;
-              while ((m = re.exec(bg)) !== null) {
-                if (m[1] && !m[1].startsWith('data:')) {
-                  urls.add(cleanUrl(m[1]));
-                }
-              }
-            }
-          } catch {}
-        }
-        return [...urls].filter(Boolean);
-      };
-
-      const getAffectedImages = (root) => {
-        let list = [];
-        const walk = (node) => {
-          if (!node) return;
-          let isImg = node.tagName.toLowerCase() === 'img';
-          if (!isImg) {
-            try {
-              const style = window.getComputedStyle(node);
-              const bg = style.backgroundImage;
-              if (bg && bg !== 'none' && bg.includes('url')) {
-                isImg = true;
-              }
-            } catch(e) {}
-          }
-          if (isImg) {
-            list.push(node);
-          } else {
-            for (const child of node.children) {
-              walk(child);
-            }
-          }
-        };
-        walk(root);
-        return list;
-      };
-
-      const updateHighlight = (el) => {
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        overlay.style.top = rect.top + 'px';
-        overlay.style.left = rect.left + 'px';
-        overlay.style.width = rect.width + 'px';
-        overlay.style.height = rect.height + 'px';
-        overlay.style.display = 'block';
-
-        let tagName = el.tagName.toLowerCase();
-        let className = el.className ? '.' + [...el.classList].join('.') : '';
-        if (className.length > 20) className = className.substring(0, 20) + '...';
-
-        let imgCount = collectImages(el).length;
-
-        let levelText = pathIndex === 0 ? ' (滚轮切换选择器范围)' : ' (层级 +' + pathIndex + ')';
-        tooltip.textContent = tagName + className + levelText + ' - 包含图片: ' + imgCount + ' 张';
-
-        let h = 220; // brand blue
-        overlay.style.borderColor = 'var(--color-accent)';
-        overlay.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        tooltip.style.backgroundColor = 'var(--bg-surface)';
-
-        // Child highlighting for multiple levels
-        childOverlays.forEach(o => o.style.display = 'none');
-        if (pathIndex > 0) {
-          const children = getAffectedImages(el);
-          children.forEach((child, idx) => {
-            let childOverlay = childOverlays[idx];
-            if (!childOverlay) {
-              childOverlay = document.createElement('div');
-              childOverlay.style.position = 'fixed';
-              childOverlay.style.pointerEvents = 'none';
-              childOverlay.style.zIndex = '2147483646';
-              childOverlay.style.border = '1px dashed var(--color-accent)'; // dashed blue border
-              childOverlay.style.backgroundColor = 'transparent';
-              childOverlay.style.transition = 'all 0.1s ease';
-              document.body.appendChild(childOverlay);
-              childOverlays.push(childOverlay);
-            }
-            const crect = child.getBoundingClientRect();
-            childOverlay.style.top = crect.top + 'px';
-            childOverlay.style.left = crect.left + 'px';
-            childOverlay.style.width = crect.width + 'px';
-            childOverlay.style.height = crect.height + 'px';
-            childOverlay.style.display = 'block';
-          });
-        }
-
-        let topPos = rect.top - 28;
-        if (topPos < 5) topPos = rect.top + 5;
-        let leftPos = rect.left + 5;
-
-        tooltip.style.top = topPos + 'px';
-        tooltip.style.left = leftPos + 'px';
-        tooltip.style.display = 'block';
-      };
-
-      const onMouseOver = (e) => {
-        e.stopPropagation();
-        if (e.target === currentEl) return;
-        currentEl = e.target;
-        path = [];
-        let temp = currentEl;
-        while (temp && temp.tagName.toLowerCase() !== 'html') {
-          path.push(temp);
-          temp = temp.parentElement;
-        }
-        pathIndex = 0;
-        selectedEl = path[pathIndex];
-        updateHighlight(selectedEl);
-      };
-
-      const onWheel = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.deltaY < 0) {
-          if (pathIndex < path.length - 1) {
-            pathIndex++;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
-          }
-        } else if (e.deltaY > 0) {
-          if (pathIndex > 0) {
-            pathIndex--;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
-          }
-        }
-      };
-
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        cleanup();
-        resolve([]);
-      };
-
-      const cleanup = () => {
-        try { document.body.removeChild(overlay); } catch(e) {}
-        try { document.body.removeChild(tooltip); } catch(e) {}
-        childOverlays.forEach(o => {
-          try { document.body.removeChild(o); } catch(e){}
-        });
-        document.removeEventListener('mouseover', onMouseOver, true);
-        document.removeEventListener('click', onClick, true);
-        document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
-        document.removeEventListener('contextmenu', onContextMenu, true);
-        window.__imgElementPickerActive = false;
-        window.__imgElementPickerCancel = null;
-      };
-
-      const onClick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const urls = collectImages(selectedEl || e.target);
-        cleanup();
-        resolve(urls);
-      };
-
-      window.__imgElementPickerCancel = () => {
-        cleanup();
-        resolve([]);
-      };
-
-      document.addEventListener('mouseover', onMouseOver, true);
-      document.addEventListener('click', onClick, true);
-      document.addEventListener('wheel', onWheel, { capture: true, passive: false });
-      document.addEventListener('contextmenu', onContextMenu, true);
-    })
-  `;
-
   try {
-    const urls: string[] = await webview.executeJavaScript(pickerScript);
+    const urls: string[] = await webview.executeJavaScript(getPickerScript('image'));
     isPickingElementImage.value = false;
     if (urls && urls.length > 0) {
       highestZIndex++;

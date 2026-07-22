@@ -132,12 +132,11 @@
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
                 </VButton>
-                <VButton v-slot:icon v-if="task.status === 'completed'" variant="icon-secondary" title="打开文件" @click.stop="openTask(task)">
+                <v-button v-if="task.status === 'completed'" variant="icon-secondary" title="预览/打开文件" @click.stop="openTask(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                    <polyline points="13 2 13 9 20 9"></polyline>
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                </VButton>
+                </v-button>
                 <VButton variant="icon-secondary" title="打开所在目录" @click.stop="openDirectory(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -221,6 +220,7 @@ import AudioPlayerDialog from '../components/features/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../components/features/VideoPlayerDialog.vue';
 import SaveMediaDialog from '../components/features/SaveMediaDialog.vue';
 import { useSettings } from '../composables/useSettings';
+import { logger } from '../services/logger';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
@@ -411,6 +411,7 @@ const isVideoTask = (task: any) => {
 };
 
 const openTask = async (task: any) => {
+  logger.info('HomeView', `openTask invoked for task ID: ${task.id}, name: ${task.name}, savePath: ${task.savePath}`);
   if (!task.savePath) {
     showMessage('文件路径不存在', 'error');
     return;
@@ -425,16 +426,17 @@ const openTask = async (task: any) => {
       return;
     }
 
-    const safePath = task.savePath.replace(/\\/g, '/');
-    const localUrl = `velora://local/${safePath}`;
     if (isImageTask(task)) {
-      activeImagePreviewUrl.value = localUrl;
+      logger.info('HomeView', `Opening ImagePreviewDialog for path: ${task.savePath}`);
+      activeImagePreviewUrl.value = task.savePath;
       return;
     } else if (isAudioTask(task)) {
-      activeAudioPreviewUrl.value = localUrl;
+      logger.info('HomeView', `Opening AudioPlayerDialog for path: ${task.savePath}`);
+      activeAudioPreviewUrl.value = task.savePath;
       return;
     } else if (isVideoTask(task)) {
-      activeVideoPreviewUrl.value = localUrl;
+      logger.info('HomeView', `Opening VideoPlayerDialog for path: ${task.savePath}`);
+      activeVideoPreviewUrl.value = task.savePath;
       return;
     }
 

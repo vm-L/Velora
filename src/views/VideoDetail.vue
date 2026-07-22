@@ -193,6 +193,7 @@ import { useSettings } from '../composables/useSettings'
 import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
 import { useOpenedCMS } from '../composables/useOpenedCMS'
+import { logger } from '../services/logger'
 import VButton from '../components/base/VButton.vue'
 import SaveMediaDialog from '../components/features/SaveMediaDialog.vue'
 
@@ -394,7 +395,7 @@ const playEpisode = async (episode: { name: string; url: string }) => {
   if (isExternalPlayUrl.value || !videoPlayer.value) return
 
   const url = episode.url
-  console.log('[Player] Playing URL:', url)
+  logger.info('Player', '[Player] Playing URL: ' + url)
 
   // 1. 如果是 .m3u8 后缀，使用 Hls.js 播放
   if (url.toLowerCase().includes('.m3u8')) {
@@ -415,22 +416,22 @@ const playEpisode = async (episode: { name: string; url: string }) => {
           if (savedProgress > 0 && videoPlayer.value) {
             videoPlayer.value.currentTime = savedProgress
           }
-          videoPlayer.value?.play().catch(e => console.log('Auto-play blocked:', e))
+          videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
         })
 
         hls.on((window as any).Hls.Events.ERROR, (_event: any, data: any) => {
           if (data.fatal) {
             switch (data.type) {
               case (window as any).Hls.ErrorTypes.NETWORK_ERROR:
-                console.error('[Player] Fatal network error, trying to recover...')
+                logger.error('Player', '[Player] Fatal network error, trying to recover...')
                 hls.startLoad()
                 break
               case (window as any).Hls.ErrorTypes.MEDIA_ERROR:
-                console.error('[Player] Fatal media error, trying to recover...')
+                logger.error('Player', '[Player] Fatal media error, trying to recover...')
                 hls.recoverMediaError()
                 break
               default:
-                console.error('[Player] Unrecoverable player error')
+                logger.error('Player', '[Player] Unrecoverable player error')
                 destroyPlayer()
                 break
             }
@@ -444,13 +445,13 @@ const playEpisode = async (episode: { name: string; url: string }) => {
           if (savedProgress > 0 && videoPlayer.value) {
             videoPlayer.value.currentTime = savedProgress
           }
-          videoPlayer.value?.play().catch(e => console.log('Auto-play blocked:', e))
+          videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
         })
       } else {
-        console.error('Browser does not support HLS playback')
+        logger.error('Player', 'Browser does not support HLS playback')
       }
     } catch (e) {
-      console.error('Hls.js script load error:', e)
+      logger.error('Player', 'Hls.js script load error: ' + e)
     }
   } else {
     // 2. 如果是普通 mp4，直接使用 HTML5 video 播放
@@ -461,7 +462,7 @@ const playEpisode = async (episode: { name: string; url: string }) => {
       if (savedProgress > 0 && videoPlayer.value) {
         videoPlayer.value.currentTime = savedProgress
       }
-      videoPlayer.value?.play().catch(e => console.log('Auto-play blocked:', e))
+      videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
     })
   }
 }
@@ -491,7 +492,7 @@ const loadPlaybackHistory = () => {
       playedHistory.value = JSON.parse(stored)
     }
   } catch (e) {
-    console.error(e)
+    logger.error('Player', String(e))
   }
 }
 
@@ -502,7 +503,7 @@ const saveToHistory = (url: string) => {
       const key = `played_history_${cmsId}_${vodId}`
       localStorage.setItem(key, JSON.stringify(playedHistory.value))
     } catch (e) {
-      console.error(e)
+      logger.error('Player', String(e))
     }
   }
 }
@@ -512,7 +513,7 @@ const saveProgress = (url: string, time: number) => {
     const key = `progress_${encodeURIComponent(url)}`
     localStorage.setItem(key, String(time))
   } catch (e) {
-    console.error(e)
+    logger.error('Player', String(e))
   }
 }
 

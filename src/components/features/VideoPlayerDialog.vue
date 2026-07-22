@@ -30,7 +30,7 @@
 
     <div class="dialog-content" @mousemove="onMouseMove" @mouseleave="onMouseLeave">
       <div class="video-container" @click="togglePlay" @dblclick="toggleFullscreen">
-        <video ref="videoRef" autoplay 
+        <video ref="videoRef" autoplay referrerpolicy="no-referrer"
           @timeupdate="onTimeUpdate" 
           @loadedmetadata="onLoadedMetadata" 
           @ended="isPlaying = false" 
@@ -121,6 +121,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import Hls from 'hls.js';
+import { logger } from '../../services/logger';
 
 const props = defineProps<{
   url: string | null;
@@ -180,18 +181,40 @@ const resetControlsTimeout = () => {
   }, 2000);
 };
 
+const formatMediaSrc = (rawUrl: string): string => {
+  if (!rawUrl) return '';
+  const trimmed = rawUrl.trim();
+  
+  if (trimmed.startsWith('velora://local/')) {
+    const rawPath = trimmed.slice('velora://local/'.length);
+    const decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
+    return `velora://local/${encodeURIComponent(decoded)}`;
+  }
+
+  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // 离线本地磁盘路径统一规范为 velora://local/ 协议
+  const cleanPath = trimmed.replace(/\\/g, '/');
+  return `velora://local/${encodeURIComponent(cleanPath)}`;
+};
+
 const loadVideo = () => {
   if (!videoRef.value || !props.url) return;
   const video = videoRef.value;
-  const src = props.url;
+  const playUrl = formatMediaSrc(props.url);
+
+  logger.info('VideoPreview', `Loading video source. Raw: ${props.url} -> Formatted: ${playUrl}`);
 
   if (hls) {
     hls.destroy();
     hls = null;
   }
 
-  // Check if HLS
-  if (src.includes('.m3u8') && Hls.isSupported()) {
+  // 判断是否走 HLS.js 播放
+  if (playUrl.toLowerCase().includes('.m3u8') && Hls.isSupported()) {
+    logger.info('VideoPreview', 'Using HLS.js decoder for playback.');
     hls = new Hls({
       autoStartLoad: true,
       startPosition: -1,
@@ -199,9 +222,8 @@ const loadVideo = () => {
     });
     
     hls.on(Hls.Events.ERROR, (_event, data) => {
-      const msg = `[VideoPlayerDialog] HLS Error: ${data.type} - ${data.details} (fatal: ${data.fatal})`;
-      console.error(msg);
-      if (window.electronAPI) window.electronAPI.writeLog(msg);
+      const msg = `HLS Error: ${data.type} - ${data.details} (fatal: ${data.fatal})`;
+      logger.error('VideoPreview', msg);
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
@@ -212,20 +234,26 @@ const loadVideo = () => {
             break;
           default:
             hls?.destroy();
+            if (video) {
+              video.src = playUrl;
+              video.play().catch(() => {});
+            }
             break;
         }
       }
     });
 
-    hls.loadSource(src);
+    hls.loadSource(playUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(() => {});
     });
   } else {
-    // Native playback for mp4, webm, etc. (or native HLS on Safari)
-    video.src = src;
-    video.play().catch(() => {});
+    logger.info('VideoPreview', 'Using HTML5 native video player for playback.');
+    video.src = playUrl;
+    video.play().catch((err) => {
+      logger.error('VideoPreview', `Native video play exception: ${err.message}`);
+    });
   }
 };
 
@@ -247,7 +275,7 @@ watch(() => props.url, (newUrl) => {
       hls = null;
     }
   }
-});
+}, { immediate: true });
 
 const bringToFront = () => {
   zIndex.value = 2000 + Date.now() % 1000;
@@ -367,13 +395,9 @@ const onVolumeSlider = (e: Event) => {
 const onVideoError = (e: Event) => {
   const target = e.target as HTMLVideoElement;
   if (target.error) {
-    const msg = `[VideoPlayerDialog] Native Video Error: Code ${target.error.code} - ${target.error.message}`;
-    console.error(msg);
-    if (window.electronAPI) window.electronAPI.writeLog(msg);
+    logger.error('VideoPreview', `Native Video Error: Code ${target.error.code} - ${target.error.message}`);
   } else {
-    const msg = `[VideoPlayerDialog] Native Video Error: Unknown error`;
-    console.error(msg);
-    if (window.electronAPI) window.electronAPI.writeLog(msg);
+    logger.error('VideoPreview', 'Native Video Error: Unknown error');
   }
 };
 
@@ -391,7 +415,7 @@ const togglePip = async () => {
       await videoRef.value.requestPictureInPicture();
     }
   } catch (error) {
-    console.error("PiP failed", error);
+    logger.error('VideoPreview', 'PiP failed: ' + error);
   }
 };
 
@@ -427,6 +451,9 @@ const downloadVideo = () => {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown);
+  nextTick(() => {
+    loadVideo();
+  });
 });
 
 onUnmounted(() => {

@@ -215,6 +215,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCMS } from '../../composables/useCMS'
+import { logger } from '../../services/logger'
 import VInput from '../base/VInput.vue'
 import VButton from '../base/VButton.vue'
 
@@ -338,7 +339,7 @@ const initCMSPage = async () => {
     ])
     setTimeout(checkOverflow, 300)
   } catch (err) {
-    console.error('Failed to init CMS workspace:', err)
+    logger.error('CMS', 'Failed to init CMS workspace: ' + err)
   } finally {
     isFirstLoad.value = false
   }

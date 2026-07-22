@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { cmsService, type CMSCategory, type CMSVideo, type CMSVideoDetail } from '../services/cmsService'
+import { logger } from '../services/logger'
 
 export const useCMS = (apiUrl: string) => {
   const loading = ref(false)
@@ -26,7 +27,7 @@ export const useCMS = (apiUrl: string) => {
       categories.value = data
     } catch (e: any) {
       error.value = e.message || '加载分类失败'
-      console.error(e)
+      logger.error('CMS', String(e))
     } finally {
       loading.value = false
     }
@@ -52,7 +53,7 @@ export const useCMS = (apiUrl: string) => {
       page.value = data.page
     } catch (e: any) {
       error.value = e.message || '加载视频列表失败'
-      console.error(e)
+      logger.error('CMS', String(e))
     } finally {
       loading.value = false
     }
@@ -79,7 +80,7 @@ export const useCMS = (apiUrl: string) => {
       return data
     } catch (e: any) {
       error.value = e.message || '获取视频详情失败'
-      console.error(e)
+      logger.error('CMS', String(e))
       return null
     } finally {
       detailLoading.value = false

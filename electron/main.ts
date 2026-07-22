@@ -13,7 +13,8 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
   : process.env.DIST
 
 import { storeManager, setupStoreHandlers } from './store'
-import { downloader, logToFile } from './downloader'
+import { downloader } from './downloader'
+import { logger } from './logger'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
@@ -26,9 +27,9 @@ const clearPrivacyData = async () => {
     await session.defaultSession.clearStorageData({
       storages: ['cookies', 'localstorage', 'websql', 'cachestorage', 'serviceworkers']
     })
-    logToFile('[Privacy] Browser cache and storage data (excluding IndexedDB) cleared successfully.')
+    logger.info('Privacy', 'Browser cache and storage data cleared successfully.')
   } catch (e: any) {
-    logToFile(`[Privacy] Failed to clear privacy data: ${e.message}`)
+    logger.error('Privacy', `Failed to clear privacy data: ${e.message}`)
   }
 }
 
@@ -113,7 +114,7 @@ function createWindow() {
       const base64 = Buffer.from(buffer).toString('base64')
       return `data:${contentType};base64,${base64}`
     } catch (e: any) {
-      console.error('Failed to fetch image base64:', e)
+      logger.error('Main', 'Failed to fetch image base64: ' + e)
       return null
     }
   })
@@ -129,7 +130,7 @@ function createWindow() {
         return text
       }
     } catch (e: any) {
-      console.error('Failed to fetch url:', e)
+      logger.error('Main', 'Failed to fetch url: ' + e)
       return { success: false, error: e.message }
     }
   })
@@ -143,7 +144,7 @@ function createWindow() {
       clipboard.writeImage(image)
       return true
     } catch (e: any) {
-      console.error('Failed to copy image:', e)
+      logger.error('Main', 'Failed to copy image: ' + e)
       return false
     }
   })
@@ -168,7 +169,7 @@ function createWindow() {
         await fs.promises.writeFile(savePath, Buffer.from(buffer))
         results.push({ url: file.url, success: true, path: savePath })
       } catch (e: any) {
-        console.error('Failed to save image:', file.url, e)
+        logger.error('Main', 'Failed to save image: ' + file.url + ' ' + e)
         results.push({ url: file.url, success: false, error: e.message })
       }
     }
@@ -178,8 +179,12 @@ function createWindow() {
   // Downloader IPCs
   downloader.setWindow(mainWindow)
   
+  ipcMain.on('log-message', (_, { level, scope, message }: { level: 'info' | 'warn' | 'error', scope: string, message: string }) => {
+    logger[level || 'info'](scope || 'Renderer', message || '')
+  })
+
   ipcMain.on('write-log', (_, message: string) => {
-    logToFile(message)
+    logger.info('Renderer', message)
   })
   
   ipcMain.on('start-download', (_, cmd) => {
@@ -201,7 +206,7 @@ function createWindow() {
         return true
       }
     } catch (e) {
-      console.error('Failed to delete file:', e)
+      logger.error('Main', 'Failed to delete file: ' + e)
     }
     return false
   })
@@ -344,17 +349,17 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(async () => {
   protocol.handle('velora', (request) => {
-    logToFile(`[Protocol velora] Raw request url: ${request.url}`)
+    logger.info('Protocol', `Raw request url: ${request.url}`)
     let prefix = request.url.startsWith('velora://local/') ? 'velora://local/' : 'velora://'
     let filePath = decodeURIComponent(request.url.slice(prefix.length))
-    logToFile(`[Protocol velora] Decoded path before processing: ${filePath}`)
+    logger.info('Protocol', `Decoded path before processing: ${filePath}`)
     
     if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1) // Remove leading slash on Windows (e.g. /C:/foo -> C:/foo)
+      filePath = filePath.slice(1)
     }
     const { pathToFileURL } = require('url');
     const finalUrl = pathToFileURL(filePath).toString();
-    logToFile(`[Protocol velora] Final path: ${filePath} -> File URL: ${finalUrl}`)
+    logger.info('Protocol', `Final path: ${filePath} -> File URL: ${finalUrl}`)
     
     return net.fetch(finalUrl)
   })

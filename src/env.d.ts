@@ -33,6 +33,6 @@ interface Window {
     deleteFile: (filePath: string) => Promise<boolean>
     fileExists: (filePath: string) => Promise<boolean>
     onDownloadProgress: (callback: (data: any) => void) => void
-    writeLog: (message: string) => void
+    log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }
