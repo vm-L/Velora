@@ -70,8 +70,16 @@ export const useDownloads = () => {
           if (data.totalBytes !== undefined) t.totalBytes = data.totalBytes
           if (data.receivedBytes !== undefined) t.receivedBytes = data.receivedBytes
           if (data.speed !== undefined) t.speed = data.speed
+          if (data.downloadedSegments !== undefined) t.downloadedSegments = data.downloadedSegments
+          if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
           if (data.errorMsg) t.errorMsg = data.errorMsg
-          if (t.totalBytes > 0) t.progress = (t.receivedBytes / t.totalBytes) * 100
+
+          if (t.totalSegments && t.totalSegments > 0) {
+            t.progress = Math.min(100, Math.round((t.downloadedSegments! / t.totalSegments!) * 100))
+          } else if (t.totalBytes > 0) {
+            t.progress = Math.min(100, Math.round((t.receivedBytes / t.totalBytes) * 100))
+          }
+
           t.updatedAt = Date.now()
           await db.downloads.put(JSON.parse(JSON.stringify(t)))
           

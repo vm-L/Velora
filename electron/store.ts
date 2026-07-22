@@ -19,7 +19,9 @@ class StoreManager {
         imageDirectory: app.getPath('downloads'),
         audioDirectory: app.getPath('downloads'),
         videoDirectory: app.getPath('downloads'),
-        fileDirectory: app.getPath('downloads')
+        fileDirectory: app.getPath('downloads'),
+        maxConcurrentDownloads: 3,
+        maxMemoryBufferMB: 1024
       }
     })
   }

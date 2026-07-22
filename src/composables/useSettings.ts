@@ -16,6 +16,7 @@ export const state = reactive({
   videoDirectory: '',
   fileDirectory: '',
   maxConcurrentDownloads: 3,
+  maxMemoryBufferMB: 1024,
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
@@ -31,6 +32,7 @@ export const useSettings = () => {
     state.videoDirectory = (await window.electronAPI.getSetting('videoDirectory')) || ''
     state.fileDirectory = (await window.electronAPI.getSetting('fileDirectory')) || ''
     state.maxConcurrentDownloads = (await window.electronAPI.getSetting('maxConcurrentDownloads')) || 3
+    state.maxMemoryBufferMB = (await window.electronAPI.getSetting('maxMemoryBufferMB')) || 1024
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -72,6 +74,11 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('maxConcurrentDownloads', count)
   }
 
+  const saveMaxMemoryBufferMB = async (mb: number) => {
+    state.maxMemoryBufferMB = mb
+    await window.electronAPI.setSetting('maxMemoryBufferMB', mb)
+  }
+
   const saveCmsResources = async (resources: ResourceItem[]) => {
     state.cmsResources = resources
     await window.electronAPI.setSetting('cmsResources', JSON.parse(JSON.stringify(resources)))
@@ -97,6 +104,7 @@ export const useSettings = () => {
     saveVideoDirectory,
     saveFileDirectory,
     saveMaxConcurrentDownloads,
+    saveMaxMemoryBufferMB,
     saveCmsResources, 
     saveExternalSites, 
     saveCustomStyles 

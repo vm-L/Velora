@@ -162,18 +162,23 @@
               <div class="progress-bar">
                 <div class="progress-fill" :class="task.status" :style="{ width: task.progress + '%' }"></div>
               </div>
+              <span class="progress-text-percent">{{ Math.round(task.progress || 0) }}%</span>
             </div>
 
             <div class="task-meta">
               <span class="status-text" :class="task.status">{{ getStatusText(task.status) }}</span>
               <span v-if="task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
               <span class="meta-divider">•</span>
-              <span class="size-text">{{ formatBytes(task.receivedBytes) }} / {{ formatBytes(task.totalBytes) }}</span>
+              <span class="size-text">{{ formatBytes(task.receivedBytes) }} {{ task.totalBytes > 0 ? '/ ' + formatBytes(task.totalBytes) : '' }}</span>
+              <template v-if="task.totalSegments && task.totalSegments > 0">
+                <span class="meta-divider">•</span>
+                <span class="segments-text">{{ task.downloadedSegments || 0 }}/{{ task.totalSegments }} 分片</span>
+              </template>
               <template v-if="task.status === 'downloading' && task.speed > 0">
                 <span class="meta-divider">•</span>
                 <span class="speed-text">{{ formatBytes(task.speed) }}/s</span>
-                <span class="meta-divider">•</span>
-                <span class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
+                <span v-if="task.totalBytes > 0" class="meta-divider">•</span>
+                <span v-if="task.totalBytes > 0" class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
               </template>
               <template v-if="task.savePath">
                 <span class="meta-divider">•</span>
@@ -898,14 +903,27 @@ const confirmDelete = async (task: any) => {
 /* Action icons styled by VButton component */
 
 .task-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
 .progress-bar {
+  flex: 1;
   height: 6px;
   background: var(--border-color);
   border-radius: 3px;
   overflow: hidden;
+}
+
+.progress-text-percent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 36px;
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .progress-fill {

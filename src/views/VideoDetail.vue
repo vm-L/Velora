@@ -245,6 +245,7 @@ const {
 const activeSourceIndex = ref(0)
 const activeEpisode = ref<{ name: string; url: string } | null>(null)
 const playedHistory = ref<string[]>([])
+const sniffedMediaUrl = ref<string | null>(null)
 
 // 获取当前源
 const currentSource = computed(() => {
@@ -282,18 +283,57 @@ const handleCopyTitle = () => {
   }
 }
 
-// 下载当前选中的集数视频
+// 下载当前选中的集数视频 (智能解析真实媒体 URL & 统一推荐 mp4 后缀)
 const handleDownloadVideo = () => {
   if (!videoDetail.value || !activeEpisode.value) {
     showMessage('请先选择要下载的集数', 'warning')
     return
   }
   const ep = activeEpisode.value
-  const rawName = `${videoDetail.value.name}_${ep.name}`.replace(/[\\/:*?"<>|]/g, '_')
-  const ext = ep.url.toLowerCase().includes('.m3u8') ? 'm3u8' : 'mp4'
+  let targetUrl = ep.url
 
-  saveTargetUrl.value = ep.url
-  saveDefaultName.value = `${rawName}.${ext}`
+  // 判断是否为非直连媒体的网页解析链接
+  const lowerUrl = targetUrl.toLowerCase()
+  const isWebPageUrl = !lowerUrl.includes('.m3u8') && 
+                       !lowerUrl.includes('.mp4') && 
+                       !lowerUrl.includes('.webm') && 
+                       !lowerUrl.includes('.flv') && 
+                       !lowerUrl.includes('.mkv')
+
+  if (isWebPageUrl) {
+    let matchedUrl = ''
+
+    // 策略 A: 跨源同集名匹配 (查找其他包含 .m3u8/.mp4 的源中同名的集数)
+    if (videoDetail.value.playSources) {
+      for (const source of videoDetail.value.playSources) {
+        const matchedEp = source.episodes.find(e => e.name.trim() === ep.name.trim())
+        if (matchedEp) {
+          const mUrl = matchedEp.url.toLowerCase()
+          if (mUrl.includes('.m3u8') || mUrl.includes('.mp4')) {
+            matchedUrl = matchedEp.url
+            break
+          }
+        }
+      }
+    }
+
+    if (matchedUrl) {
+      targetUrl = matchedUrl
+    } else if (sniffedMediaUrl.value) {
+      // 策略 B: 使用网络嗅探捕获到的真实媒体流 URL
+      targetUrl = sniffedMediaUrl.value
+    } else {
+      showMessage('当前网页源未获取到真实媒体流，请尝试切换至 m3u8 播放源或待播放缓冲后重试', 'warning')
+      return
+    }
+  }
+
+  const rawName = `${videoDetail.value.name}_${ep.name}`.replace(/[\\/:*?"<>|]/g, '_')
+  // 弹窗默认推荐规范的 mp4 合并后文件后缀名 (如 example.mp4)
+  const defaultFilename = `${rawName}.mp4`
+
+  saveTargetUrl.value = targetUrl
+  saveDefaultName.value = defaultFilename
   saveDefaultDir.value = state.videoDirectory || ''
   saveDialogVisible.value = true
 }
@@ -315,6 +355,15 @@ onMounted(async () => {
     // 优先加载历史播放集，如无历史则播第一集
     const lastPlayedEp = currentSource.value.episodes.find(ep => playedHistory.value.includes(ep.url))
     playEpisode(lastPlayedEp || currentSource.value.episodes[0])
+  }
+
+  // 监听网络嗅探器，自动记录网页内嵌播放时发起的真实媒体流 URL
+  if (window.electronAPI && window.electronAPI.onMediaSniffed) {
+    window.electronAPI.onMediaSniffed((data: any) => {
+      if (data.type === 'video' && data.url) {
+        sniffedMediaUrl.value = data.url
+      }
+    })
   }
 })
 

@@ -39,6 +39,17 @@
           </div>
         </div>
 
+        <!-- 最大内存空间 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>最大内存空间 (MB)</h3>
+            <p>设置下载流与 M3U8 分片在内存中的缓冲容量上限 (默认 1024MB，超限时自动批量写盘以保护磁盘)。</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-input type="number" min="64" max="8192" :value="state.maxMemoryBufferMB" @change="handleMaxMemoryChange" class="inline-input" style="width: 100px; min-width: 100px;" />
+          </div>
+        </div>
+
         <!-- 图片目录 -->
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
@@ -249,6 +260,7 @@ const {
   saveVideoDirectory,
   saveFileDirectory,
   saveMaxConcurrentDownloads,
+  saveMaxMemoryBufferMB,
   saveCmsResources, 
   saveExternalSites, 
   saveCustomStyles 
@@ -300,13 +312,17 @@ const handleSelectFileDirectory = async () => {
 const handleMaxConcurrentChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   let val = parseInt(target.value, 10);
-  if (isNaN(val) || val < 1) {
-    val = 1;
-  } else if (val > 10) {
-    val = 10;
-  }
-  state.maxConcurrentDownloads = val;
+  if (isNaN(val) || val < 1) val = 1;
+  else if (val > 10) val = 10;
   saveMaxConcurrentDownloads(val);
+};
+
+const handleMaxMemoryChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let val = parseInt(target.value, 10);
+  if (isNaN(val) || val < 64) val = 64;
+  else if (val > 8192) val = 8192;
+  saveMaxMemoryBufferMB(val);
 };
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
