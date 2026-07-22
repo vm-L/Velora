@@ -54,11 +54,45 @@ onMounted(async () => {
     await loadTasks();
     initListeners();
   }
+
+  // 启动所有 CMS 资源与网站资源的后台静默预加载
+  preloadAllResources();
 });
 
 watch(() => state.theme, (newTheme) => {
   document.documentElement.dataset.theme = newTheme;
 });
+
+// 后台并发预加载函数
+const preloadAllResources = () => {
+  if (Array.isArray(state.cmsResources)) {
+    state.cmsResources.forEach(cms => {
+      openCMS(cms.id, cms.url);
+    });
+  }
+  if (Array.isArray(state.externalSites)) {
+    state.externalSites.forEach(site => {
+      openResource(site.id, site.url);
+    });
+  }
+};
+
+// 监听配置变更，动态同步预加载资源
+watch(() => state.cmsResources, (newList) => {
+  if (Array.isArray(newList)) {
+    newList.forEach(cms => {
+      openCMS(cms.id, cms.url);
+    });
+  }
+}, { deep: true });
+
+watch(() => state.externalSites, (newList) => {
+  if (Array.isArray(newList)) {
+    newList.forEach(site => {
+      openResource(site.id, site.url);
+    });
+  }
+}, { deep: true });
 
 // 监听路由以自动注册已经打开的资源与 CMS 站点，并实时同步最新活跃路由
 watch(() => [route.params.type, route.params.id, route.fullPath], ([type, id, fullPath]) => {

@@ -174,6 +174,15 @@
         </div>
       </div>
     </div>
+
+    <!-- 保存视频弹窗 -->
+    <save-media-dialog 
+      v-model:visible="saveDialogVisible"
+      :url="saveTargetUrl"
+      :default-name="saveDefaultName"
+      :default-dir="saveDefaultDir"
+      type="video"
+    />
   </div>
 </template>
 
@@ -183,9 +192,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSettings } from '../composables/useSettings'
 import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
-import { useDownloads } from '../composables/useDownloads'
 import { useOpenedCMS } from '../composables/useOpenedCMS'
 import VButton from '../components/base/VButton.vue'
+import SaveMediaDialog from '../components/features/SaveMediaDialog.vue'
+
+// 弹窗保存媒体控制
+const saveDialogVisible = ref(false)
+const saveTargetUrl = ref('')
+const saveDefaultName = ref('')
+const saveDefaultDir = ref('')
 
 // Hls.js 库的动态加载
 const loadHlsScript = (): Promise<void> => {
@@ -206,7 +221,6 @@ const route = useRoute()
 const router = useRouter()
 const { state } = useSettings()
 const { showMessage } = useMessage()
-const { addDownload } = useDownloads()
 const { updateLastRoute } = useOpenedCMS()
 
 const cmsId = route.params.id as string
@@ -269,27 +283,19 @@ const handleCopyTitle = () => {
 }
 
 // 下载当前选中的集数视频
-const handleDownloadVideo = async () => {
+const handleDownloadVideo = () => {
   if (!videoDetail.value || !activeEpisode.value) {
     showMessage('请先选择要下载的集数', 'warning')
     return
   }
   const ep = activeEpisode.value
-  const filename = `${videoDetail.value.name}_${ep.name}`.replace(/[\\/:*?"<>|]/g, '_')
-  const defaultDir = state.videoDirectory || ''
-  const isWin = navigator.userAgent.toLowerCase().includes('win')
-  const sep = isWin ? '\\' : '/'
-  const ext = ep.url.toLowerCase().includes('.m3u8') ? '.m3u8' : '.mp4'
-  const savePath = defaultDir ? `${defaultDir}${sep}${filename}${ext}` : `${filename}${ext}`
+  const rawName = `${videoDetail.value.name}_${ep.name}`.replace(/[\\/:*?"<>|]/g, '_')
+  const ext = ep.url.toLowerCase().includes('.m3u8') ? 'm3u8' : 'mp4'
 
-  try {
-    const ok = await addDownload(ep.url, filename, savePath)
-    if (ok) {
-      showMessage('已添加至下载队列', 'success')
-    }
-  } catch (err: any) {
-    showMessage(`添加下载失败: ${err.message}`, 'error')
-  }
+  saveTargetUrl.value = ep.url
+  saveDefaultName.value = `${rawName}.${ext}`
+  saveDefaultDir.value = state.videoDirectory || ''
+  saveDialogVisible.value = true
 }
 
 // 映射友好的播放源名称
