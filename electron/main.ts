@@ -118,6 +118,22 @@ function createWindow() {
     }
   })
 
+  ipcMain.handle('fetch-url', async (_, url: string) => {
+    try {
+      const response = await net.fetch(url)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const text = await response.text()
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch url:', e)
+      return { success: false, error: e.message }
+    }
+  })
+
   ipcMain.handle('copy-image', async (_, url: string) => {
     try {
       const response = await net.fetch(url, { headers: { 'Referer': '' } })

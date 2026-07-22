@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useSettings } from '../composables/useSettings';
+import { useSettings } from '../../composables/useSettings';
 
 const isMaximized = ref(false);
 const { state, setTheme } = useSettings();

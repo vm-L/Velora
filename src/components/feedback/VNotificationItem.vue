@@ -47,7 +47,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import type { NotificationItem } from '../composables/useNotification'
+import type { NotificationItem } from '../../composables/useNotification'
 
 const props = defineProps<{
   notification: NotificationItem

@@ -13,29 +13,38 @@
 
       <!-- Global Workspaces for true keep-alive (prevents webview reload) -->
       <BrowserWorkspace v-for="res in openedResources" :key="res.id" :resourceId="res.id" :resourceUrl="res.url"
-        v-show="$route.params.type === 'ext' && $route.params.id === res.id" class="global-workspace" />
+        v-show="$route.name === 'Resource' && $route.params.type === 'ext' && $route.params.id === res.id" class="global-workspace" />
+
+      <!-- CMS Workspaces for multi-site v-show keep-alive -->
+      <CMSWorkspace v-for="res in openedCMS" :key="res.id" :resourceId="res.id" :resourceUrl="res.url"
+        v-show="$route.name === 'Resource' && $route.params.type === 'cms' && $route.params.id === res.id" class="global-workspace" />
     </div>
   </div>
-  <ConfirmDialog />
-  <MessageBar />
-  <NotificationBar />
+  <v-confirm-dialog />
+  <v-message-bar />
+  <v-notification-bar />
 </template>
 
 <script setup lang="ts">
 import { onMounted, watch } from 'vue';
-import TitleBar from './components/TitleBar.vue';
-import Sidebar from './components/Sidebar.vue';
-import ConfirmDialog from './components/ConfirmDialog.vue';
-import MessageBar from './components/MessageBar.vue';
-import NotificationBar from './components/NotificationBar.vue';
-import BrowserWorkspace from './components/BrowserWorkspace.vue';
+import { useRoute } from 'vue-router';
+import TitleBar from './components/layout/TitleBar.vue';
+import Sidebar from './components/layout/Sidebar.vue';
+import VConfirmDialog from './components/feedback/VConfirmDialog.vue';
+import VMessageBar from './components/feedback/VMessageBar.vue';
+import VNotificationBar from './components/feedback/VNotificationBar.vue';
+import BrowserWorkspace from './components/layout/BrowserWorkspace.vue';
+import CMSWorkspace from './components/layout/CMSWorkspace.vue';
 import { useSettings } from './composables/useSettings';
 import { useDownloads } from './composables/useDownloads';
 import { useOpenedResources } from './composables/useOpenedResources';
+import { useOpenedCMS } from './composables/useOpenedCMS';
 
+const route = useRoute();
 const { state, loadSettings } = useSettings();
 const { loadTasks, initListeners, isInitialized } = useDownloads();
-const { openedResources } = useOpenedResources();
+const { openedResources, openResource } = useOpenedResources();
+const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 
 onMounted(async () => {
   await loadSettings();
@@ -50,6 +59,24 @@ onMounted(async () => {
 watch(() => state.theme, (newTheme) => {
   document.documentElement.dataset.theme = newTheme;
 });
+
+// 监听路由以自动注册已经打开的资源与 CMS 站点，并实时同步最新活跃路由
+watch(() => [route.params.type, route.params.id, route.fullPath], ([type, id, fullPath]) => {
+  const currentType = (type as string) || (route.path.includes('/cms/') ? 'cms' : '')
+  const currentId = id as string
+  if (currentType === 'ext' && currentId) {
+    const site = state.externalSites.find(s => s.id === currentId);
+    if (site) {
+      openResource(site.id, site.url);
+    }
+  } else if (currentType === 'cms' && currentId) {
+    const cms = state.cmsResources.find(c => c.id === currentId);
+    if (cms) {
+      openCMS(cms.id, cms.url, fullPath as string);
+      updateLastRoute(cms.id, fullPath as string);
+    }
+  }
+}, { immediate: true });
 </script>
 
 <style lang="less">

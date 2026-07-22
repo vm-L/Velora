@@ -28,9 +28,9 @@
           <div class="info-row domain-info" style="align-items: center;">
             <span class="label">匹配规则</span>
             <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
-              <VInput v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
+              <v-input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
               <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
-                <VButton variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</VButton>
+                <v-button variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</v-button>
                 <div v-if="dropdownOpen" class="dropdown-menu">
                   <div v-if="!domainRules || Object.keys(domainRules).length === 0" class="dropdown-empty">暂无保存的样式</div>
                   <div v-for="(cssString, ruleDomain) in domainRules" :key="ruleDomain" class="dropdown-item">
@@ -52,8 +52,8 @@
         </div>
 
         <div class="inspector-footer">
-          <VButton variant="secondary" class="btn" @click="close">取消</VButton>
-          <VButton variant="primary" class="btn" @click="save">保存规则</VButton>
+          <v-button variant="secondary" class="btn" @click="close">取消</v-button>
+          <v-button variant="primary" class="btn" @click="save">保存规则</v-button>
         </div>
       </div>
     </div>
@@ -62,8 +62,8 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
-import VButton from './VButton.vue';
-import VInput from './VInput.vue';
+import VButton from '../base/VButton.vue';
+import VInput from '../base/VInput.vue';
 import type { SyntaxNode } from '@lezer/common';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';

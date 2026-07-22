@@ -65,7 +65,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import SaveMediaDialog from './SaveMediaDialog.vue';
-import { useMessage } from '../composables/useMessage';
+import { useMessage } from '../../composables/useMessage';
 
 const props = defineProps<{
   type: 'image' | 'video' | 'audio';
@@ -177,7 +177,7 @@ const copyData = async (url: string) => {
   }
 };
 
-import { useSettings } from '../composables/useSettings';
+import { useSettings } from '../../composables/useSettings';
 
 const { state } = useSettings();
 

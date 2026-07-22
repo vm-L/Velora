@@ -8,23 +8,23 @@
         <div class="save-location-group">
           <label>保存位置</label>
           <div class="location-input-row">
-            <VInput v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
-            <VButton variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</VButton>
+            <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+            <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</v-button>
           </div>
         </div>
 
         <div class="save-location-group" style="margin-top: 16px;">
           <label>文件名称</label>
           <div class="location-input-row">
-            <VInput v-model="fileName" type="text" placeholder="输入文件名称..." />
+            <v-input v-model="fileName" type="text" placeholder="输入文件名称..." />
           </div>
         </div>
       </div>
       <div class="save-footer">
-        <VButton variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</VButton>
-        <VButton variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
+        <v-button variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</v-button>
+        <v-button variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
           {{ isSaving ? '保存中...' : '确认保存' }}
-        </VButton>
+        </v-button>
       </div>
     </div>
   </div>
@@ -32,10 +32,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { useDownloads } from '../composables/useDownloads';
-import { useMessage } from '../composables/useMessage';
-import VButton from './VButton.vue';
-import VInput from './VInput.vue';
+import { useDownloads } from '../../composables/useDownloads';
+import { useMessage } from '../../composables/useMessage';
+import VButton from '../base/VButton.vue';
+import VInput from '../base/VInput.vue';
 
 const props = defineProps<{
   visible: boolean;

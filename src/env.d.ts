@@ -21,6 +21,7 @@ interface Window {
     onMediaSniffed: (callback: (data: any) => void) => void
     copyImage: (url: string) => Promise<boolean>
     fetchImageBase64: (url: string) => Promise<string | null>
+    fetchUrl: (url: string) => Promise<any>
     openExternal: (url: string) => void
     showItemInFolder: (filePath: string) => void
     openFile: (filePath: string) => Promise<{ success: boolean, code?: string, error?: string }>

@@ -2,7 +2,7 @@
   <div class="sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header" @click="toggleSidebar">
       <div class="sidebar-title">
-        <AnimatedText :text="APP_NAME" :isCollapsed="isCollapsed" />
+        <v-animated-text :text="APP_NAME" :isCollapsed="isCollapsed" />
       </div>
       <button class="toggle-btn" title="展开/收起">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -24,7 +24,7 @@
 
       <div class="menu-group">
         <div class="group-title">
-          <AnimatedText text="CMS 资源" :isCollapsed="isCollapsed" />
+          <v-animated-text text="CMS 资源" :isCollapsed="isCollapsed" />
         </div>
         <div v-if="state.cmsResources.length === 0" class="empty-item">
           <span class="menu-text">暂未配置资源</span>
@@ -32,9 +32,9 @@
         <router-link
           v-for="item in state.cmsResources"
           :key="item.id"
-          :to="`/resource/cms/${item.id}`"
+          :to="getLastRoute(item.id)"
           class="menu-item sub-item"
-          active-class="active"
+          :class="{ active: isCmsActive(item.id) }"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
@@ -52,7 +52,7 @@
 
       <div class="menu-group">
         <div class="group-title">
-          <AnimatedText text="网站资源" :isCollapsed="isCollapsed" />
+          <v-animated-text text="网站资源" :isCollapsed="isCollapsed" />
         </div>
         <div v-if="state.externalSites.length === 0" class="empty-item">
           <span class="menu-text">暂未配置资源</span>
@@ -92,12 +92,21 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useSettings } from '../composables/useSettings';
-import AnimatedText from './AnimatedText.vue';
-import { APP_NAME } from '../constants';
+import { useRoute } from 'vue-router';
+import { useSettings } from '../../composables/useSettings';
+import { useOpenedCMS } from '../../composables/useOpenedCMS';
+import VAnimatedText from '../base/VAnimatedText.vue';
+import { APP_NAME } from '../../constants';
 
+const route = useRoute();
 const isCollapsed = ref(false);
 const { state } = useSettings();
+const { getLastRoute } = useOpenedCMS();
+
+const isCmsActive = (itemId: string) => {
+  const currentType = (route.params.type as string) || (route.path.includes('/cms/') ? 'cms' : '')
+  return currentType === 'cms' && route.params.id === itemId
+};
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;

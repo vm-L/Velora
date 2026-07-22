@@ -35,7 +35,7 @@
             <p>设置最大同时进行的下载任务数量 (支持范围 1-10)。</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <VInput type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
+            <v-input type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
           </div>
         </div>
 
@@ -46,9 +46,9 @@
             <p>图片的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <VInput v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
+            <v-input v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <VButton variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</VButton>
+            <v-button variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</v-button>
           </div>
         </div>
 
@@ -59,9 +59,9 @@
             <p>音频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <VInput v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
+            <v-input v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <VButton variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</VButton>
+            <v-button variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</v-button>
           </div>
         </div>
 
@@ -72,9 +72,9 @@
             <p>视频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <VInput v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
+            <v-input v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <VButton variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</VButton>
+            <v-button variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</v-button>
           </div>
         </div>
 
@@ -85,9 +85,9 @@
             <p>其他类型文件的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <VInput v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
+            <v-input v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
-            <VButton variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</VButton>
+            <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
           </div>
         </div>
       </div>
@@ -113,12 +113,12 @@
 
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info">
-              <VInput v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
-              <VInput v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
+              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
             </div>
             <div class="action-buttons">
-              <VButton variant="secondary" class="cancel-btn" @click="cancelEdit">取消</VButton>
-              <VButton variant="primary" class="save-btn" @click="saveEdit('cms', index)">保存</VButton>
+              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
+              <v-button variant="primary" class="save-btn" @click="saveEdit('cms', index)">保存</v-button>
             </div>
           </template>
           <template v-else>
@@ -127,17 +127,17 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <VButton variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</VButton>
-              <VButton variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</VButton>
+              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
+              <v-button variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</v-button>
             </div>
           </template>
         </div>
 
         <!-- Add New CMS Resource -->
         <div class="settings-row add-row">
-          <VInput v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input name-input" />
-          <VInput v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
-          <VButton variant="primary" class="add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</VButton>
+          <v-input v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input name-input" />
+          <v-input v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <v-button variant="primary" class="add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</v-button>
         </div>
       </div>
 
@@ -162,12 +162,12 @@
 
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info">
-              <VInput v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
-              <VInput v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
+              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
             </div>
             <div class="action-buttons">
-              <VButton variant="secondary" class="cancel-btn" @click="cancelEdit">取消</VButton>
-              <VButton variant="primary" class="save-btn" @click="saveEdit('ext', index)">保存</VButton>
+              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
+              <v-button variant="primary" class="save-btn" @click="saveEdit('ext', index)">保存</v-button>
             </div>
           </template>
           <template v-else>
@@ -176,18 +176,18 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <VButton variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</VButton>
-              <VButton variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</VButton>
-              <VButton variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</VButton>
+              <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
+              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
+              <v-button variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</v-button>
             </div>
           </template>
         </div>
 
         <!-- Add New External Site -->
         <div class="settings-row add-row">
-          <VInput v-model="newExtName" type="text" placeholder="网站名称" class="inline-input name-input" />
-          <VInput v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
-          <VButton variant="primary" class="add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</VButton>
+          <v-input v-model="newExtName" type="text" placeholder="网站名称" class="inline-input name-input" />
+          <v-input v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <v-button variant="primary" class="add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</v-button>
         </div>
       </div>
 
@@ -198,12 +198,12 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3>管理样式 - {{ managingStylesFor.name }}</h3>
-          <button class="modal-close-btn" @click="closeStyleManager">
+          <v-button variant="icon" class="modal-close-btn" @click="closeStyleManager">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
-          </button>
+          </v-button>
         </div>
 
         <div class="modal-body">
@@ -216,9 +216,9 @@
                 <div></div>
                 <span class="domain-name" style="text-align: center;">{{ domain }}</span>
                 <div style="display: flex; justify-content: flex-end;">
-                  <VButton variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">
+                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">
                     删除
-                  </VButton>
+                  </v-button>
                 </div>
               </div>
               <div class="rule-item">
@@ -238,8 +238,8 @@
 import { ref, computed } from 'vue';
 import { useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
-import VButton from '../components/VButton.vue';
-import VInput from '../components/VInput.vue';
+import VButton from '../components/base/VButton.vue';
+import VInput from '../components/base/VInput.vue';
 
 const { 
   state, 

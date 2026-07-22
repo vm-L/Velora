@@ -1,4 +1,46 @@
-node_modules
-dist
-dist-electron
+# Node / Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & Release outputs
+dist/
+dist-electron/
+out/
+release/
+build/
+*.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+app.log
+error
+
+# Environment & Local Configs
+.env
+.env.local
+.env.*.local
+
+# Editor / IDE settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp

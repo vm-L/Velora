@@ -48,7 +48,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useMessage } from '../composables/useMessage'
+import { useMessage } from '../../composables/useMessage'
 
 const { messages, removeMessage } = useMessage()
 const isHovered = ref(false)

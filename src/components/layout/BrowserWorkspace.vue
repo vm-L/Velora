@@ -192,16 +192,16 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
-import { useWorkspaces } from '../composables/useWorkspaces';
-import { useSettings } from '../composables/useSettings';
+import { useWorkspaces } from '../../composables/useWorkspaces';
+import { useSettings } from '../../composables/useSettings';
 
-import InspectorDialog from './InspectorDialog.vue';
-import SnifferDropdown from './SnifferDropdown.vue';
-import ImagePreviewDialog from './ImagePreviewDialog.vue';
-import AudioPlayerDialog from './AudioPlayerDialog.vue';
-import VideoPlayerDialog from './VideoPlayerDialog.vue';
-import SaveMediaDialog from './SaveMediaDialog.vue';
-import { APP_PREFIX } from '../constants';
+import InspectorDialog from '../features/InspectorDialog.vue';
+import SnifferDropdown from '../features/SnifferDropdown.vue';
+import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
+import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
+import VideoPlayerDialog from '../features/VideoPlayerDialog.vue';
+import SaveMediaDialog from '../features/SaveMediaDialog.vue';
+import { APP_PREFIX } from '../../constants';
 
 
 const props = defineProps<{

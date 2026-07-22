@@ -26,8 +26,8 @@
           </div>
         </div>
         <div class="dialog-actions">
-          <VButton variant="secondary" class="btn-cancel" @click="cancel">{{ state.cancelText }}</VButton>
-          <VButton :variant="state.type === 'danger' ? 'danger' : (state.type === 'warning' ? 'warning' : 'primary')" class="btn-confirm" @click="proceed">{{ state.confirmText }}</VButton>
+          <v-button variant="secondary" class="btn-cancel" @click="cancel">{{ state.cancelText }}</v-button>
+          <v-button :variant="state.type === 'danger' ? 'danger' : (state.type === 'warning' ? 'warning' : 'primary')" class="btn-confirm" @click="proceed">{{ state.confirmText }}</v-button>
         </div>
       </div>
     </div>
@@ -35,8 +35,8 @@
 </template>
 
 <script setup lang="ts">
-import { useConfirm } from '../composables/useConfirm'
-import VButton from './VButton.vue'
+import { useConfirm } from '../../composables/useConfirm'
+import VButton from '../base/VButton.vue'
 
 const { state, proceed, cancel } = useConfirm()
 </script>

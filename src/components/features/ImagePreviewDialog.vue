@@ -120,13 +120,13 @@
             <div class="save-location-group">
               <label>保存位置</label>
               <div class="location-input-row">
-                <VInput v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
-                <VButton variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">浏览</VButton>
+                <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+                <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">浏览</v-button>
               </div>
             </div>
             <div class="save-items-container">
               <div class="save-items-header">
-                <VCheckbox :checked="saveItems.every(i => i.checked)" @change="toggleAllSaveItems">全选</VCheckbox>
+                <v-checkbox :checked="saveItems.every(i => i.checked)" @change="toggleAllSaveItems">全选</v-checkbox>
                 <span class="count">{{ saveItems.filter(i => i.checked).length }} / {{ saveItems.length }} 项</span>
               </div>
               <div class="save-items-grid">
@@ -145,10 +145,10 @@
             </div>
           </div>
           <div class="save-footer">
-            <VButton variant="secondary" class="cancel-btn" @click="closeSaveOverlay">取消</VButton>
-            <VButton variant="primary" class="confirm-btn" :disabled="isSaving" @click="confirmSave">
+            <v-button variant="secondary" class="cancel-btn" @click="closeSaveOverlay">取消</v-button>
+            <v-button variant="primary" class="confirm-btn" :disabled="isSaving" @click="confirmSave">
               {{ isSaving ? '下载中...' : '确认下载' }}
-            </VButton>
+            </v-button>
           </div>
         </div>
       </div>
@@ -158,11 +158,11 @@
 
 <script setup lang="ts">
 import { ref, onUnmounted, computed } from 'vue';
-import { useMessage } from '../composables/useMessage';
-import { useSettings } from '../composables/useSettings';
-import VButton from './VButton.vue';
-import VInput from './VInput.vue';
-import VCheckbox from './VCheckbox.vue';
+import { useMessage } from '../../composables/useMessage';
+import { useSettings } from '../../composables/useSettings';
+import VButton from '../base/VButton.vue';
+import VInput from '../base/VInput.vue';
+import VCheckbox from '../base/VCheckbox.vue';
 
 const props = defineProps<{
   id: string;
@@ -400,7 +400,7 @@ const toggleAllSaveItems = () => {
   });
 };
 
-import { useDownloads } from '../composables/useDownloads';
+import { useDownloads } from '../../composables/useDownloads';
 const { addDownload } = useDownloads();
 
 const confirmSave = async () => {

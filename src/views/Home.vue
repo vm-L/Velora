@@ -29,32 +29,32 @@
 
       <div class="operation-panel">
         <div class="batch-actions-bar" v-if="sortedTasks.length > 0">
-          <VCheckbox :checked="isAllSelected" @change="toggleSelectAll" class="select-all-checkbox">
+          <v-checkbox :checked="isAllSelected" @change="toggleSelectAll" class="select-all-checkbox">
             {{ isAllSelected ? '反选' : '全选' }}
-          </VCheckbox>
+          </v-checkbox>
           <div class="batch-buttons">
             <span class="selected-count" v-show="selectedTasks.length > 0">已选择 {{ selectedTasks.length }} 项</span>
-            <VButton variant="secondary" :disabled="selectedTasks.length === 0" @click="batchPause" title="暂停所选">
+            <v-button variant="secondary" :disabled="selectedTasks.length === 0" @click="batchPause" title="暂停所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="6" y="4" width="4" height="16"></rect>
                 <rect x="14" y="4" width="4" height="16"></rect>
               </svg>
               暂停
-            </VButton>
-            <VButton variant="secondary" :disabled="selectedTasks.length === 0" @click="batchResume" title="继续所选">
+            </v-button>
+            <v-button variant="secondary" :disabled="selectedTasks.length === 0" @click="batchResume" title="继续所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
               继续
-            </VButton>
-            <VButton variant="danger-soft" :disabled="selectedTasks.length === 0" @click="batchDelete"
+            </v-button>
+            <v-button variant="danger-soft" :disabled="selectedTasks.length === 0" @click="batchDelete"
               title="删除所选">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
               删除
-            </VButton>
+            </v-button>
           </div>
         </div>
 
@@ -88,7 +88,7 @@
           :class="{ 'is-selected': selectedTasks.includes(task.id) }" @mousedown="startSelection(task.id, $event)"
           @mouseenter="enterSelection(task.id)">
           <div class="task-checkbox" @click.stop>
-            <VCheckbox :value="task.id" v-model="selectedTasks" />
+            <v-checkbox :value="task.id" v-model="selectedTasks" />
           </div>
           <div class="task-icon" :class="`status-${task.status}`">
             <img v-if="isImageTask(task)" :src="task.url" class="task-thumbnail" referrerpolicy="no-referrer" />
@@ -209,12 +209,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
-import VButton from '../components/VButton.vue';
-import VCheckbox from '../components/VCheckbox.vue';
-import ImagePreviewDialog from '../components/ImagePreviewDialog.vue';
-import AudioPlayerDialog from '../components/AudioPlayerDialog.vue';
-import VideoPlayerDialog from '../components/VideoPlayerDialog.vue';
-import SaveMediaDialog from '../components/SaveMediaDialog.vue';
+import VButton from '../components/base/VButton.vue';
+import VCheckbox from '../components/base/VCheckbox.vue';
+import ImagePreviewDialog from '../components/features/ImagePreviewDialog.vue';
+import AudioPlayerDialog from '../components/features/AudioPlayerDialog.vue';
+import VideoPlayerDialog from '../components/features/VideoPlayerDialog.vue';
+import SaveMediaDialog from '../components/features/SaveMediaDialog.vue';
 import { useSettings } from '../composables/useSettings';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
