@@ -359,12 +359,20 @@ function createWindow() {
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ['*://*/*'] },
     (details, callback) => {
-      const responseHeaders = {
-        ...details.responseHeaders,
-        'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Headers': ['*'],
-        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS']
-      };
+      const responseHeaders = { ...details.responseHeaders };
+      
+      // Only inject wildcard CORS if the request comes from the main application window.
+      // Webviews (e.g. for Bilibili) have different webContentsId and handle their own CORS.
+      if (mainWindow && details.webContentsId === mainWindow.webContents.id) {
+        for (const key in responseHeaders) {
+          if (key.toLowerCase().startsWith('access-control-allow-')) {
+            delete responseHeaders[key];
+          }
+        }
+        responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+        responseHeaders['Access-Control-Allow-Headers'] = ['*'];
+        responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS'];
+      }
 
       if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
         return callback({ responseHeaders });
@@ -442,12 +450,14 @@ function createWindow() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['*://*/*'] },
     (details, callback) => {
-      if (details.resourceType === 'media' || details.resourceType === 'xhr' || details.resourceType === 'fetch') {
-        try {
-          const origin = new URL(details.url).origin;
-          details.requestHeaders['Referer'] = origin + '/';
-          details.requestHeaders['Origin'] = origin;
-        } catch {}
+      if (mainWindow && details.webContentsId === mainWindow.webContents.id) {
+        if (details.resourceType === 'media' || details.resourceType === 'xhr' || details.resourceType === 'fetch') {
+          try {
+            const origin = new URL(details.url).origin;
+            details.requestHeaders['Referer'] = origin + '/';
+            details.requestHeaders['Origin'] = origin;
+          } catch {}
+        }
       }
       callback({ requestHeaders: details.requestHeaders });
     }
