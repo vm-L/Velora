@@ -236,7 +236,7 @@ const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuTabId = ref('');
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
-  if (isPickingElementImage.value) return;
+  if (isPickingElementImage.value || isPickingElementText.value) return;
   e.preventDefault();
 
   const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
@@ -251,7 +251,8 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   contextMenuVisible.value = true;
 };
 
-const hideAllContextMenus = () => {
+const hideAllContextMenus = (e?: MouseEvent) => {
+  if (e && e.button !== 0) return;
   contextMenuVisible.value = false;
 };
 
@@ -349,7 +350,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
-const handleWindowClick = () => {
+const handleWindowClick = (e: MouseEvent) => {
+  if (e && e.button !== 0) return;
   contextMenuVisible.value = false;
 };
 
