@@ -217,10 +217,10 @@ function createWindow() {
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    // mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(process.env.DIST, 'index.html'))
   }
+  mainWindow.webContents.openDevTools()
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
@@ -348,7 +348,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.whenReady().then(async () => {
-  protocol.handle('velora', (request) => {
+  protocol.registerFileProtocol('velora', (request, callback) => {
     logger.info('Protocol', `Raw request url: ${request.url}`)
     let prefix = request.url.startsWith('velora://local/') ? 'velora://local/' : 'velora://'
     let filePath = decodeURIComponent(request.url.slice(prefix.length))
@@ -357,11 +357,9 @@ app.whenReady().then(async () => {
     if (process.platform === 'win32' && filePath.startsWith('/')) {
       filePath = filePath.slice(1)
     }
-    const { pathToFileURL } = require('url');
-    const finalUrl = pathToFileURL(filePath).toString();
-    logger.info('Protocol', `Final path: ${filePath} -> File URL: ${finalUrl}`)
     
-    return net.fetch(finalUrl)
+    logger.info('Protocol', `Final path: ${filePath}`)
+    callback({ path: filePath })
   })
 
   await clearPrivacyData()

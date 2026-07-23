@@ -45,7 +45,7 @@
 
         <div class="progress-container">
           <span class="time">{{ formatTime(currentTime) }}</span>
-          <input type="range" class="progress-bar" min="0" :max="duration || 100" v-model="currentTime" @input="onSeek" @mousedown="isDragging = true" @mouseup="isDragging = false" />
+          <input type="range" class="progress-bar" min="0" :max="duration || 100" step="0.1" :value="currentTime" @input="onSeek" @change="onSeekEnd" @mousedown="isDragging = true" />
           <span class="time">{{ formatTime(duration) }}</span>
         </div>
 
@@ -110,6 +110,10 @@ const formattedUrl = computed(() => {
   return props.url ? formatMediaSrc(props.url) : '';
 });
 
+const bringToFront = () => {
+  zIndex.value = 2000 + Date.now() % 1000;
+};
+
 watch(() => props.url, (newUrl) => {
   if (newUrl) {
     bringToFront();
@@ -126,9 +130,6 @@ watch(() => props.url, (newUrl) => {
   }
 });
 
-const bringToFront = () => {
-  zIndex.value = 2000 + Date.now() % 1000;
-};
 
 const startDrag = (e: MouseEvent) => {
   isDraggingWindow.value = true;
@@ -175,9 +176,20 @@ const onLoadedMetadata = () => {
   }
 };
 
-const onSeek = () => {
+const onSeek = (e: Event) => {
+  isDragging.value = true;
+  const val = Number((e.target as HTMLInputElement).value);
+  currentTime.value = val;
   if (audioRef.value) {
-    audioRef.value.currentTime = currentTime.value;
+    audioRef.value.currentTime = val;
+  }
+};
+
+const onSeekEnd = (e: Event) => {
+  isDragging.value = false;
+  const val = Number((e.target as HTMLInputElement).value);
+  if (audioRef.value && Math.abs(audioRef.value.currentTime - val) > 0.5) {
+    audioRef.value.currentTime = val;
   }
 };
 

@@ -46,7 +46,7 @@
       
       <div class="player-controls-overlay" :class="{ 'show-controls': showControls || !isPlaying }">
         <div class="progress-container">
-          <input type="range" class="progress-bar" min="0" :max="duration || 100" step="0.1" v-model="currentTime" @input="onSeek" @mousedown="isDragging = true" @mouseup="isDragging = false" />
+          <input type="range" class="progress-bar" min="0" :max="duration || 100" step="0.1" :value="currentTime" @input="onSeek" @change="onSeekEnd" @mousedown="isDragging = true" />
         </div>
         <div class="controls-row">
           <div class="controls-left">
@@ -137,6 +137,8 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
 
+logger.info('VideoPreview', `Component setup initialized. props.url: ${props.url}`);
+
 const position = ref({ x: window.innerWidth / 2 - 320, y: window.innerHeight / 2 - 180 });
 const size = ref({ w: 640, h: 360 });
 const zIndex = ref(2000);
@@ -202,7 +204,11 @@ const formatMediaSrc = (rawUrl: string): string => {
 };
 
 const loadVideo = async () => {
-  if (!videoRef.value || !props.url) return;
+  logger.info('VideoPreview', `loadVideo called. videoRef: ${!!videoRef.value}, url: ${props.url}`);
+  if (!videoRef.value || !props.url) {
+    logger.warn('VideoPreview', `loadVideo returning early! videoRef is ${videoRef.value}`);
+    return;
+  }
   const video = videoRef.value;
   const playUrl = formatMediaSrc(props.url);
 
@@ -272,10 +278,16 @@ const loadVideo = async () => {
   }
 };
 
+function bringToFront() {
+  zIndex.value = 2000 + Date.now() % 1000;
+}
+
 watch(() => props.url, (newUrl) => {
+  logger.info('VideoPreview', `watch(url) triggered. newUrl: ${newUrl}`);
   if (newUrl) {
     bringToFront();
     nextTick(() => {
+      logger.info('VideoPreview', `watch(url) nextTick executed. newUrl: ${newUrl}`);
       loadVideo();
       if (document.pictureInPictureEnabled) {
         supportsPip.value = true;
@@ -291,10 +303,6 @@ watch(() => props.url, (newUrl) => {
     }
   }
 }, { immediate: true });
-
-const bringToFront = () => {
-  zIndex.value = 2000 + Date.now() % 1000;
-};
 
 const startDrag = (e: MouseEvent) => {
   if (isFullscreen.value) return;
@@ -368,8 +376,19 @@ const onLoadedMetadata = () => {
 };
 
 const onSeek = (e: Event) => {
+  isDragging.value = true;
+  const val = Number((e.target as HTMLInputElement).value);
+  currentTime.value = val;
   if (videoRef.value) {
-    videoRef.value.currentTime = Number((e.target as HTMLInputElement).value);
+    videoRef.value.currentTime = val;
+  }
+};
+
+const onSeekEnd = (e: Event) => {
+  isDragging.value = false;
+  const val = Number((e.target as HTMLInputElement).value);
+  if (videoRef.value && Math.abs(videoRef.value.currentTime - val) > 0.5) {
+    videoRef.value.currentTime = val;
   }
 };
 
@@ -465,8 +484,10 @@ const downloadVideo = () => {
 };
 
 onMounted(() => {
+  logger.info('VideoPreview', 'onMounted called!');
   document.addEventListener('keydown', handleKeydown);
   nextTick(() => {
+    logger.info('VideoPreview', 'onMounted nextTick executed!');
     loadVideo();
   });
 });

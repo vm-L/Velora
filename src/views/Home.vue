@@ -119,7 +119,7 @@
             <div class="task-header">
               <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
-                <VButton v-if="task.status === 'downloading' || task.status === 'processing' || task.status === 'waiting'" variant="icon-secondary" title="暂停"
+                <VButton v-if="['downloading', 'processing', 'resolving', 'waiting'].includes(task.status)" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
@@ -173,9 +173,10 @@
                 <span class="meta-divider">•</span>
                 <span class="segments-text">{{ task.downloadedSegments || 0 }}/{{ task.totalSegments }} 分片</span>
               </template>
-              <template v-if="(task.status === 'downloading' || task.status === 'processing') && task.speed > 0">
+              <template v-if="(task.status === 'downloading' || task.status === 'processing' || task.status === 'resolving') && task.speed > 0">
                 <span class="meta-divider">•</span>
-                <span v-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
+                <span v-if="task.status === 'resolving'">解析中...</span>
+                <span v-else-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
                 <span v-else-if="task.status === 'processing'">正在处理...</span>
                 <span v-if="task.totalBytes > 0" class="meta-divider">•</span>
                 <span v-if="task.totalBytes > 0" class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
@@ -272,6 +273,7 @@ const getStatusWeight = (status: string) => {
   switch (status) {
     case 'processing': return 6;
     case 'downloading': return 5;
+    case 'resolving': return 4;
     case 'waiting': return 4;
     case 'paused': return 3;
     case 'error': 
@@ -340,7 +342,7 @@ const enterSelection = (id: string) => {
 const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
 
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting'));
+  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving'));
 
   eligibleTasks.forEach(t => pauseTask(t.id));
 
@@ -381,7 +383,7 @@ const batchDelete = async () => {
   }
 };
 
-const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting').length);
+const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving').length);
 const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
 const errorCount = computed(() => tasks.value.filter(t => t.status === 'error').length);
 
@@ -470,7 +472,7 @@ const sortedTasks = computed(() => {
   if (activeFilter.value) {
     filtered = filtered.filter(t => {
       if (activeFilter.value === 'downloading') {
-        return t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting';
+        return t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving';
       }
       return t.status === activeFilter.value;
     });
@@ -485,6 +487,7 @@ const sortedTasks = computed(() => {
 
 const getStatusText = (status: string) => {
   switch (status) {
+    case 'resolving': return '解析中';
     case 'downloading': return '下载中';
     case 'processing': return '处理中';
     case 'waiting': return '排队中';
@@ -532,10 +535,34 @@ const copyUrl = (url: string) => {
 };
 
 const openDirectory = async (task: any) => {
-  if (task.savePath && window.electronAPI && window.electronAPI.showItemInFolder) {
-    window.electronAPI.showItemInFolder(task.savePath);
-  } else if (!task.savePath) {
+  if (!task.savePath) {
     showMessage('任务路径未知', 'error');
+    return;
+  }
+  
+  if (window.electronAPI && window.electronAPI.showItemInFolder) {
+    const exists = await window.electronAPI.fileExists(task.savePath);
+    if (exists) {
+      // 文件真实存在，高亮选中文件
+      window.electronAPI.showItemInFolder(task.savePath);
+    } else {
+      // 文件不存在，检查父目录
+      const normalizedPath = task.savePath.replace(/\\/g, '/');
+      const dir = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+      
+      const dirExists = await window.electronAPI.fileExists(dir);
+      if (dirExists) {
+        // 父目录存在，直接打开父目录 (不必选中)
+        if (window.electronAPI.openFile) {
+          window.electronAPI.openFile(dir);
+        } else {
+          window.electronAPI.showItemInFolder(dir);
+        }
+      } else {
+        // 连目录都不存在
+        showMessage('文件所在目录尚未创建或已被删除', 'warning');
+      }
+    }
   }
 };
 
@@ -661,7 +688,7 @@ const confirmDelete = async (task: any) => {
   height: 8px;
   border-radius: 50%;
 
-  &.downloading, &.processing {
+  &.downloading, &.processing, &.resolving {
     background: var(--color-accent);
   }
 
@@ -846,7 +873,7 @@ const confirmDelete = async (task: any) => {
     object-fit: cover;
   }
 
-  &.status-downloading, &.status-processing {
+  &.status-downloading, &.status-processing, &.status-resolving {
     background: var(--bg-surface-active);
     color: var(--color-accent);
   }
@@ -936,7 +963,7 @@ const confirmDelete = async (task: any) => {
   border-radius: 3px;
   transition: width 0.3s ease;
 
-  &.downloading, &.processing, &.waiting {
+  &.downloading, &.processing, &.resolving, &.waiting {
     background: var(--color-accent);
   }
 
@@ -975,7 +1002,7 @@ const confirmDelete = async (task: any) => {
 .status-text {
   font-weight: 500;
 
-  &.downloading, &.processing {
+  &.downloading, &.processing, &.resolving {
     color: var(--color-accent);
   }
 

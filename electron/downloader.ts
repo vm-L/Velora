@@ -177,6 +177,7 @@ class Downloader {
   private async runTask(cmd: DownloadCommand) {
     const abortController = new AbortController()
     this.activeDownloads.set(cmd.id, { abortController })
+    this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
     try {
       const isM3U8 = cmd.url.toLowerCase().includes('.m3u8')
@@ -365,8 +366,8 @@ class Downloader {
               this.sendProgress({
                 id,
                 totalBytes: 0,
-                receivedBytes: totalReceivedBytes - currentBufferedBytes,
-                downloadedSegments: nextFlushIndex,
+                receivedBytes: totalReceivedBytes,
+                downloadedSegments: downloadedCount,
                 totalSegments: segments.length,
                 speed,
                 status: 'downloading'
@@ -600,7 +601,7 @@ class Downloader {
                 this.sendProgress({
                   id,
                   totalBytes,
-                  receivedBytes: totalReceivedBytes - currentBufferedBytes, // perfectly matches disk
+                  receivedBytes: totalReceivedBytes,
                   speed,
                   status: 'downloading'
                 })

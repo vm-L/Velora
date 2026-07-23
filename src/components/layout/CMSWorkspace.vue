@@ -208,16 +208,25 @@
         </div>
       </div>
     </div>
+    
+    <!-- 弹出的视频详情组件 -->
+    <VideoDetail 
+      v-if="activeVideoId" 
+      :vod-id="activeVideoId" 
+      :resource-id="props.resourceId" 
+      @close="closeDetail" 
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useCMS } from '../../composables/useCMS'
 import { logger } from '../../services/logger'
 import VInput from '../base/VInput.vue'
 import VButton from '../base/VButton.vue'
+import VideoDetail from '../../views/VideoDetail.vue'
 
 const props = defineProps<{
   resourceId: string
@@ -225,6 +234,15 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
+
+const activeVideoId = ref<string | null>(null)
+
+onMounted(() => {
+  if (route.query.cmsId === props.resourceId && route.query.videoId) {
+    activeVideoId.value = String(route.query.videoId)
+  }
+})
 
 // 每个实例独享物理隔离的 CMS 状态模块
 const {
@@ -417,14 +435,22 @@ const cleanupScrollObserver = () => {
 }
 
 const goToDetail = (vodId: number) => {
+  activeVideoId.value = String(vodId)
   router.push({
-    name: 'VideoDetail',
-    params: {
-      type: 'cms',
-      id: props.resourceId,
-      vodId: String(vodId)
+    query: {
+      ...route.query,
+      videoId: String(vodId),
+      cmsId: props.resourceId
     }
   })
+}
+
+const closeDetail = () => {
+  activeVideoId.value = null
+  const query = { ...route.query }
+  delete query.videoId
+  delete query.cmsId
+  router.push({ query })
 }
 
 const formatDate = (timeStr: string) => {

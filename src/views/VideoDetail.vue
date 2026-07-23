@@ -35,17 +35,7 @@
         <!-- 播放器区域 -->
         <div class="player-wrapper">
           <div v-if="activeEpisode" class="player-container">
-            <!-- 网页播放源直接在本地 iframe 中嵌入播放，保持本地播放体验 -->
-            <iframe 
-              v-if="isExternalPlayUrl" 
-              :src="activeEpisode.url" 
-              class="video-element-iframe" 
-              allowfullscreen
-              sandbox="allow-scripts allow-same-origin allow-forms"
-            ></iframe>
-
             <video 
-              v-else
               ref="videoPlayer" 
               class="video-element" 
               controls 
@@ -187,8 +177,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+
 import { useSettings } from '../composables/useSettings'
 import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
@@ -218,20 +209,19 @@ const loadHlsScript = (): Promise<void> => {
   })
 }
 
-const route = useRoute()
-const router = useRouter()
+const props = defineProps<{ vodId: string, resourceId: string }>()
+const emit = defineEmits<{ (e: 'close'): void }>()
 const { state } = useSettings()
 const { showMessage } = useMessage()
-const { updateLastRoute } = useOpenedCMS()
 
-const cmsId = route.params.id as string
-const vodId = Number(route.params.vodId)
+const cmsId = props.resourceId
+const vodId = Number(props.vodId)
 
 // 拿到当前 CMS 配置
 const cmsResource = computed(() => {
   return state.cmsResources.find(r => r.id === cmsId)
 })
-
+const route = useRoute()
 const apiUrl = computed(() => cmsResource.value?.url || '')
 
 // 实例化私有的 CMS 状态模块
@@ -258,22 +248,30 @@ const currentSource = computed(() => {
 const videoPlayer = ref<HTMLVideoElement | null>(null)
 let hlsInstance: any = null
 
-// 判断是否是外部不可播链接 (如果没有 m3u8 后缀也不是 mp4)
-const isExternalPlayUrl = computed(() => {
-  if (!activeEpisode.value) return false
-  const url = activeEpisode.value.url.toLowerCase()
-  return !url.includes('.m3u8') && !url.includes('.mp4') && !url.includes('.webm')
+// 监听路由以处理自动暂停与恢复
+let wasPlayingBeforeHidden = false
+const isVisible = computed(() => {
+  return route.path.includes('/resource/cms/' + props.resourceId)
+})
+
+watch(isVisible, (visible) => {
+  if (!videoPlayer.value) return
+  if (visible) {
+    if (wasPlayingBeforeHidden) {
+      videoPlayer.value.play().catch(() => {})
+      wasPlayingBeforeHidden = false
+    }
+  } else {
+    wasPlayingBeforeHidden = !videoPlayer.value.paused
+    if (wasPlayingBeforeHidden) {
+      videoPlayer.value.pause()
+    }
+  }
 })
 
 // 返回列表操作
 const goBack = () => {
-  if (cmsId) {
-    const listPath = `/resource/cms/${cmsId}`
-    updateLastRoute(cmsId, listPath)
-    router.push(listPath)
-  } else {
-    router.push('/')
-  }
+  emit('close')
 }
 
 // 复制视频标题
@@ -392,7 +390,7 @@ const playEpisode = async (episode: { name: string; url: string }) => {
   await nextTick()
   destroyPlayer()
 
-  if (isExternalPlayUrl.value || !videoPlayer.value) return
+  if (!videoPlayer.value) return
 
   const url = episode.url
   logger.info('Player', '[Player] Playing URL: ' + url)
@@ -530,6 +528,13 @@ const getSavedProgress = (url: string): number => {
 
 <style scoped lang="less">
 .video-detail-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: var(--bg-app);
   flex: 1;
   display: flex;
   flex-direction: column;

@@ -15,7 +15,7 @@ export const useDownloads = () => {
       
       // Auto-pause downloading tasks on startup
       for (const t of allTasks) {
-        if (t.status === 'downloading' || t.status === 'processing') {
+        if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
           t.status = 'paused'
           t.speed = 0
           await db.downloads.put(t)
@@ -70,7 +70,7 @@ export const useDownloads = () => {
           logger.info('Downloads', `[Renderer] Local database & task status updated. status: ${t.status}, progress: ${t.progress}%`)
           
           // Trigger notifications
-          if ((prevStatus === 'downloading' || prevStatus === 'processing') && t.status === 'completed') {
+          if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'completed') {
             const { useNotification } = await import('./useNotification')
             useNotification().showNotification({
               type: 'success',
@@ -78,7 +78,7 @@ export const useDownloads = () => {
               message: t.name,
               sourceRoute: '/'
             })
-          } else if ((prevStatus === 'downloading' || prevStatus === 'processing') && t.status === 'error') {
+          } else if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'error') {
             const { useNotification } = await import('./useNotification')
             useNotification().showNotification({
               type: 'error',
@@ -127,7 +127,7 @@ export const useDownloads = () => {
         url,
         name,
         savePath,
-        status: 'downloading',
+        status: 'waiting',
         progress: 0,
         receivedBytes: 0,
         totalBytes: 0,
@@ -189,7 +189,7 @@ export const useDownloads = () => {
   const deleteTask = async (id: string, deleteFile = false) => {
     const t = tasks.value.find(t => t.id === id)
     if (t) {
-      if (t.status === 'downloading' || t.status === 'processing') {
+      if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
         if (window.electronAPI) window.electronAPI.cancelDownload(id)
       }
       if (deleteFile && window.electronAPI) {
