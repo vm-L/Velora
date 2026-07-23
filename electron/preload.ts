@@ -11,11 +11,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setCloseBehavior: (behavior: string) => ipcRenderer.send('set-setting', 'closeBehavior', behavior),
   getCloseBehavior: () => ipcRenderer.invoke('get-setting', 'closeBehavior'),
   onWebviewNewWindow: (callback: (url: string) => void) => {
-    // Need to remove previous listeners if re-mounted to prevent duplicates, but simpler here
-    ipcRenderer.removeAllListeners('webview-new-window')
-    ipcRenderer.on('webview-new-window', (_event, url) => callback(url))
+    // Listeners are managed properly by each component
+    ipcRenderer.on('webview-new-window', (_event, data) => callback(data))
   },
-  onMediaSniffed: (callback: (data: any) => void) => ipcRenderer.on('media-sniffed', (_event, data) => callback(data)),
+  onMediaSniffed: (callback: (data: any) => void) => {
+    ipcRenderer.on('media-sniffed', (_event, data) => callback(data));
+  },
+  offMediaSniffed: () => {
+    ipcRenderer.removeAllListeners('media-sniffed');
+  },
   copyImage: (url: string) => ipcRenderer.invoke('copy-image', url),
   fetchImageBase64: (url: string) => ipcRenderer.invoke('fetch-image-base64', url),
   fetchUrl: (url: string) => ipcRenderer.invoke('fetch-url', url),
@@ -23,6 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showItemInFolder: (filePath: string) => ipcRenderer.send('show-item-in-folder', filePath),
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
+  pauseWebview: (id: number) => ipcRenderer.invoke('pause-webview', id),
+  resumeWebview: (id: number) => ipcRenderer.invoke('resume-webview', id),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   saveImages: (dirPath: string, files: { url: string, name: string }[]) => ipcRenderer.invoke('save-images', dirPath, files),
   startDownload: (cmd: any) => ipcRenderer.send('start-download', cmd),

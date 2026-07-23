@@ -17,8 +17,9 @@ interface Window {
     getSetting: (key: string) => Promise<any>
     setCloseBehavior: (behavior: string) => void
     getCloseBehavior: () => Promise<string>
-    onWebviewNewWindow: (callback: (url: string) => void) => void
+    onWebviewNewWindow: (callback: (data: { url: string, webContentsId: number }) => void) => void
     onMediaSniffed: (callback: (data: any) => void) => void
+  offMediaSniffed: () => void
     copyImage: (url: string) => Promise<boolean>
     fetchImageBase64: (url: string) => Promise<string | null>
     fetchUrl: (url: string) => Promise<any>

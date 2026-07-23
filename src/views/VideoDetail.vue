@@ -34,14 +34,28 @@
       <div class="layout-left">
         <!-- 播放器区域 -->
         <div class="player-wrapper">
-          <div v-if="activeEpisode" class="player-container">
+                              <div v-if="activeEpisode" class="player-container">
             <video 
+              v-show="isNativeVideo || sniffedMediaUrl"
               ref="videoPlayer" 
               class="video-element" 
               controls 
               @timeupdate="onTimeUpdate"
               @loadedmetadata="onMetadataLoaded"
             ></video>
+            
+            <div v-if="!isNativeVideo && !sniffedMediaUrl" class="sniffing-overlay">
+              <div class="loading-spinner"></div>
+              <p>正在后台嗅探真实视频流...</p>
+            </div>
+            
+            <webview 
+              v-if="!isNativeVideo && !sniffedMediaUrl"
+              ref="webviewPlayer" 
+              class="video-element" 
+              style="width:0;height:0;position:absolute;opacity:0;pointer-events:none;"
+              :src="activeEpisode.url"
+            ></webview>
           </div>
           
           <div v-else class="no-active-play">
@@ -177,7 +191,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, onActivated, onDeactivated } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSettings } from '../composables/useSettings'
@@ -237,6 +251,25 @@ const activeSourceIndex = ref(0)
 const activeEpisode = ref<{ name: string; url: string } | null>(null)
 const playedHistory = ref<string[]>([])
 const sniffedMediaUrl = ref<string | null>(null)
+
+const webviewPlayer = ref<any>(null)
+
+const isNativeVideo = computed(() => {
+  if (!activeEpisode.value) return true;
+  const lowerUrl = activeEpisode.value.url.toLowerCase();
+  return lowerUrl.includes('.m3u8') || lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.flv') || lowerUrl.includes('.mkv');
+});
+
+onDeactivated(() => {
+  if (videoPlayer.value) {
+    videoPlayer.value.pause();
+  }
+})
+
+onActivated(() => {
+  // We can resume native video if we want, or leave it paused for user to manually resume
+})
+
 
 // 获取当前源
 const currentSource = computed(() => {
@@ -344,8 +377,49 @@ const mapSourceName = (name: string) => {
   return name.toUpperCase()
 }
 
+
+const handleMediaSniffed = (data: { url: string, type: string, timestamp: number }) => {
+  if (data.type === 'video' && activeEpisode.value && !isNativeVideo.value && !sniffedMediaUrl.value) {
+    logger.info('VideoDetail', `Sniffed real media URL: ${data.url}`);
+    sniffedMediaUrl.value = data.url;
+    
+    // Auto play the sniffed URL natively!
+    nextTick(() => {
+      if (!videoPlayer.value) return;
+      logger.info('Player', '[Player] Playing Sniffed URL: ' + data.url);
+      
+      if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+      }
+      
+      if (data.url.toLowerCase().includes('.m3u8')) {
+        import('hls.js').then((HlsModule) => {
+          const Hls = HlsModule.default || HlsModule;
+          if (Hls.isSupported()) {
+            hlsInstance = new Hls({ autoStartLoad: true, startPosition: -1 });
+            hlsInstance.loadSource(data.url);
+            hlsInstance.attachMedia(videoPlayer.value!);
+            hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+              videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e));
+            });
+          }
+        });
+      } else {
+        videoPlayer.value.src = data.url;
+        videoPlayer.value.load();
+        videoPlayer.value.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e));
+      }
+    });
+  }
+}
+
 // 初始化加载
 onMounted(async () => {
+  if (window.electronAPI) {
+    window.electronAPI.onMediaSniffed(handleMediaSniffed);
+  }
+
   await loadVideoDetail(vodId)
   loadPlaybackHistory()
   
@@ -368,6 +442,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   destroyPlayer()
+  if (window.electronAPI) {
+    window.electronAPI.offMediaSniffed(handleMediaSniffed);
+  }
 })
 
 // 销毁播放器
@@ -385,10 +462,16 @@ const destroyPlayer = () => {
 // 播放指定集数
 const playEpisode = async (episode: { name: string; url: string }) => {
   activeEpisode.value = episode
+  sniffedMediaUrl.value = null // clear sniffed url
   saveToHistory(episode.url)
 
   await nextTick()
   destroyPlayer()
+
+  if (!isNativeVideo.value) {
+    logger.info('Player', '[Player] Start sniffing for Webview URL: ' + episode.url)
+    return
+  }
 
   if (!videoPlayer.value) return
 
@@ -1026,4 +1109,30 @@ const getSavedProgress = (url: string): number => {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.sniffing-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--spacing-md);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 </style>

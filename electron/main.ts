@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, protocol, webContents } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
@@ -156,7 +156,27 @@ function createWindow() {
     shell.showItemInFolder(filePath)
   })
 
+
+  ipcMain.handle('pause-webview', (_, id) => {
+    const wc = webContents.fromId(id);
+    if (wc) {
+      wc.mainFrame.frames.forEach(frame => {
+        frame.executeJavaScript('document.querySelectorAll("video").forEach(v => v.pause())').catch(()=>{});
+      });
+    }
+  });
+
+  ipcMain.handle('resume-webview', (_, id) => {
+    const wc = webContents.fromId(id);
+    if (wc) {
+      wc.mainFrame.frames.forEach(frame => {
+        frame.executeJavaScript('document.querySelectorAll("video").forEach(v => v.play())').catch(()=>{});
+      });
+    }
+  });
+
   ipcMain.handle('get-server-port', () => streamServerPort)
+
   
   ipcMain.handle('open-file', async (_, filePath: string) => {
     try {
@@ -295,18 +315,6 @@ function createWindow() {
     mainWindow?.show()
   })
 
-  // Bypass CORS for all requests by injecting Access-Control-Allow-Origin
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Headers': ['*'],
-        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS']
-      }
-    });
-  });
-
   // Network Sniffer - Early detection for cached media via extension
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
@@ -347,12 +355,19 @@ function createWindow() {
     }
   )
 
-  // Network Sniffer - Catch by Headers
+  // Network Sniffer - Catch by Headers & Bypass CORS globally
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ['*://*/*'] },
     (details, callback) => {
+      const responseHeaders = {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS']
+      };
+
       if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
-        return callback({});
+        return callback({ responseHeaders });
       }
 
       let url = details.url;
@@ -370,11 +385,11 @@ function createWindow() {
 
       // Require a whitelisted suffix, otherwise block/ignore from sniffing
       if (!isImageExt && !isAudioExt && !isVideoExt) {
-        return callback({});
+        return callback({ responseHeaders });
       }
 
       if (pathname.endsWith('.m4s') || pathname.endsWith('.mpd') || pathname.endsWith('.ts')) {
-        return callback({});
+        return callback({ responseHeaders });
       }
 
       let contentType = '';
@@ -419,9 +434,24 @@ function createWindow() {
         });
       }
 
-      callback({});
+      callback({ responseHeaders });
     }
-  )
+  );
+
+  // Anti-Hotlinking bypass: Spoof Referer and Origin to match the requested domain
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['*://*/*'] },
+    (details, callback) => {
+      if (details.resourceType === 'media' || details.resourceType === 'xhr' || details.resourceType === 'fetch') {
+        try {
+          const origin = new URL(details.url).origin;
+          details.requestHeaders['Referer'] = origin + '/';
+          details.requestHeaders['Origin'] = origin;
+        } catch {}
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
 }
 
 
@@ -476,7 +506,7 @@ app.on('before-quit', (e) => {
 app.on('web-contents-created', (event, contents) => {
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler((details) => {
-      mainWindow?.webContents.send('webview-new-window', details.url)
+      mainWindow?.webContents.send('webview-new-window', { url: details.url, webContentsId: contents.id })
       return { action: 'deny' }
     })
 

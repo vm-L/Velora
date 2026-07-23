@@ -244,12 +244,9 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   const px = typeof params?.x === 'number' ? params.x : (typeof e.clientX === 'number' ? e.clientX : 0);
   const py = typeof params?.y === 'number' ? params.y : (typeof e.clientY === 'number' ? e.clientY : 0);
 
-  // Offset adjustment to account for TitleBar and ToolBar if coords are relative to webview
-  const yOffset = typeof e.clientY === 'number' ? 0 : 70; // rough height of top bars
-
   contextMenuPos.value = {
     x: px,
-    y: py + yOffset
+    y: py
   };
   contextMenuTabId.value = tabId;
   contextMenuVisible.value = true;
@@ -292,9 +289,31 @@ onMounted(() => {
   init();
   document.addEventListener('click', hideAllContextMenus);
   if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
-    window.electronAPI.onWebviewNewWindow((url) => {
-      // Add as new tab in current workspace
-      addTab(props.resourceId, url, getResourceIcon());
+    window.electronAPI.onWebviewNewWindow((data: { url: string, webContentsId: number } | string) => {
+      const url = typeof data === 'string' ? data : data.url;
+      const webContentsId = typeof data === 'string' ? -1 : data.webContentsId;
+      
+      if (!workspace.value) return;
+      
+      let isOurs = false;
+      if (workspace.value.tabs.some(t => t.webContentsId === webContentsId)) {
+        isOurs = true;
+      } else {
+        const webviews = document.querySelectorAll('webview') as NodeListOf<any>;
+        for (const wv of webviews) {
+          if (wv.getWebContentsId && wv.getWebContentsId() === webContentsId) {
+            const tabId = wv.id.replace('webview-', '');
+            if (workspace.value.tabs.some(t => t.id === tabId)) {
+              isOurs = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (isOurs || webContentsId === -1) {
+        addTab(props.resourceId, url, getResourceIcon());
+      }
     });
   }
 
