@@ -21,7 +21,7 @@ class StoreManager {
         videoDirectory: app.getPath('downloads'),
         fileDirectory: app.getPath('downloads'),
         maxConcurrentDownloads: 3,
-        maxMemoryBufferMB: 1024
+        maxMemoryBufferMB: 128
       }
     })
   }

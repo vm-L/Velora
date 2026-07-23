@@ -180,8 +180,8 @@
       :type="saveType"
     />
 
-    <!-- Custom Context Menu -->
-    <div v-show="contextMenuVisible" class="context-menu"
+    <!-- Context Menu -->
+    <div v-show="contextMenuVisible" class="context-menu" tabindex="-1" ref="contextMenuRef" @blur="hideAllContextMenus"
       :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }" @click.stop>
       <div class="menu-item" @click="triggerPickImage">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
+import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useWorkspaces } from '../../composables/useWorkspaces';
 import { useSettings } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
@@ -234,25 +234,34 @@ const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResour
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuTabId = ref('');
+const contextMenuRef = ref<HTMLElement | null>(null);
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
   if (isPickingElementImage.value || isPickingElementText.value) return;
-  e.preventDefault();
+  if (e.preventDefault && typeof e.preventDefault === 'function') e.preventDefault();
 
   const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
-  const px = typeof params?.x === 'number' ? params.x : 0;
-  const py = typeof params?.y === 'number' ? params.y : 0;
+  const px = typeof params?.x === 'number' ? params.x : (typeof e.clientX === 'number' ? e.clientX : 0);
+  const py = typeof params?.y === 'number' ? params.y : (typeof e.clientY === 'number' ? e.clientY : 0);
+
+  // Offset adjustment to account for TitleBar and ToolBar if coords are relative to webview
+  const yOffset = typeof e.clientY === 'number' ? 0 : 70; // rough height of top bars
 
   contextMenuPos.value = {
     x: px,
-    y: py
+    y: py + yOffset
   };
   contextMenuTabId.value = tabId;
   contextMenuVisible.value = true;
+  nextTick(() => {
+    if (contextMenuRef.value) {
+      contextMenuRef.value.focus();
+    }
+  });
 };
 
-const hideAllContextMenus = (e?: MouseEvent) => {
-  if (e && e.button !== 0) return;
+const hideAllContextMenus = (e?: MouseEvent | FocusEvent) => {
+  if (e && e instanceof MouseEvent && e.button !== 0) return;
   contextMenuVisible.value = false;
 };
 

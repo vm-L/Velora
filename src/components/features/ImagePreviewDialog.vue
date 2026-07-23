@@ -25,7 +25,7 @@
     <div class="dialog-content checkerboard" @wheel.prevent="onWheel" ref="contentRef" @contextmenu.prevent="copyData">
       <div class="image-wrapper" :style="{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }"
         @mousedown="startPan" @dblclick="resetView">
-        <img :src="currentUrl" referrerpolicy="no-referrer" @load="onImageLoad" draggable="false" />
+        <img :src="formattedCurrentUrl" referrerpolicy="no-referrer" @load="onImageLoad" draggable="false" />
       </div>
 
       <!-- Navigation Arrows -->
@@ -46,7 +46,7 @@
 
       <!-- Minimap -->
       <div v-if="scale > 1" class="minimap" :style="minimapContainerStyle">
-        <img :src="currentUrl" referrerpolicy="no-referrer" />
+        <img :src="formattedCurrentUrl" referrerpolicy="no-referrer" />
         <div class="minimap-viewport" :style="minimapViewportStyle"></div>
       </div>
     </div>
@@ -91,7 +91,7 @@
     <div v-if="isMulti" class="thumbnails-bar" @wheel.prevent="onThumbnailsWheel" ref="thumbnailsRef">
       <div v-for="(thumb, index) in urls" :key="index" class="thumbnail-item"
         :class="{ active: index === currentIndex }" @click="goTo(index)">
-        <img :src="thumb" referrerpolicy="no-referrer" draggable="false" />
+        <img :src="formatMediaSrc(thumb)" referrerpolicy="no-referrer" draggable="false" />
       </div>
     </div>
 
@@ -132,7 +132,7 @@
               <div class="save-items-grid">
                 <div v-for="(item, idx) in saveItems" :key="idx" class="save-item" :class="{ selected: item.checked }" @click="item.checked = !item.checked">
                   <div class="save-item-thumb">
-                    <img :src="item.url" referrerpolicy="no-referrer" />
+                    <img :src="formatMediaSrc(item.url)" referrerpolicy="no-referrer" />
                     <div class="checkbox-indicator">
                       <svg v-if="item.checked" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                         <polyline points="20 6 9 17 4 12"></polyline>
@@ -157,7 +157,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted, computed } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
+
+const formatMediaSrc = (rawUrl: string): string => {
+  if (!rawUrl) return '';
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('velora://local/')) {
+    const rawPath = trimmed.slice('velora://local/'.length);
+    const decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
+    return `velora://local/${encodeURIComponent(decoded)}`;
+  }
+  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.replace(/\\/g, '/');
+  return `velora://local/${encodeURIComponent(cleanPath)}`;
+};
 import { useMessage } from '../../composables/useMessage';
 import { useSettings } from '../../composables/useSettings';
 import VButton from '../base/VButton.vue';
@@ -204,7 +219,11 @@ const height = ref(0);
 
 const isMulti = computed(() => (props.urls?.length ?? 0) > 1);
 const currentIndex = ref(0);
-const currentUrl = computed(() => props.urls ? (props.urls[currentIndex.value] ?? props.url) : props.url);
+const currentUrl = computed(() => props.urls ? props.urls[currentIndex.value] : props.url || '');
+
+const formattedCurrentUrl = computed(() => {
+  return currentUrl.value ? formatMediaSrc(currentUrl.value) : '';
+});
 
 const viewStates = ref<Record<number, { scale: number; panX: number; panY: number; }>>({});
 
@@ -345,15 +364,6 @@ const copyData = async () => {
   }
 };
 
-const getExtension = (url: string) => {
-  try {
-    const pathname = new URL(url).pathname;
-    const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
-    return match ? match[1] : 'jpg'; // Default to jpg if no extension found
-  } catch {
-    return 'jpg';
-  }
-};
 
 const extractFilename = (url: string) => {
   try {
@@ -371,9 +381,14 @@ const openSaveOverlay = () => {
   const targetUrls = props.urls && props.urls.length > 0 ? props.urls : [props.url];
   
   saveItems.value = targetUrls.map((u, i) => {
+    let rawName = extractFilename(u);
+    const extMatch = rawName.match(/\.([a-zA-Z0-9]+)$/);
+    if (extMatch) {
+      rawName = rawName.slice(0, -extMatch[0].length);
+    }
     return {
       url: u,
-      name: `image_${i + 1}_${extractFilename(u)}`,
+      name: `image_${i + 1}_${rawName}`,
       checked: u === currentUrl.value
     };
   });
@@ -413,11 +428,14 @@ const confirmSave = async () => {
     let finalName = item.name.trim();
     if (!finalName) finalName = 'image';
     
-    // Auto append extension if missing
-    const origExt = getExtension(item.url);
-    const currentExtMatch = finalName.match(/\.([a-zA-Z0-9]+)$/);
-    if (!currentExtMatch) {
-      finalName = `${finalName}.${origExt}`;
+    // Auto append extension if missing or different
+    const origExtMatch = extractFilename(item.url).match(/\.([a-zA-Z0-9]+)$/);
+    const origExt = origExtMatch ? origExtMatch[1] : '';
+    
+    if (origExt) {
+      if (!finalName.toLowerCase().endsWith('.' + origExt.toLowerCase())) {
+        finalName = `${finalName}.${origExt}`;
+      }
     }
     
     return { url: item.url, name: finalName };

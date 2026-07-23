@@ -30,7 +30,7 @@
     </div>
 
     <div class="dialog-content">
-      <audio ref="audioRef" :src="url" autoplay @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="isPlaying = false" @play="isPlaying = true" @pause="isPlaying = false"></audio>
+      <audio ref="audioRef" :src="formattedUrl" autoplay @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="isPlaying = false" @play="isPlaying = true" @pause="isPlaying = false"></audio>
       
       <div class="player-controls">
         <button class="play-btn" @click="togglePlay">
@@ -64,7 +64,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
+
+const formatMediaSrc = (rawUrl: string): string => {
+  if (!rawUrl) return '';
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('velora://local/')) {
+    const rawPath = trimmed.slice('velora://local/'.length);
+    const decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
+    return `velora://local/${encodeURIComponent(decoded)}`;
+  }
+  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.replace(/\\/g, '/');
+  return `velora://local/${encodeURIComponent(cleanPath)}`;
+};
 
 const props = defineProps<{
   url: string | null;
@@ -90,6 +105,10 @@ const currentTime = ref(0);
 const duration = ref(0);
 const playbackRate = ref(1);
 const isDragging = ref(false);
+
+const formattedUrl = computed(() => {
+  return props.url ? formatMediaSrc(props.url) : '';
+});
 
 watch(() => props.url, (newUrl) => {
   if (newUrl) {

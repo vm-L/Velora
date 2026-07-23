@@ -66,7 +66,12 @@ const typeName = computed(() => {
 watch(() => props.visible, (newVal) => {
   if (newVal) {
     saveDirectory.value = props.defaultDir;
-    fileName.value = props.defaultName;
+    const ext = getExtension(props.defaultName);
+    if (ext && props.defaultName.endsWith('.' + ext)) {
+      fileName.value = props.defaultName.slice(0, -(ext.length + 1));
+    } else {
+      fileName.value = props.defaultName;
+    }
     isSaving.value = false;
   }
 });
@@ -100,11 +105,13 @@ const confirmSave = async () => {
   }
 
   let finalName = fileName.value.trim();
-  // Auto append extension if missing
+  // Auto append extension if missing or different
   const origExt = getExtension(props.defaultName);
-  const currentExtMatch = finalName.match(/\.([a-zA-Z0-9]+)$/);
-  if (!currentExtMatch && origExt) {
-    finalName = `${finalName}.${origExt}`;
+  
+  if (origExt) {
+    if (!finalName.toLowerCase().endsWith('.' + origExt.toLowerCase())) {
+      finalName = `${finalName}.${origExt}`;
+    }
   }
 
   isSaving.value = true;

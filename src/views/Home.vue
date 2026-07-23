@@ -119,7 +119,7 @@
             <div class="task-header">
               <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
-                <VButton v-if="task.status === 'downloading' || task.status === 'waiting'" variant="icon-secondary" title="暂停"
+                <VButton v-if="task.status === 'downloading' || task.status === 'processing' || task.status === 'waiting'" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
@@ -173,9 +173,10 @@
                 <span class="meta-divider">•</span>
                 <span class="segments-text">{{ task.downloadedSegments || 0 }}/{{ task.totalSegments }} 分片</span>
               </template>
-              <template v-if="task.status === 'downloading' && task.speed > 0">
+              <template v-if="(task.status === 'downloading' || task.status === 'processing') && task.speed > 0">
                 <span class="meta-divider">•</span>
-                <span class="speed-text">{{ formatBytes(task.speed) }}/s</span>
+                <span v-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
+                <span v-else-if="task.status === 'processing'">正在处理...</span>
                 <span v-if="task.totalBytes > 0" class="meta-divider">•</span>
                 <span v-if="task.totalBytes > 0" class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
               </template>
@@ -269,6 +270,7 @@ onUnmounted(() => {
 
 const getStatusWeight = (status: string) => {
   switch (status) {
+    case 'processing': return 6;
     case 'downloading': return 5;
     case 'waiting': return 4;
     case 'paused': return 3;
@@ -338,7 +340,7 @@ const enterSelection = (id: string) => {
 const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
 
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'waiting'));
+  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting'));
 
   eligibleTasks.forEach(t => pauseTask(t.id));
 
@@ -379,7 +381,7 @@ const batchDelete = async () => {
   }
 };
 
-const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'waiting').length);
+const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting').length);
 const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
 const errorCount = computed(() => tasks.value.filter(t => t.status === 'error').length);
 
@@ -393,20 +395,20 @@ const globalReceivedBytes = computed(() => tasks.value.reduce((sum, t) => sum + 
 // const globalTotalBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.totalBytes || 0), 0));
 
 const isImageTask = (task: any) => {
-  if (!task.name) return false;
-  const ext = task.name.split('.').pop()?.toLowerCase();
+  const path = task.savePath || task.name || '';
+  const ext = path.split('.').pop()?.toLowerCase();
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'].includes(ext || '');
 };
 
 const isAudioTask = (task: any) => {
-  if (!task.name) return false;
-  const ext = task.name.split('.').pop()?.toLowerCase();
+  const path = task.savePath || task.name || '';
+  const ext = path.split('.').pop()?.toLowerCase();
   return ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext || '');
 };
 
 const isVideoTask = (task: any) => {
-  if (!task.name) return false;
-  const ext = task.name.split('.').pop()?.toLowerCase();
+  const path = task.savePath || task.name || '';
+  const ext = path.split('.').pop()?.toLowerCase();
   return ['mp4', 'webm', 'mkv', 'avi', 'mov', 'm3u8', 'ts'].includes(ext || '');
 };
 
@@ -468,7 +470,7 @@ const sortedTasks = computed(() => {
   if (activeFilter.value) {
     filtered = filtered.filter(t => {
       if (activeFilter.value === 'downloading') {
-        return t.status === 'downloading' || t.status === 'waiting';
+        return t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting';
       }
       return t.status === activeFilter.value;
     });
@@ -484,6 +486,7 @@ const sortedTasks = computed(() => {
 const getStatusText = (status: string) => {
   switch (status) {
     case 'downloading': return '下载中';
+    case 'processing': return '处理中';
     case 'waiting': return '排队中';
     case 'paused': return '已暂停';
     case 'completed': return '已完成';
@@ -658,7 +661,7 @@ const confirmDelete = async (task: any) => {
   height: 8px;
   border-radius: 50%;
 
-  &.downloading {
+  &.downloading, &.processing {
     background: var(--color-accent);
   }
 
@@ -843,7 +846,7 @@ const confirmDelete = async (task: any) => {
     object-fit: cover;
   }
 
-  &.status-downloading {
+  &.status-downloading, &.status-processing {
     background: var(--bg-surface-active);
     color: var(--color-accent);
   }
@@ -933,7 +936,7 @@ const confirmDelete = async (task: any) => {
   border-radius: 3px;
   transition: width 0.3s ease;
 
-  &.downloading, &.waiting {
+  &.downloading, &.processing, &.waiting {
     background: var(--color-accent);
   }
 
@@ -972,7 +975,7 @@ const confirmDelete = async (task: any) => {
 .status-text {
   font-weight: 500;
 
-  &.downloading {
+  &.downloading, &.processing {
     color: var(--color-accent);
   }
 

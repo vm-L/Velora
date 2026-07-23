@@ -1,7 +1,8 @@
 <template>
-  <div v-if="url" class="video-player-dialog"
-    :style="{ top: position.y + 'px', left: position.x + 'px', width: size.w + 'px', height: size.h + 'px', zIndex }"
-    @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isFullscreen }">
+  <Teleport to="body">
+    <div v-if="url" class="video-player-dialog"
+      :style="{ top: position.y + 'px', left: position.x + 'px', width: size.w + 'px', height: size.h + 'px', zIndex }"
+      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isFullscreen }">
     
     <div class="dialog-header" @mousedown="startDrag" v-show="!isFullscreen || showControls">
       <div class="header-title">
@@ -116,11 +117,11 @@
     
     <div class="resize-handle" @mousedown.stop="startResize" v-if="!isFullscreen"></div>
   </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import Hls from 'hls.js';
 import { logger } from '../../services/logger';
 
 const props = defineProps<{
@@ -158,7 +159,7 @@ const showVolume = ref(false);
 const isPip = ref(false);
 const supportsPip = ref(false);
 
-let hls: Hls | null = null;
+let hls: any = null;
 let controlsTimeout: number | null = null;
 
 const onMouseMove = () => {
@@ -200,7 +201,7 @@ const formatMediaSrc = (rawUrl: string): string => {
   return `velora://local/${encodeURIComponent(cleanPath)}`;
 };
 
-const loadVideo = () => {
+const loadVideo = async () => {
   if (!videoRef.value || !props.url) return;
   const video = videoRef.value;
   const playUrl = formatMediaSrc(props.url);
@@ -213,41 +214,55 @@ const loadVideo = () => {
   }
 
   // 判断是否走 HLS.js 播放
-  if (playUrl.toLowerCase().includes('.m3u8') && Hls.isSupported()) {
-    logger.info('VideoPreview', 'Using HLS.js decoder for playback.');
-    hls = new Hls({
-      autoStartLoad: true,
-      startPosition: -1,
-      capLevelToPlayerSize: false,
-    });
-    
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      const msg = `HLS Error: ${data.type} - ${data.details} (fatal: ${data.fatal})`;
-      logger.error('VideoPreview', msg);
-      if (data.fatal) {
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            hls?.startLoad();
-            break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            hls?.recoverMediaError();
-            break;
-          default:
-            hls?.destroy();
-            if (video) {
-              video.src = playUrl;
-              video.play().catch(() => {});
+  if (playUrl.toLowerCase().includes('.m3u8')) {
+    try {
+      const HlsModule = await import('hls.js');
+      const Hls = HlsModule.default || HlsModule;
+      if (Hls.isSupported()) {
+        logger.info('VideoPreview', 'Using HLS.js decoder for playback.');
+        hls = new Hls({
+          autoStartLoad: true,
+          startPosition: -1,
+          capLevelToPlayerSize: false,
+        });
+        
+        hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+          const msg = `HLS Error: ${data.type} - ${data.details} (fatal: ${data.fatal})`;
+          logger.error('VideoPreview', msg);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hls?.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls?.recoverMediaError();
+                break;
+              default:
+                hls?.destroy();
+                if (video) {
+                  video.src = playUrl;
+                  video.play().catch(() => {});
+                }
+                break;
             }
-            break;
-        }
-      }
-    });
+          }
+        });
 
-    hls.loadSource(playUrl);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+
+        hls.loadSource(playUrl);
+        hls.attachMedia(video);
+      } else {
+        video.src = playUrl;
+        video.play().catch(() => {});
+      }
+    } catch (err: any) {
+      logger.error('VideoPreview', `Failed to load HLS.js: ${err.message}`);
+      video.src = playUrl;
       video.play().catch(() => {});
-    });
+    }
   } else {
     logger.info('VideoPreview', 'Using HTML5 native video player for playback.');
     video.src = playUrl;

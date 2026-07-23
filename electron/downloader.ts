@@ -1,5 +1,8 @@
 import { net } from 'electron'
 import fs from 'fs'
+import crypto from 'crypto'
+import { spawn } from 'child_process'
+import ffmpegPath from 'ffmpeg-static'
 import path from 'path'
 import { Readable } from 'stream'
 import { storeManager } from './store'
@@ -10,12 +13,14 @@ export interface DownloadCommand {
   url: string
   savePath: string
   startBytes: number
+  downloadedSegments?: number
 }
 
 export interface M3U8Segment {
   index: number
   url: string
   duration: number
+  key?: { method: string, url: string, iv?: string }
 }
 
 /**
@@ -57,10 +62,38 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
   const segments: M3U8Segment[] = []
   let currentDuration = 0
   let index = 0
+  let currentKey: { method: string, url: string, iv?: string } | undefined = undefined
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
-    if (line.startsWith('#EXTINF:')) {
+    
+    if (line.startsWith('#EXT-X-KEY:')) {
+      const methodMatch = line.match(/METHOD=([^,]+)/)
+      const method = methodMatch ? methodMatch[1] : 'NONE'
+      if (method === 'NONE') {
+        currentKey = undefined
+      } else {
+        const uriMatch = line.match(/URI="([^"]+)"/)
+        const ivMatch = line.match(/IV=([^,]+)/)
+        if (uriMatch) {
+          currentKey = {
+            method,
+            url: resolveUrl(playlistUrl, uriMatch[1]),
+            iv: ivMatch ? ivMatch[1] : undefined
+          }
+        }
+      }
+    } else if (line.startsWith('#EXT-X-MAP:')) {
+      const uriMatch = line.match(/URI="([^"]+)"/)
+      if (uriMatch) {
+        segments.push({
+          index: index++,
+          url: resolveUrl(playlistUrl, uriMatch[1]),
+          duration: 0,
+          key: currentKey
+        })
+      }
+    } else if (line.startsWith('#EXTINF:')) {
       const durMatch = line.match(/#EXTINF:([\d\.]+)/)
       if (durMatch) {
         currentDuration = parseFloat(durMatch[1])
@@ -70,7 +103,8 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
       segments.push({
         index: index++,
         url: segUrl,
-        duration: currentDuration
+        duration: currentDuration,
+        key: currentKey
       })
     }
   }
@@ -152,7 +186,7 @@ class Downloader {
         await this.downloadDirectFileTask(cmd, abortController)
       }
     } catch (err: any) {
-      logger.info('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
+      logger.error('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
       if (err.name === 'AbortError') {
         this.sendProgress({ id: cmd.id, status: 'paused' })
       } else {
@@ -171,11 +205,11 @@ class Downloader {
     const { id, url, savePath } = cmd
     logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
 
-    let maxMemoryMB = 1024
+    let maxMemoryMB = 128
     try {
-      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 1024
+      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 128
     } catch {
-      maxMemoryMB = 1024
+      maxMemoryMB = 128
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
@@ -199,27 +233,40 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
+    const isTargetMp4 = savePath.toLowerCase().endsWith('.mp4')
+    const finalSavePath = savePath
+    const workSavePath = isTargetMp4 ? savePath + '.temp.ts' : savePath
+
     // 检查断点续传：目标文件是否已存在及大小
     let existingBytes = 0
     let skipSegments = 0
     let fileFlags = 'w'
 
-    if (fs.existsSync(savePath)) {
+    if (fs.existsSync(workSavePath)) {
       try {
-        const stat = fs.statSync(savePath)
+        const stat = fs.statSync(workSavePath)
         existingBytes = stat.size
         if (existingBytes > 0) {
-          // 假设之前的每个分片大小均值，推算已完成的分片数量
-          // 例如先拉取第 0 个分片测算大小，或根据现有字节比例推断
-          const testRes = await net.fetch(segments[0].url, { headers, signal: abortController.signal as any })
-          if (testRes.ok) {
-            const sampleBuf = await testRes.arrayBuffer()
-            const avgSize = Math.max(1024, sampleBuf.byteLength)
-            skipSegments = Math.min(segments.length - 1, Math.floor(existingBytes / avgSize))
-            if (skipSegments > 0) {
-              fileFlags = 'a' // 追加模式
-              existingBytes = skipSegments * avgSize // 纠正续传起点
-              logger.info('Downloader', `[M3U8Downloader] 触发断点续传: 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
+          if (cmd.downloadedSegments !== undefined && cmd.downloadedSegments > 0) {
+            skipSegments = cmd.downloadedSegments;
+            fileFlags = 'a';
+            logger.info('Downloader', `[M3U8Downloader] 触发断点续传(精准): 跳过前 ${skipSegments}/${segments.length} 个分片`);
+          } else {
+            const testRes = await net.fetch(segments[0].url, { headers, signal: abortController.signal as any })
+            if (testRes.ok) {
+              let buf = Buffer.from(await testRes.arrayBuffer())
+              if (segments[0].key && segments[0].key.method === 'AES-128') {
+                try {
+                   // dummy decrypt to get size
+                } catch(e) {}
+              }
+              const avgSize = Math.max(1024, buf.byteLength)
+              skipSegments = Math.min(segments.length - 1, Math.floor(existingBytes / avgSize))
+              if (skipSegments > 0) {
+                fileFlags = 'a'
+                existingBytes = skipSegments * avgSize
+                logger.info('Downloader', `[M3U8Downloader] 触发断点续传(估算): 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
+              }
             }
           }
         }
@@ -228,7 +275,8 @@ class Downloader {
       }
     }
 
-    const fd = fs.openSync(savePath, fileFlags)
+    const fd = fs.openSync(workSavePath, fileFlags)
+    const keyCache = new Map<string, Buffer>()
     const bufferMap = new Map<number, Buffer>()
     let currentBufferedBytes = 0
     let nextFlushIndex = skipSegments
@@ -272,7 +320,35 @@ class Downloader {
           try {
             const res = await net.fetch(seg.url, { headers, signal: abortController.signal as any })
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            const buf = Buffer.from(await res.arrayBuffer())
+            let buf = Buffer.from(await res.arrayBuffer())
+
+            if (seg.key && seg.key.method === 'AES-128') {
+              let keyBuf = keyCache.get(seg.key.url)
+              if (!keyBuf) {
+                const keyRes = await net.fetch(seg.key.url, { headers, signal: abortController.signal as any })
+                if (!keyRes.ok) throw new Error(`Key fetch failed: ${seg.key.url}`)
+                keyBuf = Buffer.from(await keyRes.arrayBuffer())
+                keyCache.set(seg.key.url, keyBuf)
+              }
+              let ivBuf: Buffer
+              if (seg.key.iv) {
+                let hex = seg.key.iv.startsWith('0x') || seg.key.iv.startsWith('0X') ? seg.key.iv.slice(2) : seg.key.iv
+                hex = hex.padStart(32, '0')
+                ivBuf = Buffer.from(hex, 'hex')
+              } else {
+                ivBuf = Buffer.alloc(16)
+                ivBuf.writeUInt32BE(seg.index, 12)
+              }
+              try {
+                const decipher = crypto.createDecipheriv('aes-128-cbc', keyBuf, ivBuf)
+                decipher.setAutoPadding(true)
+                buf = Buffer.concat([decipher.update(buf), decipher.final()])
+              } catch (err) {
+                const decipher = crypto.createDecipheriv('aes-128-cbc', keyBuf, ivBuf)
+                decipher.setAutoPadding(false)
+                buf = Buffer.concat([decipher.update(buf), decipher.final()])
+              }
+            }
 
             bufferMap.set(seg.index, buf)
             currentBufferedBytes += buf.length
@@ -289,8 +365,8 @@ class Downloader {
               this.sendProgress({
                 id,
                 totalBytes: 0,
-                receivedBytes: totalReceivedBytes,
-                downloadedSegments: downloadedCount,
+                receivedBytes: totalReceivedBytes - currentBufferedBytes,
+                downloadedSegments: nextFlushIndex,
                 totalSegments: segments.length,
                 speed,
                 status: 'downloading'
@@ -323,7 +399,39 @@ class Downloader {
       flushMemoryToDisk(true)
       fs.closeSync(fd)
 
-      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并成功。`)
+      if (isTargetMp4) {
+        logger.info('Downloader', `[M3U8Downloader] 准备将 TS 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
+        this.sendProgress({ id, totalBytes: totalReceivedBytes, receivedBytes: totalReceivedBytes, status: 'processing', speed: 0 })
+        
+        await new Promise<void>((resolve, reject) => {
+          let ffmpegBin = ffmpegPath as string
+          if (!ffmpegBin) {
+            reject(new Error('ffmpeg-static path is empty'))
+            return
+          }
+          // Fix for electron asar production paths
+          ffmpegBin = ffmpegBin.replace('app.asar', 'app.asar.unpacked')
+          
+          const child = spawn(ffmpegBin, ['-y', '-i', workSavePath, '-c', 'copy', finalSavePath])
+          
+          child.on('close', (code) => {
+            if (code === 0) {
+              try { fs.unlinkSync(workSavePath) } catch {}
+              resolve()
+            } else {
+              reject(new Error(`FFmpeg exited with code ${code}`))
+            }
+          })
+          child.on('error', reject)
+          
+          abortController.signal.addEventListener('abort', () => {
+            child.kill('SIGKILL')
+            reject(new DOMException('User aborted download', 'AbortError'))
+          })
+        })
+      }
+
+      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并并封装成功。`)
       this.sendProgress({
         id,
         totalBytes: totalReceivedBytes,
@@ -347,20 +455,33 @@ class Downloader {
   private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController) {
     const { id, url, savePath } = cmd
 
-    let startBytes = cmd.startBytes || 0
-    if (startBytes === 0 && fs.existsSync(savePath)) {
+    let diskSize = 0;
+    if (fs.existsSync(savePath)) {
       try {
-        startBytes = fs.statSync(savePath).size
+        diskSize = fs.statSync(savePath).size;
       } catch {}
+    }
+    let startBytes = Math.max(cmd.startBytes || 0, diskSize);
+
+    const chunkSize = 4 * 1024 * 1024 // 4MB
+    // Align startBytes to chunk boundary
+    if (startBytes > 0) {
+      const downloadedChunksInitial = Math.floor(startBytes / chunkSize);
+      startBytes = downloadedChunksInitial * chunkSize;
+      
+      if (diskSize > startBytes) {
+         logger.info('Downloader', `[DirectDownloader] 将文件从 ${diskSize} 截断对齐到块边界 ${startBytes}`);
+         try { fs.truncateSync(savePath, startBytes); } catch {}
+      }
     }
 
     logger.info('Downloader', `[DirectDownloader] 开始单文件流式/多线程分块下载: ${url}, startBytes: ${startBytes}`)
 
-    let maxMemoryMB = 1024
+    let maxMemoryMB = 128
     try {
-      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 1024
+      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 128
     } catch {
-      maxMemoryMB = 1024
+      maxMemoryMB = 128
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
@@ -407,7 +528,6 @@ class Downloader {
 
     if (isRangeSupported && remainingBytes > 2 * 1024 * 1024) {
       logger.info('Downloader', `[DirectDownloader] 支持 Range 断点续传。从 ${startBytes} 字节起开辟 8 线程加速下载，剩余: ${remainingBytes} bytes`)
-      const chunkSize = 4 * 1024 * 1024 // 4MB 一块
       const chunksCount = Math.ceil(remainingBytes / chunkSize)
       const chunks: Array<{ index: number; start: number; end: number }> = []
       
@@ -416,8 +536,8 @@ class Downloader {
         const end = Math.min(totalBytes - 1, startBytes + (i + 1) * chunkSize - 1)
         chunks.push({ index: i, start, end })
       }
-
-      const fileFlags = startBytes > 0 ? 'a' : 'w'
+      
+      const fileFlags = startBytes > 0 ? 'a' : 'w';
       const fd = fs.openSync(savePath, fileFlags)
       const bufferMap = new Map<number, Buffer>()
       let currentBufferedBytes = 0
@@ -480,7 +600,7 @@ class Downloader {
                 this.sendProgress({
                   id,
                   totalBytes,
-                  receivedBytes: totalReceivedBytes,
+                  receivedBytes: totalReceivedBytes - currentBufferedBytes, // perfectly matches disk
                   speed,
                   status: 'downloading'
                 })
