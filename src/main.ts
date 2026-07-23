@@ -22,4 +22,12 @@ app.directive('click-outside', {
 })
 
 app.use(router)
-app.mount('#app')
+
+const initApp = async () => {
+  if (window.electronAPI) {
+    window.__SERVER_PORT__ = await window.electronAPI.getServerPort();
+  }
+  app.mount('#app');
+}
+initApp();
+

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
   showItemInFolder: (filePath: string) => ipcRenderer.send('show-item-in-folder', filePath),
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
+  getServerPort: () => ipcRenderer.invoke('get-server-port'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   saveImages: (dirPath: string, files: { url: string, name: string }[]) => ipcRenderer.invoke('save-images', dirPath, files),
   startDownload: (cmd: any) => ipcRenderer.send('start-download', cmd),

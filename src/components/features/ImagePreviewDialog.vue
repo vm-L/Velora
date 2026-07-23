@@ -161,17 +161,18 @@ import { ref, computed, onUnmounted } from 'vue';
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
-  const trimmed = rawUrl.trim();
-  if (trimmed.startsWith('velora://local/')) {
-    const rawPath = trimmed.slice('velora://local/'.length);
-    const decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
-    return `velora://local/${encodeURIComponent(decoded)}`;
+  let cleanPath = rawUrl.trim().replace(/\\/g, '/');
+  
+  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(cleanPath)) {
+    return cleanPath;
   }
-  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(trimmed)) {
-    return trimmed;
+  
+  if (cleanPath.startsWith('velora://local/')) {
+    cleanPath = decodeURIComponent(cleanPath.slice('velora://local/'.length));
   }
-  const cleanPath = trimmed.replace(/\\/g, '/');
-  return `velora://local/${encodeURIComponent(cleanPath)}`;
+  
+  const port = window.__SERVER_PORT__ || 0;
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
 };
 import { useMessage } from '../../composables/useMessage';
 import { useSettings } from '../../composables/useSettings';

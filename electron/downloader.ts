@@ -2,7 +2,7 @@ import { net } from 'electron'
 import fs from 'fs'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
-import ffmpegPath from 'ffmpeg-static'
+
 import path from 'path'
 import { Readable } from 'stream'
 import { storeManager } from './store'
@@ -405,15 +405,8 @@ class Downloader {
         this.sendProgress({ id, totalBytes: totalReceivedBytes, receivedBytes: totalReceivedBytes, status: 'processing', speed: 0 })
         
         await new Promise<void>((resolve, reject) => {
-          let ffmpegBin = ffmpegPath as string
-          if (!ffmpegBin) {
-            reject(new Error('ffmpeg-static path is empty'))
-            return
-          }
-          // Fix for electron asar production paths
-          ffmpegBin = ffmpegBin.replace('app.asar', 'app.asar.unpacked')
-          
-          const child = spawn(ffmpegBin, ['-y', '-i', workSavePath, '-c', 'copy', finalSavePath])
+          const ffmpegBin = 'ffmpeg'
+          const child = spawn(ffmpegBin, ['-y', '-i', workSavePath, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart', finalSavePath])
           
           child.on('close', (code) => {
             if (code === 0) {

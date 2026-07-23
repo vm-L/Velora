@@ -186,21 +186,18 @@ const resetControlsTimeout = () => {
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
-  const trimmed = rawUrl.trim();
+  let cleanPath = rawUrl.trim().replace(/\\/g, '/');
   
-  if (trimmed.startsWith('velora://local/')) {
-    const rawPath = trimmed.slice('velora://local/'.length);
-    const decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
-    return `velora://local/${encodeURIComponent(decoded)}`;
+  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(cleanPath)) {
+    return cleanPath;
   }
-
-  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(trimmed)) {
-    return trimmed;
+  
+  if (cleanPath.startsWith('velora://local/')) {
+    cleanPath = decodeURIComponent(cleanPath.slice('velora://local/'.length));
   }
-
-  // 离线本地磁盘路径统一规范为 velora://local/ 协议
-  const cleanPath = trimmed.replace(/\\/g, '/');
-  return `velora://local/${encodeURIComponent(cleanPath)}`;
+  
+  const port = window.__SERVER_PORT__ || 0;
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
 };
 
 const loadVideo = async () => {
@@ -286,13 +283,13 @@ watch(() => props.url, (newUrl) => {
   logger.info('VideoPreview', `watch(url) triggered. newUrl: ${newUrl}`);
   if (newUrl) {
     bringToFront();
-    nextTick(() => {
-      logger.info('VideoPreview', `watch(url) nextTick executed. newUrl: ${newUrl}`);
+    setTimeout(() => {
+      logger.info('VideoPreview', `watch(url) setTimeout executed. newUrl: ${newUrl}`);
       loadVideo();
       if (document.pictureInPictureEnabled) {
         supportsPip.value = true;
       }
-    });
+    }, 50);
   } else {
     if (videoRef.value) {
       videoRef.value.pause();
@@ -302,7 +299,8 @@ watch(() => props.url, (newUrl) => {
       hls = null;
     }
   }
-}, { immediate: true });
+});
+
 
 const startDrag = (e: MouseEvent) => {
   if (isFullscreen.value) return;
@@ -359,7 +357,9 @@ const togglePlay = () => {
   if (isPlaying.value) {
     videoRef.value.pause();
   } else {
-    videoRef.value.play();
+    videoRef.value.play().catch(err => {
+      logger.error('VideoPreview', `togglePlay play exception: ${err.message}`);
+    });
   }
 };
 
@@ -486,10 +486,18 @@ const downloadVideo = () => {
 onMounted(() => {
   logger.info('VideoPreview', 'onMounted called!');
   document.addEventListener('keydown', handleKeydown);
-  nextTick(() => {
-    logger.info('VideoPreview', 'onMounted nextTick executed!');
+  
+  if (props.url) {
+    bringToFront();
+  }
+  
+  setTimeout(() => {
+    logger.info('VideoPreview', 'onMounted setTimeout executed!');
     loadVideo();
-  });
+    if (document.pictureInPictureEnabled) {
+      supportsPip.value = true;
+    }
+  }, 50);
 });
 
 onUnmounted(() => {

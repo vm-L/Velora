@@ -36,3 +36,10 @@ interface Window {
     log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }
+
+
+declare global {
+  interface Window {
+    __SERVER_PORT__?: number;
+  }
+}

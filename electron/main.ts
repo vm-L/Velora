@@ -1,7 +1,74 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, protocol } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { fileURLToPath } from 'url'
+import http from 'http'
+
+let streamServerPort = 0;
+const mediaServer = http.createServer(async (req, res) => {
+  try {
+    const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
+    if (urlObj.pathname === '/stream') {
+      const filePath = urlObj.searchParams.get('path');
+      if (!filePath) {
+        res.writeHead(400);
+        return res.end('Missing path');
+      }
+      
+      const stat = await fs.promises.stat(filePath);
+      const rangeHeader = req.headers['range'];
+      
+      let contentType = 'application/octet-stream';
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      if (ext === 'mp4') contentType = 'video/mp4';
+      else if (ext === 'm3u8') contentType = 'application/x-mpegURL';
+      else if (ext === 'ts') contentType = 'video/MP2T';
+      else if (ext === 'mp3') contentType = 'audio/mpeg';
+      else if (ext === 'webm') contentType = 'video/webm';
+      else if (ext === 'png') contentType = 'image/png';
+      else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+      else if (ext === 'webp') contentType = 'image/webp';
+      else if (ext === 'gif') contentType = 'image/gif';
+      
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Accept-Ranges', 'bytes');
+      
+      if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+        const chunksize = (end - start) + 1;
+        
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Content-Length': chunksize,
+        });
+        const fileStream = fs.createReadStream(filePath, { start, end });
+        fileStream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': stat.size,
+        });
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+      }
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  } catch (err: any) {
+    logger.error('Protocol', `Local media server error: ${err.message}`);
+    res.writeHead(404);
+    res.end('File not found');
+  }
+});
+
+mediaServer.listen(0, '127.0.0.1', () => {
+  streamServerPort = (mediaServer.address() as any).port;
+  logger.info('System', `Local media server listening on port ${streamServerPort}`);
+});
+
+import { exec } from 'child_process'
 
 // Create a polyfill for __dirname in ESM if needed, though we are compiling via vite-plugin-electron which handles __dirname if we use standard CJS/ESM mixed. 
 // However, standard electron vite plugin setup allows CJS. Let's stick to CJS-like paths or use path.join(process.env.DIST, ...)
@@ -89,6 +156,8 @@ function createWindow() {
     shell.showItemInFolder(filePath)
   })
 
+  ipcMain.handle('get-server-port', () => streamServerPort)
+  
   ipcMain.handle('open-file', async (_, filePath: string) => {
     try {
       if (!fs.existsSync(filePath)) {
@@ -226,6 +295,18 @@ function createWindow() {
     mainWindow?.show()
   })
 
+  // Bypass CORS for all requests by injecting Access-Control-Allow-Origin
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS']
+      }
+    });
+  });
+
   // Network Sniffer - Early detection for cached media via extension
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
@@ -343,28 +424,24 @@ function createWindow() {
   )
 }
 
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'velora', privileges: { secure: true, bypassCSP: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
-])
 
 app.whenReady().then(async () => {
-  protocol.registerFileProtocol('velora', (request, callback) => {
-    logger.info('Protocol', `Raw request url: ${request.url}`)
-    let prefix = request.url.startsWith('velora://local/') ? 'velora://local/' : 'velora://'
-    let filePath = decodeURIComponent(request.url.slice(prefix.length))
-    logger.info('Protocol', `Decoded path before processing: ${filePath}`)
-    
-    if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1)
-    }
-    
-    logger.info('Protocol', `Final path: ${filePath}`)
-    callback({ path: filePath })
-  })
-
+  
   await clearPrivacyData()
   setupStoreHandlers()
   createWindow()
+
+  // 自动检测系统环境变量中是否存在 ffmpeg
+  exec('ffmpeg -version', (error) => {
+    if (error) {
+      dialog.showErrorBox(
+        '未找到 FFmpeg 环境',
+        '系统中未检测到 FFmpeg。\n请将 FFmpeg 的 bin 目录添加到系统环境变量 (PATH) 中，否则将无法正常拼接和转换视频文件。'
+      );
+    } else {
+      logger.info('System', 'FFmpeg is correctly installed and accessible.');
+    }
+  });
 
   const trayIcon = nativeImage.createFromDataURL(iconBase64)
   tray = new Tray(trayIcon)
