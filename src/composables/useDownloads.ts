@@ -39,6 +39,22 @@ export const useDownloads = () => {
     logger.info('Downloads', `[Renderer] initListeners binding to onDownloadProgress...`)
     isListenersInitialized = true
 
+    // Start frontend speed calculation timer
+    setInterval(() => {
+      tasks.value.forEach(t => {
+        if (t.status === 'downloading') {
+          const current = t.receivedBytes || 0;
+          const last = (t as any)._lastReceivedBytes ?? current;
+          t.speed = Math.max(0, current - last);
+          (t as any)._lastReceivedBytes = current;
+        } else {
+          t.speed = 0;
+          delete (t as any)._lastReceivedBytes;
+        }
+      });
+    }, 1000);
+
+
     if (window.electronAPI && window.electronAPI.onDownloadProgress) {
       window.electronAPI.onDownloadProgress(async (data: any) => {
         logger.info('Downloads', `[Renderer] Received IPC progress message. ID: ${data.id}, status: ${data.status}, receivedBytes: ${data.receivedBytes}, totalBytes: ${data.totalBytes}`)
@@ -53,7 +69,7 @@ export const useDownloads = () => {
           if (data.status) t.status = data.status
           if (data.totalBytes !== undefined) t.totalBytes = data.totalBytes
           if (data.receivedBytes !== undefined) t.receivedBytes = data.receivedBytes
-          if (data.speed !== undefined) t.speed = data.speed
+          // if (data.speed !== undefined) t.speed = data.speed (Frontend calculation instead)
           if (data.downloadedSegments !== undefined) t.downloadedSegments = data.downloadedSegments
           if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
           if (data.errorMsg) t.errorMsg = data.errorMsg
@@ -96,27 +112,27 @@ export const useDownloads = () => {
   const addDownload = async (url: string, name: string, savePath: string): Promise<boolean> => {
     logger.info('Downloads', `[Renderer] addDownload invoked. url: ${url}, name: ${name}, savePath: ${savePath}`)
     try {
+      const existingTask = tasks.value.find(t => t.savePath === savePath)
       const fileExists = window.electronAPI ? await window.electronAPI.fileExists(savePath) : false
       
-      if (fileExists) {
+      if (existingTask || fileExists) {
         const { useConfirm } = await import('./useConfirm')
         const confirmed = await useConfirm().confirm({
-          title: '文件已存在',
-          message: `在当前下载目录中已经存在名为 "${name}" 的文件。\n要覆盖原文件并重新开始下载吗？`,
+          title: '文件或任务已存在',
+          message: `在当前下载目录或任务列表中已经存在名为 "${name}" 的项。\n要将其覆盖并重新开始全新的下载吗？`,
           confirmText: '覆盖下载',
           cancelText: '跳过',
           type: 'warning'
         })
         
         if (confirmed) {
-          const existingTask = tasks.value.find(t => t.savePath === savePath)
           if (existingTask) {
             await deleteTask(existingTask.id, true)
           } else if (window.electronAPI) {
             await window.electronAPI.deleteFile(savePath)
           }
         } else {
-          logger.info('Downloads', `[Renderer] addDownload canceled: File already exists and user skipped.`)
+          logger.info('Downloads', `[Renderer] addDownload canceled: Task or file already exists and user skipped.`)
           return false // Skip download
         }
       }

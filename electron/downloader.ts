@@ -425,11 +425,16 @@ class Downloader {
         })
       }
 
-      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并并封装成功。`)
+      let finalFileSize = totalReceivedBytes
+      try {
+        finalFileSize = fs.statSync(isTargetMp4 ? finalSavePath : workSavePath).size
+      } catch {}
+
+      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并并封装成功。文件最终大小: ${finalFileSize}`)
       this.sendProgress({
         id,
-        totalBytes: totalReceivedBytes,
-        receivedBytes: totalReceivedBytes,
+        totalBytes: finalFileSize,
+        receivedBytes: finalFileSize,
         downloadedSegments: segments.length,
         totalSegments: segments.length,
         status: 'completed',
@@ -437,6 +442,7 @@ class Downloader {
       })
     } catch (err) {
       try {
+        flushMemoryToDisk(true)
         fs.closeSync(fd)
       } catch {}
       throw err
@@ -449,27 +455,18 @@ class Downloader {
   private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController) {
     const { id, url, savePath } = cmd
 
-    let diskSize = 0;
-    if (fs.existsSync(savePath)) {
+    const chunkSize = 4 * 1024 * 1024 // 4MB
+    const progressPath = savePath + '.velora'
+    
+    let completedChunks: number[] = []
+    if (fs.existsSync(progressPath)) {
       try {
-        diskSize = fs.statSync(savePath).size;
+        const progData = JSON.parse(fs.readFileSync(progressPath, 'utf8'))
+        if (progData.chunkSize === chunkSize) {
+          completedChunks = progData.completed || []
+        }
       } catch {}
     }
-    let startBytes = Math.max(cmd.startBytes || 0, diskSize);
-
-    const chunkSize = 4 * 1024 * 1024 // 4MB
-    // Align startBytes to chunk boundary
-    if (startBytes > 0) {
-      const downloadedChunksInitial = Math.floor(startBytes / chunkSize);
-      startBytes = downloadedChunksInitial * chunkSize;
-      
-      if (diskSize > startBytes) {
-         logger.info('Downloader', `[DirectDownloader] 将文件从 ${diskSize} 截断对齐到块边界 ${startBytes}`);
-         try { fs.truncateSync(savePath, startBytes); } catch {}
-      }
-    }
-
-    logger.info('Downloader', `[DirectDownloader] 开始单文件流式/多线程分块下载: ${url}, startBytes: ${startBytes}`)
 
     let maxMemoryMB = 128
     try {
@@ -494,13 +491,12 @@ class Downloader {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
-    // 1. 探测 Range 断点续传支持
     let isRangeSupported = false
     let totalBytes = 0
 
     try {
       const checkRes = await net.fetch(url, {
-        headers: { ...headers, 'Range': `bytes=${startBytes}-${startBytes + 1}` },
+        headers: { ...headers, 'Range': `bytes=0-1` },
         signal: abortController.signal as any
       })
       if (checkRes.status === 206) {
@@ -517,42 +513,77 @@ class Downloader {
       logger.info('Downloader', `[DirectDownloader] Range 探测未响应: ${e.message}`)
     }
 
-    // 2. 若支持 Range 且剩余大于 2MB，支持断点续传 Range 8 线程并发加速
-    const remainingBytes = totalBytes > startBytes ? totalBytes - startBytes : 0
+    const totalChunksCount = Math.ceil(totalBytes / chunkSize)
+    const validCompletedChunks = completedChunks.filter(i => i < totalChunksCount)
+    let totalReceivedBytes = validCompletedChunks.length * chunkSize
 
-    if (isRangeSupported && remainingBytes > 2 * 1024 * 1024) {
-      logger.info('Downloader', `[DirectDownloader] 支持 Range 断点续传。从 ${startBytes} 字节起开辟 8 线程加速下载，剩余: ${remainingBytes} bytes`)
-      const chunksCount = Math.ceil(remainingBytes / chunkSize)
+    if (isRangeSupported && totalBytes > 2 * 1024 * 1024) {
+      logger.info('Downloader', `[DirectDownloader] 支持 Range 断点续传。已完成 ${validCompletedChunks.length}/${totalChunksCount} 分块，开启 8 线程加速下载`)
+      
       const chunks: Array<{ index: number; start: number; end: number }> = []
       
-      for (let i = 0; i < chunksCount; i++) {
-        const start = startBytes + i * chunkSize
-        const end = Math.min(totalBytes - 1, startBytes + (i + 1) * chunkSize - 1)
+      for (let i = 0; i < totalChunksCount; i++) {
+        if (validCompletedChunks.includes(i)) continue
+        const start = i * chunkSize
+        const end = Math.min(totalBytes - 1, start + chunkSize - 1)
         chunks.push({ index: i, start, end })
       }
       
-      const fileFlags = startBytes > 0 ? 'a' : 'w';
-      const fd = fs.openSync(savePath, fileFlags)
-      const bufferMap = new Map<number, Buffer>()
+      const fileFlags = fs.existsSync(savePath) ? 'r+' : 'w'
+      if (fileFlags === 'r+') {
+        try {
+          const stats = fs.statSync(savePath)
+          if (stats.size > totalBytes) {
+             logger.info('Downloader', `[DirectDownloader] 续传旧文件过大，截断为 ${totalBytes}`)
+             fs.truncateSync(savePath, totalBytes)
+          }
+        } catch {}
+      }
+      
+      let fd: number
+      try {
+        fd = fs.openSync(savePath, fileFlags)
+      } catch (err: any) {
+        if (err.code === 'ENOENT' && fileFlags === 'r+') {
+           fd = fs.openSync(savePath, 'w')
+        } else {
+           throw err
+        }
+      }
+
+      interface WriteFragment {
+        buffer: Buffer;
+        position: number;
+      }
+      let writeFragments: WriteFragment[] = []
       let currentBufferedBytes = 0
-      let nextFlushIndex = 0
-      let downloadedChunks = 0
-      let totalReceivedBytes = startBytes
+      let downloadedChunksCount = validCompletedChunks.length
+      
+      let completedChunksToSave: number[] = []
 
       let lastReportTime = Date.now()
       let lastReportBytes = totalReceivedBytes
 
       const flushMemoryToDisk = (forceAll = false) => {
-        while (bufferMap.has(nextFlushIndex)) {
-          const chunkBuf = bufferMap.get(nextFlushIndex)!
-          fs.writeSync(fd, chunkBuf)
-          currentBufferedBytes -= chunkBuf.length
-          bufferMap.delete(nextFlushIndex)
-          nextFlushIndex++
+        if (writeFragments.length === 0 && completedChunksToSave.length === 0) return
+        if (!forceAll && currentBufferedBytes < maxMemoryBytes) return
+
+        for (const frag of writeFragments) {
+          fs.writeSync(fd, frag.buffer, 0, frag.buffer.length, frag.position)
         }
+        
+        if (completedChunksToSave.length > 0) {
+          validCompletedChunks.push(...completedChunksToSave)
+          completedChunksToSave = []
+          fs.writeFileSync(progressPath, JSON.stringify({ chunkSize, completed: validCompletedChunks }))
+        }
+
         if (forceAll || currentBufferedBytes >= maxMemoryBytes) {
-          logger.info('Downloader', `[MemoryBuffer] 单文件分块内存达到限制 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)，批量写盘清内存。`)
+          logger.info('Downloader', `[MemoryBuffer] 单文件缓冲批量写盘并更新进度 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)`)
         }
+
+        writeFragments = []
+        currentBufferedBytes = 0
       }
 
       let chunkQueueIndex = 0
@@ -577,29 +608,61 @@ class Downloader {
                 signal: abortController.signal as any
               })
               if (!chunkRes.ok && chunkRes.status !== 206) throw new Error(`HTTP ${chunkRes.status}`)
-              const buf = Buffer.from(await chunkRes.arrayBuffer())
+              
+              if (!chunkRes.body) throw new Error("No response body")
+              
+              const reader = chunkRes.body.getReader()
+              let currentPosition = chunkItem.start
 
-              bufferMap.set(chunkItem.index, buf)
-              currentBufferedBytes += buf.length
-              downloadedChunks++
-              totalReceivedBytes += buf.length
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                if (abortController.signal.aborted) {
+                  reader.cancel()
+                  throw new DOMException('User aborted download', 'AbortError')
+                }
 
-              if (currentBufferedBytes >= maxMemoryBytes) {
-                flushMemoryToDisk(false)
+                const buf = Buffer.from(value)
+                writeFragments.push({ buffer: buf, position: currentPosition })
+                currentPosition += buf.length
+                currentBufferedBytes += buf.length
+                totalReceivedBytes += buf.length
+
+                if (currentBufferedBytes >= maxMemoryBytes) {
+                  flushMemoryToDisk(false)
+                }
+
+                const now = Date.now()
+                if (now - lastReportTime > 400) {
+                  const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+                  this.sendProgress({
+                    id,
+                    totalBytes,
+                    receivedBytes: totalReceivedBytes,
+                    speed,
+                    status: 'downloading'
+                  })
+                  lastReportTime = now
+                  lastReportBytes = totalReceivedBytes
+                }
               }
 
-              const now = Date.now()
-              if (now - lastReportTime > 400 || downloadedChunks === chunks.length) {
-                const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+              completedChunksToSave.push(chunkItem.index)
+              downloadedChunksCount++
+              
+              if (currentBufferedBytes >= maxMemoryBytes || downloadedChunksCount === totalChunksCount) {
+                flushMemoryToDisk(downloadedChunksCount === totalChunksCount)
+              }
+
+              if (downloadedChunksCount === totalChunksCount) {
+                const speed = ((totalReceivedBytes - lastReportBytes) / (Date.now() - lastReportTime)) * 1000
                 this.sendProgress({
                   id,
                   totalBytes,
                   receivedBytes: totalReceivedBytes,
-                  speed,
+                  speed: isNaN(speed) ? 0 : speed,
                   status: 'downloading'
                 })
-                lastReportTime = now
-                lastReportBytes = totalReceivedBytes
               }
 
               success = true
@@ -624,6 +687,10 @@ class Downloader {
         await Promise.all(workers)
         flushMemoryToDisk(true)
         fs.closeSync(fd)
+        
+        if (fs.existsSync(progressPath)) {
+          fs.unlinkSync(progressPath)
+        }
 
         logger.info('Downloader', `[DirectDownloader] 单文件 Range 8 线程断点续传完成: ${savePath}`)
         this.sendProgress({

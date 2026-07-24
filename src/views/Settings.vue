@@ -138,6 +138,7 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
+              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
               <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
               <v-button variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</v-button>
             </div>
@@ -188,6 +189,7 @@
             </div>
             <div class="action-buttons">
               <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
+              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
               <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
               <v-button variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</v-button>
             </div>
@@ -202,6 +204,40 @@
         </div>
       </div>
 
+    </div>
+
+    
+    <!-- Script Management Modal -->
+    <div v-if="managingScriptsFor" class="modal-overlay" @click.self="closeScriptManager">
+      <div class="modal-content" style="max-width: 600px; width: 90vw;">
+        <div class="modal-header">
+          <h3>管理 JS 脚本 - {{ managingScriptsFor.name }}</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="closeScriptManager">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </v-button>
+        </div>
+
+        <div class="modal-body">
+          <div v-if="!currentScripts || currentScripts.length === 0" class="empty-state">
+            暂无已保存的脚本规则。
+          </div>
+          <div v-else class="domain-list">
+            <div v-for="script in currentScripts" :key="script.id" class="domain-group">
+              <div class="domain-title" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;">
+                <span class="domain-name" style="text-align: left; opacity: 0.6; font-size: 11px;">匹配: {{ script.domain }}</span>
+                <span class="domain-name" style="text-align: center;">{{ script.name }} <span style="font-size: 10px; opacity: 0.5;">({{ script.runAt }})</span></span>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openScriptEditor(script)">编辑</v-button>
+                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteScript(script)">删除</v-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Style Management Modal -->
@@ -226,15 +262,9 @@
               <div class="domain-title" style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;">
                 <div></div>
                 <span class="domain-name" style="text-align: center;">{{ domain }}</span>
-                <div style="display: flex; justify-content: flex-end;">
-                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">
-                    删除
-                  </v-button>
-                </div>
-              </div>
-              <div class="rule-item">
-                <div class="rule-content">
-                  <pre class="rule-css" style="white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; margin: 0; color: var(--text-primary);">{{ cssString }}</pre>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openStyleEditor(domain as string, cssString as string)">编辑</v-button>
+                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">删除</v-button>
                 </div>
               </div>
             </div>
@@ -242,15 +272,31 @@
         </div>
       </div>
     </div>
+
+    <SettingsScriptEditor 
+      v-model="scriptEditorVisible" 
+      :script="editingScript" 
+      @save="onSaveScript" 
+    />
+    <SettingsStyleEditor 
+      v-model="styleEditorVisible" 
+      :domain="editingStyleDomain" 
+      :code="editingStyleCode" 
+      @save="onSaveStyle" 
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useSettings } from '../composables/useSettings';
+import { CustomScript, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
 import { logger } from '../services/logger';
-import VButton from '../components/base/VButton.vue';
+import VButton from '../components/base/VButton.vue'
+
+import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
+import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue';
+;
 import VInput from '../components/base/VInput.vue';
 
 const { 
@@ -265,7 +311,7 @@ const {
   saveCmsResources, 
   saveExternalSites, 
   saveCustomStyles 
-} = useSettings();
+, saveCustomScripts } = useSettings();
 const { confirm } = useConfirm();
 
 const newCmsName = ref('');
@@ -451,6 +497,106 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
     }
   } catch (err) {
     logger.error('Settings', 'Drag and drop error: ' + err);
+  }
+};
+
+
+const managingScriptsFor = ref<any>(null);
+const currentScripts = computed(() => {
+  if (!managingScriptsFor.value) return [];
+  return state.customScripts[managingScriptsFor.value.id] || [];
+});
+
+const openScriptManager = (item: any) => {
+  managingScriptsFor.value = item;
+};
+
+const closeScriptManager = () => {
+  managingScriptsFor.value = null;
+};
+
+
+const scriptEditorVisible = ref(false);
+const editingScript = ref<CustomScript | undefined>(undefined);
+
+const openScriptEditor = (script: CustomScript) => {
+  editingScript.value = script;
+  scriptEditorVisible.value = true;
+};
+
+const onSaveScript = (updatedScript: CustomScript) => {
+  const allScripts = { ...state.customScripts };
+  
+  if (editingScript.value) {
+    const oldDomain = editingScript.value.domain;
+    if (allScripts[oldDomain]) {
+      allScripts[oldDomain] = allScripts[oldDomain].filter(s => s.id !== updatedScript.id);
+      if (allScripts[oldDomain].length === 0) {
+        delete allScripts[oldDomain];
+      }
+    }
+  }
+
+  if (!allScripts[updatedScript.domain]) {
+    allScripts[updatedScript.domain] = [];
+  }
+  
+  const existingIdx = allScripts[updatedScript.domain].findIndex(s => s.id === updatedScript.id);
+  if (existingIdx !== -1) {
+    allScripts[updatedScript.domain][existingIdx] = updatedScript;
+  } else {
+    allScripts[updatedScript.domain].push(updatedScript);
+  }
+
+  saveCustomScripts(allScripts);
+  
+};
+
+const styleEditorVisible = ref(false);
+const editingStyleDomain = ref('');
+const editingStyleCode = ref('');
+
+const openStyleEditor = (domain: string, code: string) => {
+  editingStyleDomain.value = domain;
+  editingStyleCode.value = code;
+  styleEditorVisible.value = true;
+};
+
+const onSaveStyle = ({ oldDomain, newDomain, code }: { oldDomain?: string, newDomain: string, code: string }) => {
+  const allStyles = { ...state.customStyles };
+  
+  if (oldDomain && oldDomain !== newDomain) {
+    delete allStyles[oldDomain];
+  }
+  
+  if (code.trim()) {
+    allStyles[newDomain] = { 'default': code };
+  } else {
+    delete allStyles[newDomain];
+  }
+  
+  saveCustomStyles(allStyles);
+  
+};
+
+const deleteScript = async (script: any) => {
+  if (!managingScriptsFor.value) return;
+  const isOk = await confirm({
+    title: '删除脚本',
+    message: `确认删除脚本 "${script.name}" 吗？`,
+    type: 'danger',
+    confirmText: '删除'
+  });
+  
+  if (isOk) {
+    const scriptsObj = { ...state.customScripts };
+    const arr = scriptsObj[managingScriptsFor.value.id] || [];
+    const idx = arr.findIndex((s: any) => s.id === script.id);
+    if (idx !== -1) {
+      arr.splice(idx, 1);
+      scriptsObj[managingScriptsFor.value.id] = arr;
+      await saveCustomScripts(scriptsObj);
+    }
   }
 };
 

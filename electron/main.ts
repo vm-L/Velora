@@ -139,6 +139,18 @@ function createWindow() {
     mainWindow?.webContents.send('window-unmaximized')
   })
 
+  mainWindow.webContents.on('enter-html-full-screen', () => {
+    mainWindow?.setFullScreen(true)
+  })
+
+  mainWindow.webContents.on('leave-html-full-screen', () => {
+    mainWindow?.setFullScreen(false)
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
   ipcMain.on('window-close', async () => {
     const behavior = await storeManager.getSetting('closeBehavior')
     if (behavior === 'tray') {
@@ -292,8 +304,14 @@ function createWindow() {
     try {
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath)
-        return true
       }
+      if (fs.existsSync(filePath + '.velora')) {
+        await fs.promises.unlink(filePath + '.velora')
+      }
+      if (fs.existsSync(filePath + '.ts')) {
+        await fs.promises.unlink(filePath + '.ts')
+      }
+      return true
     } catch (e) {
       logger.error('Main', 'Failed to delete file: ' + e)
     }
@@ -342,7 +360,7 @@ function createWindow() {
       if (isAudioExt) type = 'audio';
       else if (isVideoExt) type = 'video';
 
-      if (type && mainWindow) {
+      if (type && mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('media-sniffed', {
           webContentsId: details.webContentsId,
           url,
@@ -363,7 +381,7 @@ function createWindow() {
       
       // Only inject wildcard CORS if the request comes from the main application window.
       // Webviews (e.g. for Bilibili) have different webContentsId and handle their own CORS.
-      if (mainWindow && details.webContentsId === mainWindow.webContents.id) {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed() && details.webContentsId === mainWindow.webContents.id) {
         for (const key in responseHeaders) {
           if (key.toLowerCase().startsWith('access-control-allow-')) {
             delete responseHeaders[key];
@@ -433,7 +451,7 @@ function createWindow() {
         } catch {}
       }
 
-      if (type && mainWindow) {
+      if (type && mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send('media-sniffed', {
           webContentsId: details.webContentsId,
           url,
@@ -450,7 +468,7 @@ function createWindow() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['*://*/*'] },
     (details, callback) => {
-      if (mainWindow && details.webContentsId === mainWindow.webContents.id) {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed() && details.webContentsId === mainWindow.webContents.id) {
         if (details.resourceType === 'media' || details.resourceType === 'xhr' || details.resourceType === 'fetch') {
           try {
             const origin = new URL(details.url).origin;
@@ -515,6 +533,14 @@ app.on('before-quit', (e) => {
 
 app.on('web-contents-created', (event, contents) => {
   if (contents.getType() === 'webview') {
+    contents.on('enter-html-full-screen', () => {
+      mainWindow?.setFullScreen(true)
+    })
+    
+    contents.on('leave-html-full-screen', () => {
+      mainWindow?.setFullScreen(false)
+    })
+
     contents.setWindowOpenHandler((details) => {
       mainWindow?.webContents.send('webview-new-window', { url: details.url, webContentsId: contents.id })
       return { action: 'deny' }

@@ -30,8 +30,26 @@
 
     <!-- Function Bar -->
     <div class="function-bar">
+      <div class="address-bar-container">
+        <input 
+          type="text" 
+          class="address-bar-input" 
+          v-model="addressInputUrl" 
+          @keyup.enter="handleAddressBarEnter"
+          @focus="handleAddressBarFocus"
+          placeholder="输入网址..." 
+        />
+      </div>
       <div class="func-spacer"></div>
       <div class="func-group">
+        <button class="func-btn" :class="{ 'active': scriptInjectorVisible }" v-tooltip="'注入脚本'" @click="toggleScriptInjector">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
+              font-weight="800" font-size="11" fill="currentColor" stroke="none">JS</text>
+          </svg>
+        </button>
+
         <button class="func-btn" :class="{ 'active': inspectorVisible }" v-tooltip="'注入样式'" @click="toggleInspector">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
             stroke-linecap="round" stroke-linejoin="round">
@@ -112,26 +130,7 @@
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
         </button>
-        <div class="url-opener-container">
-          <button class="func-btn tooltip-left" :class="{ 'active': urlOpenerVisible }" v-tooltip="urlOpenerVisible ? '' : '打开链接'" @click="toggleUrlOpener">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-            </svg>
-          </button>
-          <div v-if="urlOpenerVisible" class="url-opener-backdrop" @click="urlOpenerVisible = false"></div>
-          <div v-if="urlOpenerVisible" class="url-opener-dropdown">
-            <input 
-              type="text" 
-              v-model="urlInput" 
-              placeholder="输入网址，如 https://bilibili.com" 
-              @keyup.enter="handleOpenUrl" 
-              ref="urlInputRef"
-            />
-            <button class="open-btn" @click="handleOpenUrl">打开</button>
-          </div>
-        </div>
-        <div class="func-divider"></div>
+        
         <button class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
@@ -148,7 +147,7 @@
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
         :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
         @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
-        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)"
+        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate" @did-navigate-in-page="onDidNavigate"
         @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
       </webview>
     </div>
@@ -160,6 +159,11 @@
     <!-- Video Player Dialog -->
     <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" @close="activeVideoPreview = null"
       @download="onDownloadVideo" />
+
+    <!-- Script Injector Dialog -->
+    <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="activeTab?.url || ''"
+      :scripts="settingsState.customScripts[resourceId] || []" @executeScript="onExecuteScript" @save="onSaveScript"
+      @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Inspector Dialog -->
     <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
@@ -211,6 +215,7 @@ import { useSettings } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
 
 import InspectorDialog from '../features/InspectorDialog.vue';
+import ScriptInjectorDialog from '../features/ScriptInjectorDialog.vue';
 import SnifferDropdown from '../features/SnifferDropdown.vue';
 import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
@@ -229,7 +234,7 @@ const props = defineProps<{
 
 const { showMessage } = useMessage();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveExternalSites, saveCmsResources } = useSettings();
+const { state: settingsState, saveCustomStyles, saveCustomScripts, saveExternalSites, saveCmsResources } = useSettings();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -449,6 +454,8 @@ const onDomReady = async (tabId: string) => {
       }
     });
 
+    refreshWebviewScripts(tabId, 'dom-ready');
+
     const clickScript = `
       (function() {
         if (window.__clickInjected) return;
@@ -477,6 +484,7 @@ const matchPattern = (pattern: string, url: string) => {
 const onLoadCommit = async (event: any, tabId: string) => {
   if (event.isMainFrame) {
     refreshWebviewStyles(tabId);
+    refreshWebviewScripts(tabId, 'document-start');
   }
 };
 
@@ -574,8 +582,14 @@ const onStartLoading = (tabId: string) => {
   }
 };
 
+
+const onDidNavigate = () => {
+  syncAddressBar();
+};
+
 const onStopLoading = (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
+  refreshWebviewScripts(tabId, 'document-end');
 };
 
 const onTitleUpdated = (event: any, tabId: string) => {
@@ -593,7 +607,7 @@ const onFaviconUpdated = async (event: any, tabId: string) => {
     let updated = false;
     const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
 
-    if (isExt && (isExt.iconOriginalUrl !== faviconUrl || !isExt.icon || isExt.icon.length < 50)) {
+    if (isExt && (!isExt.icon || isExt.icon.length < 50)) {
       const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
       if (base64) {
         isExt.icon = base64;
@@ -605,7 +619,7 @@ const onFaviconUpdated = async (event: any, tabId: string) => {
 
     if (!updated) {
       const isCms = settingsState.cmsResources.find(r => r.id === props.resourceId);
-      if (isCms && (isCms.iconOriginalUrl !== faviconUrl || !isCms.icon || isCms.icon.length < 50)) {
+      if (isCms && (!isCms.icon || isCms.icon.length < 50)) {
         const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
         if (base64) {
           isCms.icon = base64;
@@ -643,42 +657,39 @@ const onDevTools = () => {
   if (wv) wv.openDevTools();
 };
 
-const urlOpenerVisible = ref(false);
-const urlInput = ref('');
-const urlInputRef = ref<HTMLInputElement | null>(null);
+const addressInputUrl = ref('');
 
-const toggleUrlOpener = async () => {
-  if (urlOpenerVisible.value) {
-    urlOpenerVisible.value = false;
-    return;
-  }
-  await deactivateOtherFeatures('url');
-  urlOpenerVisible.value = true;
-  if (urlOpenerVisible.value) {
-    const wv = activeWebview();
-    urlInput.value = wv && wv.getURL ? wv.getURL() : (activeTab.value?.url || '');
-    setTimeout(() => {
-      urlInputRef.value?.focus();
-      urlInputRef.value?.select();
-    }, 50);
+const syncAddressBar = () => {
+  const wv = activeWebview();
+  if (wv && wv.getURL) {
+    addressInputUrl.value = wv.getURL();
+  } else if (activeTab.value?.url) {
+    addressInputUrl.value = activeTab.value.url;
   }
 };
 
-const handleOpenUrl = () => {
-  if (!urlInput.value.trim()) return;
-  let targetUrl = urlInput.value.trim();
-  if (!/^https?:\/\//i.test(targetUrl) && !targetUrl.startsWith('velora://')) {
-    targetUrl = 'https://' + targetUrl;
+const handleAddressBarFocus = (e: FocusEvent) => {
+  (e.target as HTMLInputElement).select();
+};
+
+const handleAddressBarEnter = () => {
+  if (!addressInputUrl.value) return;
+  let url = addressInputUrl.value.trim();
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
   }
+  addressInputUrl.value = url;
   
   const wv = activeWebview();
   if (wv && wv.loadURL) {
-    wv.loadURL(targetUrl);
-  } else if (activeTab.value) {
-    activeTab.value.url = targetUrl;
+    wv.loadURL(url);
   }
-  urlOpenerVisible.value = false;
 };
+
+watch(() => workspace.value?.activeTabId, () => {
+  setTimeout(syncAddressBar, 50);
+});
+
 
 
 
@@ -771,16 +782,97 @@ const onDownloadVideo = (url: string) => {
 // Element Picker Logic
 const inspectorVisible = ref(false);
 
+const scriptInjectorVisible = ref(false);
+
+const toggleScriptInjector = async () => {
+  if (scriptInjectorVisible.value) {
+    scriptInjectorVisible.value = false;
+  } else {
+    await deactivateOtherFeatures('js');
+    scriptInjectorVisible.value = true;
+  }
+};
+
+const onExecuteScript = async (code: string) => {
+  const webview = activeWebview();
+  if (webview && code) {
+    try {
+      await webview.executeJavaScript(code);
+    } catch (e) {
+      console.error('JS Execute Error:', e);
+    }
+  }
+};
+
+const onSaveScript = async (script: any) => {
+  if (!script.domain || !script.code) return;
+  const currentScripts = { ...settingsState.customScripts };
+  if (!currentScripts[props.resourceId]) {
+    currentScripts[props.resourceId] = [];
+  }
+  
+  const targetArray = currentScripts[props.resourceId];
+  const idx = targetArray.findIndex((s: any) => s.domain === script.domain && s.name === script.name);
+  if (!script.id) {
+    script.id = Date.now().toString();
+  }
+  
+  if (idx !== -1) {
+    targetArray[idx] = script;
+  } else {
+    targetArray.push(script);
+  }
+  
+  await saveCustomScripts(currentScripts);
+  showMessage('脚本保存成功', 'success');
+};
+
+const refreshWebviewScripts = async (tabId: string, runAt: string) => {
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) return;
+  try {
+    const urlStr = webview.getURL();
+    const scriptsArr = settingsState.customScripts[props.resourceId] || [];
+    
+    for (const script of scriptsArr) {
+      if (script.runAt !== runAt) continue;
+      
+      let isMatch = false;
+      const pattern = script.domain;
+      if (!pattern.includes('*') && !pattern.includes('/')) {
+        try {
+          isMatch = new URL(urlStr).hostname.endsWith(pattern);
+        } catch(e){}
+      } else if (pattern.startsWith('*://') && pattern.endsWith('/*')) {
+        const domainMatch = pattern.replace('*://', '').replace('/*', '');
+        try {
+          const host = new URL(urlStr).hostname;
+          isMatch = host.endsWith(domainMatch.replace('*.', ''));
+        } catch(e){}
+      } else {
+        const regexStr = pattern.replace(/\*/g, '.*').replace(/\//g, '\/');
+        const regex = new RegExp(`^${regexStr}$`);
+        isMatch = regex.test(urlStr);
+      }
+      
+      if (isMatch && script.code) {
+        await webview.executeJavaScript(script.code);
+      }
+    }
+  } catch(e) {}
+};
+
+
 const isInteracting = ref(false);
 const isPickingElementImage = ref(false);
 const isPickingElementText = ref(false);
 
 const deactivateOtherFeatures = async (exclude: string) => {
+  if (exclude !== 'js' && scriptInjectorVisible.value) {
+    scriptInjectorVisible.value = false;
+  }
   if (exclude !== 'css' && inspectorVisible.value) {
     inspectorVisible.value = false;
-  }
-  if (exclude !== 'url' && urlOpenerVisible.value) {
-    urlOpenerVisible.value = false;
   }
   const webview = activeWebview();
   if (exclude !== 'image' && isPickingElementImage.value) {
@@ -1290,4 +1382,32 @@ const onSaveRules = async (domain: string, cssString: string) => {
 .url-opener-dropdown .open-btn:hover {
   background: var(--border-color);
 }
+
+.address-bar-container {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 400px;
+  min-width: 200px;
+  margin-left: 12px;
+}
+.address-bar-input {
+  width: 100%;
+  height: 28px;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+.address-bar-input:focus {
+  background: var(--bg-surface);
+  border-color: var(--color-accent);
+  /* Use a safe shadow fallback just in case RGB variable is missing */
+  box-shadow: 0 0 0 2px rgba(100, 100, 100, 0.2);
+}
+
 </style>

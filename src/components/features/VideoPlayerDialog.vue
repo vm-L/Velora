@@ -2,9 +2,10 @@
   <Teleport to="body">
     <div v-if="url" class="video-player-dialog"
       :style="{ top: position.y + 'px', left: position.x + 'px', width: size.w + 'px', height: size.h + 'px', zIndex }"
-      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isFullscreen }">
+      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isInAppFullscreen, 'hide-cursor': !showControls && isPlaying }"
+      @mousemove="onMouseMove" @mouseleave="onMouseLeave">
     
-    <div class="dialog-header" @mousedown="startDrag" v-show="!isFullscreen || showControls">
+    <div class="dialog-header" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls">
       <div class="header-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -29,7 +30,7 @@
       </div>
     </div>
 
-    <div class="dialog-content" @mousemove="onMouseMove" @mouseleave="onMouseLeave">
+    <div class="dialog-content">
       <div class="video-container" @click="togglePlay" @dblclick="toggleFullscreen">
         <video ref="videoRef" autoplay referrerpolicy="no-referrer"
           @timeupdate="onTimeUpdate" 
@@ -44,7 +45,7 @@
         ></video>
       </div>
       
-      <div class="player-controls-overlay" :class="{ 'show-controls': showControls || !isPlaying }">
+      <div class="player-controls-overlay" :class="{ 'show-controls': showControls || !isPlaying }" @mouseenter="onControlsEnter" @mouseleave="onControlsLeave">
         <div class="progress-container">
           <input type="range" class="progress-bar" min="0" :max="duration || 100" step="0.1" :value="currentTime" @input="onSeek" @change="onSeekEnd" @mousedown="isDragging = true" />
         </div>
@@ -96,7 +97,19 @@
                 <rect x="12" y="12" width="7" height="5" rx="1" ry="1"></rect>
               </svg>
             </button>
-            <button class="ctrl-btn" @click="toggleFullscreen" title="全屏">
+            <!-- In-App Fullscreen Button -->
+            <button class="ctrl-btn" @click="toggleInAppFullscreen" title="应用内全屏">
+              <svg v-if="!isInAppFullscreen" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              </svg>
+              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="5" y="5" width="14" height="14" rx="1" ry="1"></rect>
+                <line x1="2" y1="2" x2="22" y2="22"></line>
+              </svg>
+            </button>
+            
+            <!-- True Fullscreen Button -->
+            <button class="ctrl-btn" @click="toggleFullscreen" title="系统级全屏">
               <svg v-if="!isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15 3 21 3 21 9"></polyline>
                 <polyline points="9 21 3 21 3 15"></polyline>
@@ -115,13 +128,13 @@
       </div>
     </div>
     
-    <div class="resize-handle" @mousedown.stop="startResize" v-if="!isFullscreen"></div>
+    <div class="resize-handle" @mousedown.stop="startResize" v-if="!isFullscreen && !isInAppFullscreen"></div>
   </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { logger } from '../../services/logger';
 
 const props = defineProps<{
@@ -156,13 +169,16 @@ const volume = ref(1);
 const isMuted = ref(false);
 const isDragging = ref(false);
 const isFullscreen = ref(false);
-const showControls = ref(true);
+const isInAppFullscreen = ref(false);
+const showControls = ref(false);
 const showVolume = ref(false);
 const isPip = ref(false);
 const supportsPip = ref(false);
 
 let hls: any = null;
+
 let controlsTimeout: number | null = null;
+const isHoveringControls = ref(false);
 
 const onMouseMove = () => {
   showControls.value = true;
@@ -170,19 +186,33 @@ const onMouseMove = () => {
 };
 
 const onMouseLeave = () => {
-  if (isPlaying.value) {
+  if (isPlaying.value && !isDragging.value) {
     showControls.value = false;
   }
 };
 
+const onControlsEnter = () => {
+  isHoveringControls.value = true;
+  if (controlsTimeout) clearTimeout(controlsTimeout);
+  showControls.value = true;
+};
+
+const onControlsLeave = () => {
+  isHoveringControls.value = false;
+  resetControlsTimeout();
+};
+
 const resetControlsTimeout = () => {
   if (controlsTimeout) clearTimeout(controlsTimeout);
+  if (isHoveringControls.value) return;
   controlsTimeout = window.setTimeout(() => {
-    if (isPlaying.value) {
+    if (isPlaying.value && !isHoveringControls.value && !isDragging.value) {
       showControls.value = false;
     }
-  }, 2000);
+  }, 200);
 };
+
+
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
@@ -303,7 +333,7 @@ watch(() => props.url, (newUrl) => {
 
 
 const startDrag = (e: MouseEvent) => {
-  if (isFullscreen.value) return;
+  if (isFullscreen.value || isInAppFullscreen.value) return;
   isDraggingWindow.value = true;
   startPos = { x: position.value.x, y: position.value.y };
   startMouse = { x: e.clientX, y: e.clientY };
@@ -328,7 +358,7 @@ const stopDrag = () => {
 };
 
 const startResize = (e: MouseEvent) => {
-  if (isFullscreen.value) return;
+  if (isFullscreen.value || isInAppFullscreen.value) return;
   isResizing.value = true;
   startSize = { w: size.value.w, h: size.value.h };
   startMouse = { x: e.clientX, y: e.clientY };
@@ -435,9 +465,25 @@ const onVideoError = (e: Event) => {
   }
 };
 
-const toggleFullscreen = () => {
+
+const toggleInAppFullscreen = () => {
   if (!dialogRef.value) return;
-  isFullscreen.value = !isFullscreen.value;
+  isInAppFullscreen.value = !isInAppFullscreen.value;
+};
+
+const toggleFullscreen = async () => {
+  if (!dialogRef.value) return;
+  try {
+    if (!document.fullscreenElement) {
+      await dialogRef.value.requestFullscreen();
+      isFullscreen.value = true;
+    } else {
+      await document.exitFullscreen();
+      isInAppFullscreen.value = false;
+    }
+  } catch (err) {
+    console.error("Fullscreen error", err);
+  }
 };
 
 const togglePip = async () => {
@@ -465,7 +511,7 @@ const formatTime = (secs: number) => {
 };
 
 const close = () => {
-  if (isFullscreen.value) isFullscreen.value = false;
+  if (isFullscreen.value) document.exitFullscreen().catch(()=>{}); isInAppFullscreen.value = false;
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{});
   if (videoRef.value) {
     videoRef.value.pause();
@@ -483,9 +529,14 @@ const downloadVideo = () => {
   }
 };
 
+const handleFullscreenChange = () => {
+  isFullscreen.value = !!document.fullscreenElement;
+};
+
 onMounted(() => {
   logger.info('VideoPreview', 'onMounted called!');
   document.addEventListener('keydown', handleKeydown);
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
   
   if (props.url) {
     bringToFront();
@@ -502,14 +553,18 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
   if (hls) {
     hls.destroy();
   }
 });
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && isFullscreen.value) {
-    isFullscreen.value = false;
+  if (e.key === 'Escape' && (isFullscreen.value || isInAppFullscreen.value)) {
+    if (document.fullscreenElement) {
+       document.exitFullscreen().catch(()=>{});
+    }
+    isInAppFullscreen.value = false;
   }
 };
 
@@ -527,6 +582,13 @@ const handleKeydown = (e: KeyboardEvent) => {
   overflow: hidden;
   color: var(--text-primary);
   transition: width 0.1s, height 0.1s;
+  
+  &.hide-cursor {
+    cursor: none !important;
+    * {
+      cursor: none !important;
+    }
+  }
   
   &.is-fullscreen {
     top: 0 !important;

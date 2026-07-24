@@ -197,7 +197,6 @@ import { useRoute } from 'vue-router'
 import { useSettings } from '../composables/useSettings'
 import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
-import { useOpenedCMS } from '../composables/useOpenedCMS'
 import { logger } from '../services/logger'
 import VButton from '../components/base/VButton.vue'
 import SaveMediaDialog from '../components/features/SaveMediaDialog.vue'
@@ -443,7 +442,7 @@ onMounted(async () => {
 onUnmounted(() => {
   destroyPlayer()
   if (window.electronAPI) {
-    window.electronAPI.offMediaSniffed(handleMediaSniffed);
+    window.electronAPI.offMediaSniffed();
   }
 })
 

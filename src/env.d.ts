@@ -20,6 +20,7 @@ interface Window {
     onWebviewNewWindow: (callback: (data: { url: string, webContentsId: number }) => void) => void
     onMediaSniffed: (callback: (data: any) => void) => void
   offMediaSniffed: () => void
+    getServerPort: () => Promise<number>
     copyImage: (url: string) => Promise<boolean>
     fetchImageBase64: (url: string) => Promise<string | null>
     fetchUrl: (url: string) => Promise<any>
@@ -44,3 +45,5 @@ declare global {
     __SERVER_PORT__?: number;
   }
 }
+
+declare var __SERVER_PORT__: number | undefined;

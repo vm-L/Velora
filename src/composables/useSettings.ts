@@ -20,8 +20,17 @@ export const state = reactive({
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
+  customScripts: {} as Record<string, CustomScript[]>,
   loaded: false
 })
+
+export interface CustomScript {
+  id: string;
+  name: string;
+  domain: string;
+  code: string;
+  runAt: 'document-start' | 'dom-ready' | 'document-end';
+}
 
 export const useSettings = () => {
   const loadSettings = async () => {
@@ -36,6 +45,7 @@ export const useSettings = () => {
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
+    state.customScripts = (await window.electronAPI.getSetting('customScripts')) || {}
     state.loaded = true
   }
 
@@ -94,6 +104,12 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customStyles', JSON.parse(JSON.stringify(styles)))
   }
 
+  
+  const saveCustomScripts = async (scripts: Record<string, CustomScript[]>) => {
+    state.customScripts = scripts
+    await window.electronAPI.setSetting('customScripts', JSON.parse(JSON.stringify(scripts)))
+  }
+
   return { 
     state, 
     loadSettings, 
@@ -107,6 +123,7 @@ export const useSettings = () => {
     saveMaxMemoryBufferMB,
     saveCmsResources, 
     saveExternalSites, 
-    saveCustomStyles 
+    saveCustomStyles,
+    saveCustomScripts 
   }
 }

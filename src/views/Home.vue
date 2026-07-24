@@ -173,7 +173,7 @@
                 <span class="meta-divider">•</span>
                 <span class="segments-text">{{ task.downloadedSegments || 0 }}/{{ task.totalSegments }} 分片</span>
               </template>
-              <template v-if="(task.status === 'downloading' || task.status === 'processing' || task.status === 'resolving') && task.speed > 0">
+              <template v-if="(task.status === 'downloading' || task.status === 'processing' || task.status === 'resolving')">
                 <span class="meta-divider">•</span>
                 <span v-if="task.status === 'resolving'">解析中...</span>
                 <span v-else-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
@@ -515,6 +515,7 @@ const getDirectory = (savePath: string) => {
 };
 
 const formatETA = (total: number, received: number, speed: number) => {
+  if (speed === 0 && received > 0) return 'N/A';
   if (!speed || !total) return '计算中...';
   const remaining = total - received;
   if (remaining <= 0) return '即将完成';

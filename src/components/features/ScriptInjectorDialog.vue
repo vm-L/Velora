@@ -1,0 +1,450 @@
+<template>
+  <div v-if="modelValue" class="inspector-dialog" :style="{ top: position.y + 'px', left: position.x + 'px' }">
+    <div class="inspector-header" @mousedown="startDrag">
+      <div class="header-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+        JS 注入器
+      </div>
+      <div class="header-actions">
+        <button class="action-btn close-btn" @click="close" title="关闭">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="inspector-content">
+      <div class="inspector-content-inner">
+        <div class="inspector-body">
+          <div class="info-row domain-info" style="align-items: center;">
+            <span class="label">匹配规则</span>
+            <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
+              <v-input v-model="currentScript.domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
+              <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
+                <v-button variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史脚本 ▼</v-button>
+                <div v-if="dropdownOpen" class="dropdown-menu">
+                  <div v-if="!scripts || scripts.length === 0" class="dropdown-empty">暂无保存的脚本</div>
+                  <div v-for="script in scripts" :key="script.id" class="dropdown-item">
+                    <span class="dropdown-text" @click="loadScript(script)">{{ script.name || script.domain }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="info-row" style="align-items: center;">
+            <span class="label">脚本名称</span>
+            <v-input v-model="currentScript.name" class="value-input" style="flex: 1; margin-left: 12px; font-size: 12px; padding: 4px 6px;" placeholder="例如: 屏蔽广告" />
+          </div>
+          
+          <div class="info-row" style="align-items: center;">
+            <span class="label">执行时机</span>
+            <select v-model="currentScript.runAt" class="value-input" style="flex: 1; margin-left: 12px; font-size: 12px; padding: 4px 6px; background: transparent;">
+              <option value="document-start">document-start (尽早)</option>
+              <option value="dom-ready">dom-ready (DOM加载完毕)</option>
+              <option value="document-end">document-end (资源加载完毕)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1;">
+            <div class="label-row" style="margin-bottom: 8px;">
+              <label>自定义 JS 脚本</label>
+              <v-button variant="text" class="text-btn" @click="updatePreview">▶ 立刻执行一次测试</v-button>
+            </div>
+            <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-surface); min-height: 230px; display: flex; flex-direction: column;">
+              <!-- CodeMirror will attach here -->
+            </div>
+          </div>
+        </div>
+
+        <div class="inspector-footer">
+          <v-button variant="secondary" class="btn" @click="close">取消</v-button>
+          <v-button variant="primary" class="btn" @click="save">保存脚本</v-button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, nextTick, reactive } from 'vue';
+import VButton from '../base/VButton.vue';
+import VInput from '../base/VInput.vue';
+import { EditorView, basicSetup } from 'codemirror';
+import { javascript } from '@codemirror/lang-javascript';
+import { EditorState } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { defaultKeymap, indentWithTab } from '@codemirror/commands';
+import type { CustomScript } from '../../composables/useSettings';
+
+const props = defineProps<{
+  modelValue: boolean;
+  url?: string;
+  scripts?: CustomScript[];
+}>();
+
+const emit = defineEmits(['update:modelValue', 'executeScript', 'save', 'interaction-start', 'interaction-end']);
+
+const dropdownOpen = ref(false);
+const position = ref({ x: 100, y: 100 });
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+const editorContainer = ref<HTMLElement | null>(null);
+let editorView: EditorView | null = null;
+
+const currentScript = reactive<Omit<CustomScript, 'id'>>({
+  name: '',
+  domain: '',
+  code: '',
+  runAt: 'dom-ready'
+});
+
+const closeDropdown = () => { dropdownOpen.value = false; };
+
+const vClickOutside = {
+  mounted(el: any, binding: any) {
+    el.clickOutsideEvent = function (event: Event) {
+      if (!(el == event.target || el.contains(event.target))) {
+        binding.value(event, el);
+      }
+    };
+    document.body.addEventListener('click', el.clickOutsideEvent);
+  },
+  unmounted(el: any) {
+    document.body.removeEventListener('click', el.clickOutsideEvent);
+  }
+};
+
+const updatePreview = () => {
+  if (currentScript.code) {
+    emit('executeScript', currentScript.code);
+  }
+};
+
+const initEditor = (initialContent: string) => {
+  if (editorView) {
+    editorView.destroy();
+  }
+  if (!editorContainer.value) return;
+
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged) {
+      currentScript.code = update.state.doc.toString();
+    }
+  });
+
+  editorView = new EditorView({
+    state: EditorState.create({
+      doc: initialContent,
+      extensions: [
+        basicSetup,
+        javascript(),
+        keymap.of([indentWithTab, ...defaultKeymap]),
+        updateListener,
+        EditorView.theme({
+          "&": { flex: 1, fontSize: "12px", fontFamily: "ui-monospace, monospace" },
+          ".cm-scroller": { overflow: "auto" }
+        })
+      ]
+    }),
+    parent: editorContainer.value
+  });
+};
+
+watch(() => props.modelValue, async (newVal) => {
+  if (newVal) {
+    let initialDomain = '*://*/*';
+    try {
+      if (props.url) {
+        const urlObj = new URL(props.url);
+        const host = urlObj.hostname.replace(/^www\./, '');
+        initialDomain = `*://*.${host}${urlObj.pathname}`;
+      }
+    } catch (e) {}
+
+    currentScript.domain = initialDomain;
+    currentScript.name = '';
+    currentScript.code = '';
+    currentScript.runAt = 'dom-ready';
+    dropdownOpen.value = false;
+
+    // 默认打开新的空白脚本，不自动加载历史脚本
+
+    const dialogW = 420;
+    const dialogH = 480;
+    const sidebarW = 220;
+    const titlebarH = 32;
+    position.value = {
+      x: sidebarW + (window.innerWidth - sidebarW - dialogW) / 2 + 30,
+      y: titlebarH + (window.innerHeight - titlebarH - dialogH) / 2 + 30
+    };
+
+    await nextTick();
+    initEditor(currentScript.code);
+  } else {
+    if (editorView) {
+      editorView.destroy();
+      editorView = null;
+    }
+  }
+});
+
+const loadScript = (script: CustomScript) => {
+  currentScript.domain = script.domain;
+  currentScript.name = script.name;
+  currentScript.code = script.code;
+  currentScript.runAt = script.runAt;
+  dropdownOpen.value = false;
+  if (editorView) {
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: script.code }
+    });
+  }
+};
+
+const save = () => {
+  emit('save', { ...currentScript });
+  emit('update:modelValue', false);
+};
+
+const close = () => {
+  emit('update:modelValue', false);
+};
+
+const startDrag = (e: MouseEvent) => {
+  if ((e.target as HTMLElement).closest('.action-btn')) return;
+  isDragging = true;
+  dragOffset.x = e.clientX - position.value.x;
+  dragOffset.y = e.clientY - position.value.y;
+  emit('interaction-start');
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', stopDrag);
+};
+
+const onDrag = (e: MouseEvent) => {
+  if (!isDragging) return;
+  let newX = e.clientX - dragOffset.x;
+  let newY = e.clientY - dragOffset.y;
+  const dialogW = 420;
+  const dialogH = 480;
+  if (newX < 0) newX = 0;
+  if (newY < 0) newY = 0;
+  if (newX + dialogW > window.innerWidth) newX = window.innerWidth - dialogW;
+  if (newY + dialogH > window.innerHeight) newY = window.innerHeight - dialogH;
+  position.value = { x: newX, y: newY };
+};
+
+const stopDrag = () => {
+  isDragging = false;
+  emit('interaction-end');
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+};
+</script>
+
+<style scoped>
+/* Inherit standard styles from InspectorDialog */
+.inspector-dialog {
+  position: fixed;
+  width: 420px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.inspector-header {
+  height: 36px;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  cursor: move;
+  user-select: none;
+}
+
+.header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.action-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.action-btn.close-btn:hover {
+  background: var(--color-error, #ef4444);
+  color: white;
+}
+
+.inspector-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-content-inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  width: 55px;
+  flex-shrink: 0;
+}
+
+.value-input {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  outline: none;
+  color: var(--text-primary);
+}
+
+.value-input:focus {
+  border-color: var(--color-accent);
+}
+
+.mono-input {
+  font-family: ui-monospace, monospace;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.label-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.text-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.text-btn:hover {
+  background: var(--bg-surface-active);
+}
+
+.inspector-footer {
+  padding: 12px 16px;
+  background: var(--bg-surface-hover);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Dropdown */
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  min-width: 150px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.dropdown-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-surface-hover);
+}
+
+.dropdown-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>
