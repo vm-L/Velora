@@ -281,7 +281,19 @@ const loadVideo = async () => {
           }
         });
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
+          let maxLevel = -1;
+          let maxBitrate = -1;
+          for (let i = 0; i < data.levels.length; i++) {
+            if (data.levels[i].bitrate > maxBitrate) {
+              maxBitrate = data.levels[i].bitrate;
+              maxLevel = i;
+            }
+          }
+          if (maxLevel !== -1 && hls) {
+            hls.currentLevel = maxLevel;
+            logger.info('VideoPreview', `Locked to highest HLS quality level ${maxLevel} (${maxBitrate} bps)`);
+          }
           video.play().catch(() => {});
         });
 

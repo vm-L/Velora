@@ -399,7 +399,19 @@ const handleMediaSniffed = (data: { url: string, type: string, timestamp: number
             hlsInstance = new Hls({ autoStartLoad: true, startPosition: -1 });
             hlsInstance.loadSource(data.url);
             hlsInstance.attachMedia(videoPlayer.value!);
-            hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
+              let maxLevel = -1;
+              let maxBitrate = -1;
+              for (let i = 0; i < data.levels.length; i++) {
+                if (data.levels[i].bitrate > maxBitrate) {
+                  maxBitrate = data.levels[i].bitrate;
+                  maxLevel = i;
+                }
+              }
+              if (maxLevel !== -1 && hlsInstance) {
+                hlsInstance.currentLevel = maxLevel;
+                logger.info('VideoDetail', `Locked to highest HLS quality level ${maxLevel} (${maxBitrate} bps)`);
+              }
               videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e));
             });
           }

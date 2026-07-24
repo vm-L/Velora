@@ -40,20 +40,30 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
   // 处理 Master Playlist 嵌套
   if (text.includes('#EXT-X-STREAM-INF')) {
     const lines = text.split('\n')
-    let subPlaylistUrl = ''
+    let highestBandwidth = -1
+    let bestSubPlaylistUrl = ''
+    
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
       if (line.startsWith('#EXT-X-STREAM-INF')) {
         const nextLine = lines[i + 1]?.trim()
         if (nextLine && !nextLine.startsWith('#')) {
-          subPlaylistUrl = resolveUrl(playlistUrl, nextLine)
-          break
+          let bandwidth = 0
+          const bwMatch = line.match(/BANDWIDTH=(\d+)/)
+          if (bwMatch) {
+            bandwidth = parseInt(bwMatch[1], 10)
+          }
+          
+          if (bandwidth > highestBandwidth) {
+            highestBandwidth = bandwidth
+            bestSubPlaylistUrl = resolveUrl(playlistUrl, nextLine)
+          }
         }
       }
     }
-    if (subPlaylistUrl) {
-      logger.info('Downloader', `[M3U8Parser] 发现 Master Playlist，转向二级子列表: ${subPlaylistUrl}`)
-      return parseM3U8(subPlaylistUrl, originHeaders)
+    if (bestSubPlaylistUrl) {
+      logger.info('Downloader', `[M3U8Parser] 发现 Master Playlist，已自动选择最高清晰度 (Bandwidth: ${highestBandwidth}) 转向二级子列表: ${bestSubPlaylistUrl}`)
+      return parseM3U8(bestSubPlaylistUrl, originHeaders)
     }
   }
 
