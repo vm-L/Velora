@@ -106,12 +106,12 @@
       <!-- CMS Resources -->
       <div class="settings-section-title">CMS 资源</div>
       <div class="settings-card">
-        <div v-for="(item, index) in state.cmsResources" :key="item.id" class="settings-row" draggable="true"
-          @dragstart="onDragStart($event, 'cms', index)" @dragover.prevent @dragenter.prevent
+        <div v-for="(item, index) in state.cmsResources" :key="item.id" class="settings-row"
+          @dragover.prevent @dragenter.prevent
           @drop="onDrop($event, 'cms', index)">
 
-          <div class="drag-handle" title="拖动排序">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"
+          <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'cms', index)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="8" y1="6" x2="21" y2="6"></line>
               <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -155,12 +155,12 @@
       <!-- Website Resources (Formerly External Sites) -->
       <div class="settings-section-title">网站资源</div>
       <div class="settings-card">
-        <div v-for="(item, index) in state.externalSites" :key="item.id" class="settings-row" draggable="true"
-          @dragstart="onDragStart($event, 'ext', index)" @dragover.prevent @dragenter.prevent
+        <div v-for="(item, index) in state.externalSites" :key="item.id" class="settings-row"
+          @dragover.prevent @dragenter.prevent
           @drop="onDrop($event, 'ext', index)">
 
-          <div class="drag-handle" title="拖动排序">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"
+          <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'ext', index)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="8" y1="6" x2="21" y2="6"></line>
               <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -341,7 +341,17 @@ const addCmsResource = () => {
   newCmsUrl.value = 'https://';
 };
 
-const removeCmsResource = (index: number) => {
+const removeCmsResource = async (index: number) => {
+  const resource = state.cmsResources[index];
+  const confirmed = await confirm({
+    title: '删除资源',
+    message: `确定要删除 CMS 资源 "${resource.name}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
   const resources = [...state.cmsResources];
   resources.splice(index, 1);
   saveCmsResources(resources);
@@ -360,7 +370,17 @@ const addExternalSite = () => {
   newExtUrl.value = 'https://';
 };
 
-const removeExternalSite = (index: number) => {
+const removeExternalSite = async (index: number) => {
+  const site = state.externalSites[index];
+  const confirmed = await confirm({
+    title: '删除站点',
+    message: `确定要删除外部站点 "${site.name}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
   const sites = [...state.externalSites];
   sites.splice(index, 1);
   saveExternalSites(sites);
@@ -396,6 +416,13 @@ const onDragStart = (e: DragEvent, type: 'cms' | 'ext', index: number) => {
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify({ type, index }));
+    const target = e.target as HTMLElement;
+    if (target && target.closest) {
+      const row = target.closest('.settings-row');
+      if (row) {
+        e.dataTransfer.setDragImage(row, 20, 20);
+      }
+    }
   }
 };
 
@@ -533,11 +560,26 @@ const deleteDomainStyle = async (domain: string) => {
 }
 
 .drag-handle {
-  cursor: inherit;
+  cursor: grab;
   margin-right: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.drag-handle:hover {
+  background: var(--bg-surface-active);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+  transform: scale(0.95);
 }
 
 .drag-handle svg {
