@@ -327,7 +327,9 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(process.env.DIST, 'index.html'))
   }
-  mainWindow.webContents.openDevTools()
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools()
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
