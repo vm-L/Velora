@@ -83,10 +83,9 @@
       </div>
 
       <div v-else class="task-list">
-
         <div v-for="task in sortedTasks" :key="task.id" class="task-card"
           :class="{ 'is-selected': selectedTasks.includes(task.id) }" @mousedown="startSelection(task.id, $event)"
-          @mouseenter="enterSelection(task.id)">
+          @mouseenter="enterSelection(task.id)" @dblclick="openTask(task)">
           <div class="task-checkbox" @click.stop>
             <v-checkbox :value="task.id" v-model="selectedTasks" />
           </div>
@@ -106,7 +105,6 @@
                 <line x1="2" y1="7" x2="7" y2="7"></line>
                 <line x1="2" y1="17" x2="7" y2="17"></line>
                 <line x1="17" y1="17" x2="22" y2="17"></line>
-                <line x1="17" y1="7" x2="22" y2="7"></line>
               </svg>
               <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
@@ -119,6 +117,7 @@
             <div class="task-header">
               <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
+                <!-- 正在下载/处理/等待：暂停 -->
                 <VButton v-if="['downloading', 'processing', 'resolving', 'waiting'].includes(task.status)" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -126,13 +125,25 @@
                     <rect x="14" y="4" width="4" height="16"></rect>
                   </svg>
                 </VButton>
-                <VButton v-slot:icon v-if="['paused', 'error', 'file_removed', 'file_corrupted'].includes(task.status)" variant="icon-secondary" title="继续"
+                <!-- 暂停状态：继续下载（下载矢量箭头图标） -->
+                <VButton v-else-if="task.status === 'paused'" variant="icon-secondary" title="继续下载"
                   @click.stop="resumeTask(task.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                 </VButton>
-                <v-button v-if="task.status === 'completed'" variant="icon-secondary" title="预览/打开文件" @click.stop="openTask(task)">
+                <!-- 错误/文件已移除状态：重新下载/重试（环形刷新/重试图标） -->
+                <VButton v-else-if="['error', 'file_removed', 'file_corrupted'].includes(task.status)" variant="icon-secondary" :title="task.status === 'file_removed' ? '重新下载' : '重试'"
+                  @click.stop="resumeTask(task.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                </VButton>
+                <!-- 已完成状态：播放/预览（向右三角形播放图标） -->
+                <v-button v-else-if="task.status === 'completed'" variant="icon-secondary" title="播放/预览" @click.stop="openTask(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
@@ -430,6 +441,13 @@ const openTask = async (task: any) => {
       return;
     }
 
+    if (task.status === 'file_removed' || task.status === 'file_corrupted') {
+      task.status = 'completed';
+      task.progress = 100;
+      await updateTaskDb(task);
+      showMessage('已识别到本地文件，状态恢复为已完成', 'success');
+    }
+
     if (isImageTask(task)) {
       logger.info('HomeView', `Opening ImagePreviewDialog for path: ${task.savePath}`);
       activeImagePreviewUrl.value = task.savePath;
@@ -541,27 +559,55 @@ const openDirectory = async (task: any) => {
     return;
   }
   
-  if (window.electronAPI && window.electronAPI.showItemInFolder) {
-    const exists = await window.electronAPI.fileExists(task.savePath);
-    if (exists) {
-      // 文件真实存在，高亮选中文件
-      window.electronAPI.showItemInFolder(task.savePath);
-    } else {
-      // 文件不存在，检查父目录
-      const normalizedPath = task.savePath.replace(/\\/g, '/');
-      const dir = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
-      
+  const normalizedPath = task.savePath.replace(/\\/g, '/');
+  const dir = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+
+  // 正在下载、处理、等待或暂停的任务，最终文件尚未落地，直接打开所在目录即可
+  const isUnfinished = ['downloading', 'processing', 'resolving', 'waiting', 'paused'].includes(task.status);
+
+  if (isUnfinished) {
+    if (window.electronAPI) {
       const dirExists = await window.electronAPI.fileExists(dir);
       if (dirExists) {
-        // 父目录存在，直接打开父目录 (不必选中)
         if (window.electronAPI.openFile) {
           window.electronAPI.openFile(dir);
         } else {
           window.electronAPI.showItemInFolder(dir);
         }
       } else {
-        // 连目录都不存在
-        showMessage('文件所在目录尚未创建或已被删除', 'warning');
+        showMessage('保存目录尚未创建', 'warning');
+      }
+    }
+    return;
+  }
+
+  // 已完成或异常任务，进行文件精准校验
+  if (window.electronAPI && window.electronAPI.showItemInFolder) {
+    const exists = await window.electronAPI.fileExists(task.savePath);
+    if (exists) {
+      if (task.status === 'file_removed' || task.status === 'file_corrupted') {
+        task.status = 'completed';
+        task.progress = 100;
+        await updateTaskDb(task);
+        showMessage('已识别到本地文件，状态恢复为已完成', 'success');
+      }
+      // 文件真实存在，高亮选中文件
+      window.electronAPI.showItemInFolder(task.savePath);
+    } else {
+      // 文件不存在，标为本地文件已移除并更新数据库
+      task.status = 'file_removed';
+      await updateTaskDb(task);
+      showMessage('本地文件已移除', 'error');
+
+      const dirExists = await window.electronAPI.fileExists(dir);
+      if (dirExists) {
+        if (window.electronAPI.openFile) {
+          window.electronAPI.openFile(dir);
+        } else {
+          window.electronAPI.showItemInFolder(dir);
+        }
+      } else {
+        showMessage('文件所在目录尚未创建或已被删除', 'error');
       }
     }
   }

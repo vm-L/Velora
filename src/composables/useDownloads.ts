@@ -182,6 +182,14 @@ export const useDownloads = () => {
   const resumeTask = async (id: string) => {
     const t = tasks.value.find(t => t.id === id)
     if (t && window.electronAPI) {
+      const exists = await window.electronAPI.fileExists(t.savePath);
+      if (exists) {
+        t.status = 'completed';
+        t.progress = 100;
+        await db.downloads.put(JSON.parse(JSON.stringify(t)));
+        return;
+      }
+
       if (t.status === 'file_removed' || t.status === 'file_corrupted') {
         t.receivedBytes = 0
         t.progress = 0
