@@ -2,25 +2,25 @@
   <Teleport to="body">
     <div v-if="url" class="video-player-dialog"
       :style="{ top: position.y + 'px', left: position.x + 'px', width: size.w + 'px', height: size.h + 'px', zIndex }"
-      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isInAppFullscreen, 'hide-cursor': hideCursor }"
+      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': (isFullscreen || isInAppFullscreen), 'hide-cursor': hideCursor, 'is-resizing': isResizing, 'is-dragging': isDraggingWindow }"
       @mousemove="onMouseMove" @mouseleave="onMouseLeave">
     
-    <div class="dialog-header" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls">
+    <div class="dialog-header" :class="{ 'show-header': showControls || !(isFullscreen || isInAppFullscreen) }" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls" @mouseenter="onControlsEnter" @mouseleave="onControlsLeave">
       <div class="header-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
         视频播放器
       </div>
-      <div class="header-actions">
-        <button v-if="!hideDownload" class="action-btn" @click.stop="downloadVideo" title="下载">
+      <div class="header-actions" @mousedown.stop>
+        <button v-if="!hideDownload" class="action-btn" @click.stop="downloadVideo" @mousedown.stop title="下载">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
         </button>
-        <button class="action-btn close-btn" @click.stop="close" title="关闭">
+        <button class="action-btn close-btn" @click.stop="close" @mousedown.stop title="关闭">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -196,12 +196,22 @@ const resetCursorTimeout = () => {
 };
 
 const onMouseMove = (e: MouseEvent) => {
+  if (isDraggingWindow.value || isResizing.value) {
+    if (isPlaying.value) {
+      showControls.value = false;
+    }
+    return;
+  }
   resetCursorTimeout();
 
   if (!dialogRef.value) return;
   const rect = dialogRef.value.getBoundingClientRect();
-  // 仅当鼠标处于底部 85px 区域时才显示操作栏
-  if (e.clientY >= rect.bottom - 85) {
+  
+  // 鼠标在顶部 60px 区域（全屏悬浮标题栏）或底部 85px 区域（操作栏）时唤醒控件
+  const isAtTop = e.clientY <= rect.top + 60;
+  const isAtBottom = e.clientY >= rect.bottom - 85;
+
+  if (isAtTop || isAtBottom) {
     showControls.value = true;
     resetControlsTimeout();
   } else if (!isHoveringControls.value && isPlaying.value && !isDragging.value) {
@@ -370,9 +380,14 @@ watch(() => props.url, (newUrl) => {
 });
 
 
+let dragRafId: number | null = null;
+let resizeRafId: number | null = null;
+
 const startDrag = (e: MouseEvent) => {
   if (isFullscreen.value || isInAppFullscreen.value) return;
+  if ((e.target as HTMLElement)?.closest('.header-actions, button')) return;
   isDraggingWindow.value = true;
+  if (isPlaying.value) showControls.value = false;
   startPos = { x: position.value.x, y: position.value.y };
   startMouse = { x: e.clientX, y: e.clientY };
   document.addEventListener('mousemove', onDrag);
@@ -381,23 +396,32 @@ const startDrag = (e: MouseEvent) => {
 
 const onDrag = (e: MouseEvent) => {
   if (!isDraggingWindow.value) return;
-  const dx = e.clientX - startMouse.x;
-  const dy = e.clientY - startMouse.y;
-  position.value = {
-    x: startPos.x + dx,
-    y: startPos.y + dy
-  };
+  const clientX = e.clientX;
+  const clientY = e.clientY;
+  if (dragRafId) cancelAnimationFrame(dragRafId);
+  dragRafId = requestAnimationFrame(() => {
+    const dx = clientX - startMouse.x;
+    const dy = clientY - startMouse.y;
+    position.value = {
+      x: startPos.x + dx,
+      y: startPos.y + dy
+    };
+  });
 };
 
 const stopDrag = () => {
   isDraggingWindow.value = false;
+  if (dragRafId) cancelAnimationFrame(dragRafId);
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup', stopDrag);
 };
 
+const videoRatio = ref<number | null>(null);
+
 const startResize = (e: MouseEvent) => {
   if (isFullscreen.value || isInAppFullscreen.value) return;
   isResizing.value = true;
+  if (isPlaying.value) showControls.value = false;
   startSize = { w: size.value.w, h: size.value.h };
   startMouse = { x: e.clientX, y: e.clientY };
   document.addEventListener('mousemove', onResize);
@@ -406,16 +430,33 @@ const startResize = (e: MouseEvent) => {
 
 const onResize = (e: MouseEvent) => {
   if (!isResizing.value) return;
-  const dx = e.clientX - startMouse.x;
-  const dy = e.clientY - startMouse.y;
-  size.value = {
-    w: Math.max(320, startSize.w + dx),
-    h: Math.max(180, startSize.h + dy)
-  };
+  const clientX = e.clientX;
+  const clientY = e.clientY;
+  if (resizeRafId) cancelAnimationFrame(resizeRafId);
+  resizeRafId = requestAnimationFrame(() => {
+    const dx = clientX - startMouse.x;
+    const dy = clientY - startMouse.y;
+    
+    let ratio = videoRatio.value;
+    if (!ratio && videoRef.value && videoRef.value.videoWidth && videoRef.value.videoHeight) {
+      ratio = videoRef.value.videoWidth / videoRef.value.videoHeight;
+    }
+    if (!ratio) {
+      ratio = startSize.w / Math.max(1, startSize.h);
+    }
+
+    // 沿对角线向量连续投影计算 deltaW，彻底消除条件分支跳跃导致的顿挫卡顿
+    const deltaW = (dx + dy * ratio) / 2;
+    const newW = Math.max(440, Math.round(startSize.w + deltaW));
+    const newH = Math.round(newW / ratio);
+
+    size.value = { w: newW, h: newH };
+  });
 };
 
 const stopResize = () => {
   isResizing.value = false;
+  if (resizeRafId) cancelAnimationFrame(resizeRafId);
   document.removeEventListener('mousemove', onResize);
   document.removeEventListener('mouseup', stopResize);
 };
@@ -445,31 +486,20 @@ const onLoadedMetadata = () => {
     const vh = videoRef.value.videoHeight;
 
     if (vw && vh) {
-      const headerHeight = 38;
       const ratio = vw / vh;
+      videoRatio.value = ratio;
 
-      // 视窗限制：最大占屏幕 60% 宽度，75% 高度
-      const maxW = Math.min(800, Math.round(window.innerWidth * 0.60));
-      const maxHContent = Math.min(720, Math.round(window.innerHeight * 0.75) - headerHeight);
-
-      let targetW = maxW;
-      let targetHContent = Math.round(targetW / ratio);
-
-      if (targetHContent > maxHContent) {
-        targetHContent = maxHContent;
-        targetW = Math.round(targetHContent * ratio);
+      let targetW = 600;
+      if (ratio < 1) {
+        // 竖屏视频：完全贴合 9:16 等宽高比，保障最小宽度 440px
+        targetW = 440;
+      } else {
+        // 横屏视频：完全贴合 16:9 / 21:9 等宽高比
+        targetW = Math.min(680, Math.round(window.innerWidth * 0.55));
       }
 
-      // 最小保障宽度 440px（保证底部操作栏完全显示）
       const finalW = Math.max(440, targetW);
-
-      // 对竖屏及小宽度视频，依 finalW 重新推算高度，确保画面全显且不被压缩
-      let finalHContent = Math.round(finalW / ratio);
-      if (finalHContent > maxHContent) {
-        finalHContent = maxHContent;
-      }
-
-      const finalH = Math.max(240, finalHContent + headerHeight);
+      const finalH = Math.round(finalW / ratio);
 
       size.value = { w: finalW, h: finalH };
       position.value = {
@@ -657,7 +687,15 @@ const handleKeydown = (e: KeyboardEvent) => {
   overflow: hidden;
   color: var(--text-primary);
   min-width: 440px;
-  transition: width 0.1s, height 0.1s;
+  
+  &.is-resizing, &.is-dragging {
+    transition: none !important;
+    user-select: none !important;
+    * {
+      transition: none !important;
+      pointer-events: none !important;
+    }
+  }
   
   &.hide-cursor {
     cursor: none !important;
@@ -679,8 +717,11 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .dialog-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 38px;
-  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -688,21 +729,33 @@ const handleKeydown = (e: KeyboardEvent) => {
   background: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
   cursor: grab;
-  z-index: 10;
-  transition: opacity 0.3s ease;
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+
+  &.show-header {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
 
   &:active {
     cursor: grabbing;
   }
 }
 
-.is-fullscreen .dialog-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  background: var(--bg-surface-hover);
-  border: none;
+.is-fullscreen .dialog-header,
+:fullscreen .dialog-header,
+:-webkit-full-screen .dialog-header {
+  cursor: default !important;
+  * {
+    cursor: default !important;
+  }
+  &:active {
+    cursor: default !important;
+  }
 }
 
 .header-title {
@@ -745,21 +798,27 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .dialog-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  height: 100%;
   position: relative;
   background: var(--bg-app);
+  overflow: hidden;
 }
 
 .video-container {
   flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: default;
+  overflow: hidden;
   
   video {
+    max-width: 100%;
+    max-height: 100%;
     width: 100%;
     height: 100%;
     object-fit: contain;
