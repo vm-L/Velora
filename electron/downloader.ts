@@ -244,9 +244,16 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    const isTargetMp4 = savePath.toLowerCase().endsWith('.mp4')
-    const finalSavePath = savePath
-    const workSavePath = isTargetMp4 ? savePath + '.temp.ts' : savePath
+    let finalSavePath = savePath
+    if (!finalSavePath.toLowerCase().endsWith('.mp4')) {
+      if (finalSavePath.toLowerCase().endsWith('.m3u8') || finalSavePath.toLowerCase().endsWith('.ts')) {
+        finalSavePath = finalSavePath.replace(/\.(m3u8|ts)$/i, '.mp4')
+      } else {
+        finalSavePath = finalSavePath + '.mp4'
+      }
+    }
+    const isTargetMp4 = true
+    const workSavePath = finalSavePath + '.temp.ts'
 
     // 检查断点续传：目标文件是否已存在及大小
     let existingBytes = 0

@@ -87,11 +87,29 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     pauseAllMedia();
     saveDirectory.value = props.defaultDir;
-    const ext = getExtension(props.defaultName);
-    if (ext && props.defaultName.endsWith('.' + ext)) {
-      fileName.value = props.defaultName.slice(0, -(ext.length + 1));
+    
+    let rawName = props.defaultName || 'video';
+    const ext = getExtension(rawName);
+    let baseName = rawName;
+    if (ext && rawName.endsWith('.' + ext)) {
+      baseName = rawName.slice(0, -(ext.length + 1));
+    }
+    
+    // Clean up any remaining .m3u8 or .ts
+    baseName = baseName.replace(/\.(m3u8|ts)$/i, '');
+
+    // Determine target final extension
+    let targetExt = ext;
+    if (props.type === 'video' || props.url.toLowerCase().includes('.m3u8') || ext.toLowerCase() === 'm3u8' || ext.toLowerCase() === 'ts') {
+      targetExt = 'mp4';
+    } else if (props.type === 'audio') {
+      targetExt = targetExt || 'mp3';
+    }
+
+    if (targetExt) {
+      fileName.value = `${baseName}.${targetExt}`;
     } else {
-      fileName.value = props.defaultName;
+      fileName.value = baseName;
     }
     isSaving.value = false;
   }
@@ -126,12 +144,14 @@ const confirmSave = async () => {
   }
 
   let finalName = fileName.value.trim();
-  // Auto append extension if missing or different
-  const origExt = getExtension(props.defaultName);
+  let targetExt = getExtension(props.defaultName);
+  if (props.type === 'video' || props.url.toLowerCase().includes('.m3u8') || targetExt.toLowerCase() === 'm3u8' || targetExt.toLowerCase() === 'ts') {
+    targetExt = 'mp4';
+  }
   
-  if (origExt) {
-    if (!finalName.toLowerCase().endsWith('.' + origExt.toLowerCase())) {
-      finalName = `${finalName}.${origExt}`;
+  if (targetExt) {
+    if (!finalName.toLowerCase().endsWith('.' + targetExt.toLowerCase())) {
+      finalName = `${finalName}.${targetExt}`;
     }
   }
 
