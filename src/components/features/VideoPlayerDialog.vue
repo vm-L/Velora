@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div v-if="url" class="video-player-dialog"
       :style="{ top: position.y + 'px', left: position.x + 'px', width: size.w + 'px', height: size.h + 'px', zIndex }"
-      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isInAppFullscreen, 'hide-cursor': !showControls && isPlaying }"
+      @mousedown="bringToFront" ref="dialogRef" :class="{ 'is-fullscreen': isInAppFullscreen, 'hide-cursor': hideCursor }"
       @mousemove="onMouseMove" @mouseleave="onMouseLeave">
     
     <div class="dialog-header" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls">
@@ -180,12 +180,38 @@ let hls: any = null;
 let controlsTimeout: number | null = null;
 const isHoveringControls = ref(false);
 
-const onMouseMove = () => {
-  showControls.value = true;
-  resetControlsTimeout();
+const hideCursor = ref(false);
+let cursorTimeout: number | null = null;
+
+const resetCursorTimeout = () => {
+  if (cursorTimeout) clearTimeout(cursorTimeout);
+  hideCursor.value = false;
+  if (isPlaying.value && !isDragging.value) {
+    cursorTimeout = window.setTimeout(() => {
+      if (isPlaying.value && !isDragging.value) {
+        hideCursor.value = true;
+      }
+    }, 1000);
+  }
+};
+
+const onMouseMove = (e: MouseEvent) => {
+  resetCursorTimeout();
+
+  if (!dialogRef.value) return;
+  const rect = dialogRef.value.getBoundingClientRect();
+  // 仅当鼠标处于底部 85px 区域时才显示操作栏
+  if (e.clientY >= rect.bottom - 85) {
+    showControls.value = true;
+    resetControlsTimeout();
+  } else if (!isHoveringControls.value && isPlaying.value && !isDragging.value) {
+    showControls.value = false;
+  }
 };
 
 const onMouseLeave = () => {
+  if (cursorTimeout) clearTimeout(cursorTimeout);
+  hideCursor.value = false;
   if (isPlaying.value && !isDragging.value) {
     showControls.value = false;
   }
@@ -414,6 +440,43 @@ const onTimeUpdate = () => {
 const onLoadedMetadata = () => {
   if (videoRef.value) {
     duration.value = videoRef.value.duration;
+
+    const vw = videoRef.value.videoWidth;
+    const vh = videoRef.value.videoHeight;
+
+    if (vw && vh) {
+      const headerHeight = 38;
+      const ratio = vw / vh;
+
+      // 视窗限制：最大占屏幕 60% 宽度，75% 高度
+      const maxW = Math.min(800, Math.round(window.innerWidth * 0.60));
+      const maxHContent = Math.min(720, Math.round(window.innerHeight * 0.75) - headerHeight);
+
+      let targetW = maxW;
+      let targetHContent = Math.round(targetW / ratio);
+
+      if (targetHContent > maxHContent) {
+        targetHContent = maxHContent;
+        targetW = Math.round(targetHContent * ratio);
+      }
+
+      // 最小保障宽度 440px（保证底部操作栏完全显示）
+      const finalW = Math.max(440, targetW);
+
+      // 对竖屏及小宽度视频，依 finalW 重新推算高度，确保画面全显且不被压缩
+      let finalHContent = Math.round(finalW / ratio);
+      if (finalHContent > maxHContent) {
+        finalHContent = maxHContent;
+      }
+
+      const finalH = Math.max(240, finalHContent + headerHeight);
+
+      size.value = { w: finalW, h: finalH };
+      position.value = {
+        x: Math.max(0, Math.round((window.innerWidth - finalW) / 2)),
+        y: Math.max(0, Math.round((window.innerHeight - finalH) / 2))
+      };
+    }
   }
 };
 
@@ -593,6 +656,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   flex-direction: column;
   overflow: hidden;
   color: var(--text-primary);
+  min-width: 440px;
   transition: width 0.1s, height 0.1s;
   
   &.hide-cursor {
@@ -616,6 +680,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 .dialog-header {
   height: 38px;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -623,10 +688,6 @@ const handleKeydown = (e: KeyboardEvent) => {
   background: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
   cursor: grab;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
   z-index: 10;
   transition: opacity 0.3s ease;
 
@@ -636,6 +697,10 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .is-fullscreen .dialog-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   background: var(--bg-surface-hover);
   border: none;
 }
@@ -692,7 +757,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: default;
   
   video {
     width: 100%;

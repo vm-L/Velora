@@ -1,33 +1,35 @@
 <template>
-  <div v-if="visible" class="save-overlay" @mousedown.stop>
-    <div class="save-modal">
-      <div class="save-header">
-        <h3>保存{{ typeName }}</h3>
-      </div>
-      <div class="save-body">
-        <div class="save-location-group">
-          <label>保存位置</label>
-          <div class="location-input-row">
-            <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
-            <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</v-button>
-          </div>
+  <Teleport to="body">
+    <div v-if="visible" class="save-overlay" @mousedown.stop>
+      <div class="save-modal">
+        <div class="save-header">
+          <h3>保存{{ typeName }}</h3>
         </div>
+        <div class="save-body">
+          <div class="save-location-group">
+            <label>保存位置</label>
+            <div class="location-input-row">
+              <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+              <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</v-button>
+            </div>
+          </div>
 
-        <div class="save-location-group" style="margin-top: 16px;">
-          <label>文件名称</label>
-          <div class="location-input-row">
-            <v-input v-model="fileName" type="text" placeholder="输入文件名称..." />
+          <div class="save-location-group" style="margin-top: 16px;">
+            <label>文件名称</label>
+            <div class="location-input-row">
+              <v-input v-model="fileName" type="text" placeholder="输入文件名称..." />
+            </div>
           </div>
         </div>
-      </div>
-      <div class="save-footer">
-        <v-button variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</v-button>
-        <v-button variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
-          {{ isSaving ? '保存中...' : '确认保存' }}
-        </v-button>
+        <div class="save-footer">
+          <v-button variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</v-button>
+          <v-button variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
+            {{ isSaving ? '保存中...' : '确认保存' }}
+          </v-button>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -63,8 +65,27 @@ const typeName = computed(() => {
   }
 });
 
+const pauseAllMedia = () => {
+  // 暂停当前主渲染进程 DOM 中的所有 HTML5 音视频（包含音视频预览弹窗）
+  document.querySelectorAll('video, audio').forEach((media) => {
+    try {
+      (media as HTMLMediaElement).pause();
+    } catch {}
+  });
+
+  // 暂停网页标签页 (webview) 内正在播放的音视频
+  document.querySelectorAll('webview').forEach((wv) => {
+    try {
+      (wv as any).executeJavaScript(`
+        document.querySelectorAll('video, audio').forEach(m => m.pause());
+      `).catch(() => {});
+    } catch {}
+  });
+};
+
 watch(() => props.visible, (newVal) => {
   if (newVal) {
+    pauseAllMedia();
     saveDirectory.value = props.defaultDir;
     const ext = getExtension(props.defaultName);
     if (ext && props.defaultName.endsWith('.' + ext)) {
@@ -146,7 +167,7 @@ const confirmSave = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 100000;
+  z-index: 2147483647;
 }
 
 .save-modal {
