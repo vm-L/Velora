@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
+import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -335,15 +336,22 @@ function createWindow() {
     mainWindow?.show()
   })
 
-  // Network Sniffer - Early detection for cached media via extension
+  // Network Sniffer & AdBlock Interceptor
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
     (details, callback) => {
+      const url = details.url;
+
+      // AdBlock Interceptor
+      if (isAdUrl(url)) {
+        logger.info('AdBlock', `Blocked ad request: ${url}`);
+        return callback({ cancel: true });
+      }
+
       if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
         return callback({});
       }
 
-      let url = details.url;
       let pathname = '';
       try {
         pathname = new URL(url).pathname.toLowerCase();
@@ -565,6 +573,21 @@ app.on('web-contents-created', (event, contents) => {
     // })
   }
 })
+
+ipcMain.handle('sync-adblock-source', async (_event, url: string) => {
+  try {
+    const text = await fetchRemoteRuleSource(url);
+    const { count } = parseRulesText(text);
+    return { success: true, count, content: text };
+  } catch (err: any) {
+    logger.error('AdBlock', `Failed to sync source ${url}: ${err.message}`);
+    return { success: false, count: 0, error: err.message };
+  }
+});
+
+ipcMain.handle('compile-adblock-rules', async (_event, sourcesData: Record<string, string>) => {
+  return updateCompiledRules(sourcesData);
+});
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {

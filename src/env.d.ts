@@ -35,6 +35,8 @@ interface Window {
     deleteFile: (filePath: string) => Promise<boolean>
     fileExists: (filePath: string) => Promise<boolean>
     onDownloadProgress: (callback: (data: any) => void) => void
+    syncAdBlockSource: (url: string) => Promise<{ success: boolean, count: number, content?: string, error?: string }>
+    compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>
     log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }

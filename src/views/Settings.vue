@@ -23,6 +23,30 @@
             <div class="selection-pill"></div>
           </div>
         </div>
+
+        <!-- 广告过滤规则 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>广告过滤规则</h3>
+            <p>已启用 {{ totalActiveRulesCount.toLocaleString() }} 条过滤规则</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
+            <v-button variant="secondary" :disabled="isUpdatingAllRules" @click="handleUpdateAllRules">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'spin-icon': isUpdatingAllRules }">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              {{ isUpdatingAllRules ? '更新中...' : '更新' }}
+            </v-button>
+            <v-button variant="secondary" @click="showAdBlockModal = true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+              编辑
+            </v-button>
+          </div>
+        </div>
       </div>
 
       <!-- Download Settings -->
@@ -284,6 +308,7 @@
       :code="editingStyleCode" 
       @save="onSaveStyle" 
     />
+    <AdBlockDialog v-model:visible="showAdBlockModal" />
   </div>
 </template>
 
@@ -291,12 +316,13 @@
 import { ref, computed } from 'vue';
 import { CustomScript, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
+import { useMessage } from '../composables/useMessage';
 import { logger } from '../services/logger';
-import VButton from '../components/base/VButton.vue'
+import VButton from '../components/base/VButton.vue';
 
 import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
 import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue';
-;
+import AdBlockDialog from '../components/features/AdBlockDialog.vue';
 import VInput from '../components/base/VInput.vue';
 
 const { 
@@ -310,9 +336,36 @@ const {
   saveMaxMemoryBufferMB,
   saveCmsResources, 
   saveExternalSites, 
-  saveCustomStyles 
-, saveCustomScripts } = useSettings();
+  saveCustomStyles,
+  saveCustomScripts,
+  syncAllAdBlockSources
+} = useSettings();
 const { confirm } = useConfirm();
+const { showMessage } = useMessage();
+
+const showAdBlockModal = ref(false);
+const isUpdatingAllRules = ref(false);
+
+const totalActiveRulesCount = computed(() => {
+  return state.adBlockSources
+    .filter(s => s.enabled)
+    .reduce((acc, s) => acc + (s.ruleCount || 0), 0);
+});
+
+const handleUpdateAllRules = async () => {
+  if (isUpdatingAllRules.value) return;
+  isUpdatingAllRules.value = true;
+  showMessage('正在同步更新所有启用的广告过滤规则...', 'info');
+
+  try {
+    await syncAllAdBlockSources();
+    showMessage(`规则同步完成，当前已生效 ${totalActiveRulesCount.value.toLocaleString()} 条过滤规则`, 'success');
+  } catch (err: any) {
+    showMessage(`更新失败: ${err.message}`, 'error');
+  } finally {
+    isUpdatingAllRules.value = false;
+  }
+};
 
 const newCmsName = ref('');
 const newCmsUrl = ref('https://');
@@ -1009,5 +1062,15 @@ const deleteDomainStyle = async (domain: string) => {
 
 .shrink-0 {
   flex-shrink: 0;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

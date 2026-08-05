@@ -8,6 +8,51 @@ export interface ResourceItem {
   iconOriginalUrl?: string
 }
 
+export interface AdBlockSource {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  isBuiltIn?: boolean;
+  ruleCount: number;
+  lastUpdated?: number;
+}
+
+export const BUILTIN_ADBLOCK_SOURCES: AdBlockSource[] = [
+  {
+    id: 'easylist',
+    name: 'EasyList (通用基础广告规则)',
+    url: 'https://easylist-downloads.adblockplus.org/easylist.txt',
+    enabled: true,
+    isBuiltIn: true,
+    ruleCount: 0
+  },
+  {
+    id: 'easylist_china',
+    name: 'EasyList China (中文广告规则)',
+    url: 'https://easylist-downloads.adblockplus.org/easylistchina.txt',
+    enabled: false,
+    isBuiltIn: true,
+    ruleCount: 0
+  },
+  {
+    id: 'easyprivacy',
+    name: 'EasyPrivacy (隐私追踪拦截规则)',
+    url: 'https://easylist-downloads.adblockplus.org/easyprivacy.txt',
+    enabled: false,
+    isBuiltIn: true,
+    ruleCount: 0
+  },
+  {
+    id: 'cjx_annoyance',
+    name: "CJX's Annoyance List (烦人元素规则)",
+    url: 'https://raw.githubusercontent.com/cjx8263045/cjxlist/master/cjx-annoyance.txt',
+    enabled: false,
+    isBuiltIn: true,
+    ruleCount: 0
+  }
+];
+
 export const state = reactive({
   closeBehavior: 'tray',
   theme: 'light',
@@ -21,6 +66,7 @@ export const state = reactive({
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
   customScripts: {} as Record<string, CustomScript[]>,
+  adBlockSources: [] as AdBlockSource[],
   loaded: false
 })
 
@@ -46,7 +92,27 @@ export const useSettings = () => {
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
     state.customScripts = (await window.electronAPI.getSetting('customScripts')) || {}
-    state.loaded = true
+
+    // Load adblock sources & merge built-ins
+    const savedSources: AdBlockSource[] = (await window.electronAPI.getSetting('adBlockSources')) || [];
+    const mergedSources = [...BUILTIN_ADBLOCK_SOURCES];
+    for (const saved of savedSources) {
+      const idx = mergedSources.findIndex(b => b.id === saved.id);
+      if (idx !== -1) {
+        mergedSources[idx] = { ...mergedSources[idx], ...saved, isBuiltIn: true };
+      } else {
+        mergedSources.push({ ...saved, isBuiltIn: false });
+      }
+    }
+    state.adBlockSources = mergedSources;
+
+    state.loaded = true;
+    await recompileRules();
+
+    // 静默后台自动更新所有已启用的规则源
+    syncAllAdBlockSources().catch(err => {
+      window.electronAPI.log('warn', 'AdBlock', 'Background auto update failed: ' + err.message);
+    });
   }
 
   const setCloseBehavior = async (behavior: string) => {
@@ -110,6 +176,62 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customScripts', JSON.parse(JSON.stringify(scripts)))
   }
 
+  const saveAdBlockSources = async (sources: AdBlockSource[]) => {
+    state.adBlockSources = sources;
+    await window.electronAPI.setSetting('adBlockSources', JSON.parse(JSON.stringify(sources)));
+  }
+
+  const recompileRules = async () => {
+    const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
+    const activeData: Record<string, string> = {};
+    for (const s of state.adBlockSources) {
+      if (s.enabled && cachedData[s.id]) {
+        activeData[s.id] = cachedData[s.id];
+      }
+    }
+    await window.electronAPI.compileAdBlockRules(activeData);
+  }
+
+  const syncAdBlockSourceItem = async (sourceId: string) => {
+    const s = state.adBlockSources.find(item => item.id === sourceId);
+    if (!s) return { success: false, count: 0, error: '规则源不存在' };
+
+    const res = await window.electronAPI.syncAdBlockSource(s.url);
+    if (res.success) {
+      s.ruleCount = res.count;
+      s.lastUpdated = Date.now();
+      await saveAdBlockSources([...state.adBlockSources]);
+
+      const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
+      cachedData[s.id] = res.content || '';
+      await window.electronAPI.setSetting('adBlockCache', cachedData);
+
+      await recompileRules();
+    }
+    return res;
+  }
+
+  const syncAllAdBlockSources = async () => {
+    const enabledSources = state.adBlockSources.filter(item => item.enabled);
+    const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
+    let totalSynced = 0;
+
+    for (const s of enabledSources) {
+      const res = await window.electronAPI.syncAdBlockSource(s.url);
+      if (res.success) {
+        s.ruleCount = res.count;
+        s.lastUpdated = Date.now();
+        cachedData[s.id] = res.content || '';
+        totalSynced++;
+      }
+    }
+
+    await saveAdBlockSources([...state.adBlockSources]);
+    await window.electronAPI.setSetting('adBlockCache', cachedData);
+    await recompileRules();
+    return totalSynced;
+  }
+
   return { 
     state, 
     loadSettings, 
@@ -124,6 +246,10 @@ export const useSettings = () => {
     saveCmsResources, 
     saveExternalSites, 
     saveCustomStyles,
-    saveCustomScripts 
+    saveCustomScripts,
+    saveAdBlockSources,
+    syncAdBlockSourceItem,
+    syncAllAdBlockSources,
+    recompileRules
   }
 }
