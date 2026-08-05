@@ -9,7 +9,12 @@
           <div class="save-location-group">
             <label>保存位置</label>
             <div class="location-input-row">
-              <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+              <VInputSelect
+                v-model="saveDirectory"
+                placeholder="选择或输入目录..."
+                :options="dirTreeOptions"
+                class="flex-1"
+              />
               <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</v-button>
             </div>
           </div>
@@ -38,6 +43,7 @@ import { useDownloads } from '../../composables/useDownloads';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -55,6 +61,26 @@ const { showMessage } = useMessage();
 const saveDirectory = ref('');
 const fileName = ref('');
 const isSaving = ref(false);
+const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
+
+const dirTreeOptions = computed<InputSelectOption[]>(() => {
+  return dirTreeList.value.map(item => ({
+    label: item.name,
+    value: item.path,
+    depth: item.depth
+  }));
+});
+
+const loadDirTree = async () => {
+  if (props.defaultDir && window.electronAPI && window.electronAPI.getDirectoryTree) {
+    try {
+      const list = await window.electronAPI.getDirectoryTree(props.defaultDir, 3);
+      dirTreeList.value = list;
+    } catch {
+      dirTreeList.value = [];
+    }
+  }
+};
 
 const typeName = computed(() => {
   switch (props.type) {
@@ -87,6 +113,7 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     pauseAllMedia();
     saveDirectory.value = props.defaultDir;
+    loadDirTree();
     
     let rawName = props.defaultName || 'video';
     const ext = getExtension(rawName);
@@ -234,6 +261,107 @@ const confirmSave = async () => {
 .location-input-row {
   display: flex;
   gap: 8px;
+}
+
+.combobox-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+
+  :deep(.v-input) {
+    width: 100%;
+  }
+
+  :deep(.v-input input) {
+    padding-right: 32px;
+  }
+}
+
+.dropdown-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 2;
+
+  &:hover {
+    background: var(--bg-surface-active);
+    color: var(--text-primary);
+  }
+
+  svg {
+    transition: transform 0.2s ease;
+
+    &.open {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.tree-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  z-index: 9999;
+  padding: 4px 0;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+
+  &:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  &.active {
+    background: var(--bg-surface-active);
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+
+  .tree-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+  }
+
+  &.active .tree-icon {
+    color: var(--color-accent);
+  }
+
+  .tree-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .save-footer {

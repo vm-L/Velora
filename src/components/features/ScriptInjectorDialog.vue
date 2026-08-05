@@ -25,38 +25,36 @@
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
             <span class="label">匹配规则</span>
-            <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
-              <v-input v-model="currentScript.domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
-              <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
-                <v-button variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史脚本 ▼</v-button>
-                <div v-if="dropdownOpen" class="dropdown-menu">
-                  <div v-if="!scripts || scripts.length === 0" class="dropdown-empty">暂无保存的脚本</div>
-                  <div v-for="script in scripts" :key="script.id" class="dropdown-item">
-                    <span class="dropdown-text" @click="loadScript(script)">{{ script.name || script.domain }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <VInputSelect
+              v-model="currentScript.domain"
+              placeholder="匹配域名，例如: *://*.bilibili.com/*"
+              :options="historyScriptOptions"
+              class="mono-input value-input flex-1"
+              style="margin-left: 12px;"
+              @change="onScriptDomainChange"
+            />
           </div>
           
           <div class="info-row" style="align-items: center;">
             <span class="label">脚本名称</span>
-            <v-input v-model="currentScript.name" class="value-input" style="flex: 1; margin-left: 12px; font-size: 12px; padding: 4px 6px;" placeholder="例如: 屏蔽广告" />
+            <v-input v-model="currentScript.name" class="value-input flex-1" style="margin-left: 12px;" placeholder="例如: 屏蔽广告" />
           </div>
           
           <div class="info-row" style="align-items: center;">
             <span class="label">执行时机</span>
-            <select v-model="currentScript.runAt" class="value-input" style="flex: 1; margin-left: 12px; font-size: 12px; padding: 4px 6px; background: transparent;">
-              <option value="document-start">document-start (尽早)</option>
-              <option value="dom-ready">dom-ready (DOM加载完毕)</option>
-              <option value="document-end">document-end (资源加载完毕)</option>
-            </select>
+            <VInputSelect
+              v-model="currentScript.runAt"
+              :options="runAtOptions"
+              :allow-input="false"
+              class="value-input flex-1"
+              style="margin-left: 12px;"
+            />
           </div>
 
           <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1;">
             <div class="label-row" style="margin-bottom: 8px;">
               <label>自定义 JS 脚本</label>
-              <v-button variant="text" class="text-btn" @click="updatePreview">▶ 立刻执行一次测试</v-button>
+              <v-button variant="text" class="text-btn" @click="updatePreview">▶ 立刻执行</v-button>
             </div>
             <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-surface); min-height: 230px; display: flex; flex-direction: column;">
               <!-- CodeMirror will attach here -->
@@ -74,9 +72,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, reactive } from 'vue';
+import { ref, computed, watch, nextTick, reactive } from 'vue';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
+
+const runAtOptions = [
+  { value: 'document-start', label: 'document-start (尽早)' },
+  { value: 'dom-ready', label: 'dom-ready (DOM加载完毕)' },
+  { value: 'document-end', label: 'document-end (资源加载完毕)' }
+];
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState } from '@codemirror/state';
@@ -92,7 +97,6 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue', 'executeScript', 'save', 'interaction-start', 'interaction-end']);
 
-const dropdownOpen = ref(false);
 const position = ref({ x: 100, y: 100 });
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
@@ -107,19 +111,18 @@ const currentScript = reactive<Omit<CustomScript, 'id'>>({
   runAt: 'dom-ready'
 });
 
-const closeDropdown = () => { dropdownOpen.value = false; };
+const historyScriptOptions = computed<InputSelectOption[]>(() => {
+  if (!props.scripts) return [];
+  return props.scripts.map(s => ({
+    label: s.name ? `${s.name} (${s.domain})` : s.domain,
+    value: s.domain
+  }));
+});
 
-const vClickOutside = {
-  mounted(el: any, binding: any) {
-    el.clickOutsideEvent = function (event: Event) {
-      if (!(el == event.target || el.contains(event.target))) {
-        binding.value(event, el);
-      }
-    };
-    document.body.addEventListener('click', el.clickOutsideEvent);
-  },
-  unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent);
+const onScriptDomainChange = (newDomain: string) => {
+  const targetScript = props.scripts?.find(s => s.domain === newDomain);
+  if (targetScript) {
+    loadScript(targetScript);
   }
 };
 
@@ -174,7 +177,6 @@ watch(() => props.modelValue, async (newVal) => {
     currentScript.name = '';
     currentScript.code = '';
     currentScript.runAt = 'dom-ready';
-    dropdownOpen.value = false;
 
     // 默认打开新的空白脚本，不自动加载历史脚本
 
@@ -202,7 +204,6 @@ const loadScript = (script: CustomScript) => {
   currentScript.name = script.name;
   currentScript.code = script.code;
   currentScript.runAt = script.runAt;
-  dropdownOpen.value = false;
   if (editorView) {
     editorView.dispatch({
       changes: { from: 0, to: editorView.state.doc.length, insert: script.code }
@@ -346,8 +347,6 @@ const stopDrag = () => {
 }
 
 .value-input {
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
   outline: none;
   color: var(--text-primary);
 }

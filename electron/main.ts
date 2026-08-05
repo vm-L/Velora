@@ -614,6 +614,55 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
   }
 });
 
+ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: number = 3) => {
+  try {
+    if (!rootDir || !fs.existsSync(rootDir)) {
+      return [];
+    }
+
+    interface DirItem {
+      path: string;
+      name: string;
+      depth: number;
+    }
+
+    const results: DirItem[] = [];
+
+    const scan = async (currentDir: string, depth: number) => {
+      if (depth > maxDepth) return;
+      try {
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && !entry.name.startsWith('.')) {
+            const fullPath = path.join(currentDir, entry.name);
+            results.push({
+              path: fullPath,
+              name: entry.name,
+              depth
+            });
+            await scan(fullPath, depth + 1);
+          }
+        }
+      } catch (err: any) {
+        logger.error('Main', `Error scanning directory ${currentDir}: ${err.message}`);
+      }
+    };
+
+    const rootName = path.basename(rootDir) || rootDir;
+    results.push({
+      path: rootDir,
+      name: `默认目录 (${rootName})`,
+      depth: 0
+    });
+
+    await scan(rootDir, 1);
+    return results;
+  } catch (err: any) {
+    logger.error('Main', `Failed to get directory tree for ${rootDir}: ${err.message}`);
+    return [];
+  }
+});
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()

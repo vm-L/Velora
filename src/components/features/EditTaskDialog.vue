@@ -29,7 +29,12 @@
           <div class="form-group" style="margin-top: 14px;">
             <label>当前目录</label>
             <div class="dir-input-row">
-              <v-input v-model="saveDirectory" type="text" placeholder="选择或输入新文件目录..." class="flex-1" />
+              <VInputSelect
+                v-model="saveDirectory"
+                placeholder="选择或输入新文件目录..."
+                :options="dirTreeOptions"
+                class="flex-1"
+              />
               <v-button variant="secondary" size="small" @click="handleSelectDirectory">移至目录</v-button>
             </div>
           </div>
@@ -48,12 +53,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { DownloadTask } from '../../db';
 import { useDownloads } from '../../composables/useDownloads';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -70,6 +76,26 @@ const { showMessage } = useMessage();
 const taskName = ref('');
 const saveDirectory = ref('');
 const isSaving = ref(false);
+const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
+
+const dirTreeOptions = computed<InputSelectOption[]>(() => {
+  return dirTreeList.value.map(item => ({
+    label: item.name,
+    value: item.path,
+    depth: item.depth
+  }));
+});
+
+const loadDirTree = async (dir: string) => {
+  if (dir && window.electronAPI && window.electronAPI.getDirectoryTree) {
+    try {
+      const list = await window.electronAPI.getDirectoryTree(dir, 3);
+      dirTreeList.value = list;
+    } catch {
+      dirTreeList.value = [];
+    }
+  }
+};
 
 watch(() => [props.visible, props.task], () => {
   if (props.visible && props.task) {
@@ -79,7 +105,9 @@ watch(() => [props.visible, props.task], () => {
       const normalized = props.task.savePath.replace(/\\/g, '/');
       const lastSlash = normalized.lastIndexOf('/');
       if (lastSlash !== -1) {
-        saveDirectory.value = normalized.substring(0, lastSlash);
+        const dir = normalized.substring(0, lastSlash);
+        saveDirectory.value = dir;
+        loadDirTree(dir);
       } else {
         saveDirectory.value = '';
       }

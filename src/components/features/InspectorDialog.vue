@@ -27,18 +27,14 @@
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
             <span class="label">匹配规则</span>
-            <div style="display: flex; flex: 1; align-items: center; margin-left: 12px; position: relative;">
-              <v-input v-model="domain" class="mono-input value-input" spellcheck="false" style="flex: 1; font-size: 11px; padding: 4px 6px;" />
-              <div class="dropdown" v-click-outside="closeDropdown" style="margin-left: 8px;">
-                <v-button variant="text" class="text-btn" @click="dropdownOpen = !dropdownOpen">历史规则 ▼</v-button>
-                <div v-if="dropdownOpen" class="dropdown-menu">
-                  <div v-if="!domainRules || Object.keys(domainRules).length === 0" class="dropdown-empty">暂无保存的样式</div>
-                  <div v-for="(cssString, ruleDomain) in domainRules" :key="ruleDomain" class="dropdown-item">
-                    <span class="dropdown-text" @click="loadRule(ruleDomain as string, cssString as string)">{{ ruleDomain }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <VInputSelect
+              v-model="domain"
+              placeholder="匹配域名，例如: *://*.bilibili.com/*"
+              :options="historyRuleOptions"
+              class="mono-input value-input flex-1"
+              style="margin-left: 12px;"
+              @change="onRuleDomainChange"
+            />
           </div>
 
           <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1;">
@@ -61,9 +57,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 import type { SyntaxNode } from '@lezer/common';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';
@@ -80,7 +76,6 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'interaction-start', 'interaction-end']);
 
-const dropdownOpen = ref(false);
 const domain = ref('');
 const position = ref({ x: 100, y: 100 });
 let isDragging = false;
@@ -90,19 +85,17 @@ const editorContainer = ref<HTMLElement | null>(null);
 let editorView: EditorView | null = null;
 let currentCss = '';
 
-const closeDropdown = () => { dropdownOpen.value = false; };
+const historyRuleOptions = computed<InputSelectOption[]>(() => {
+  if (!props.domainRules) return [];
+  return Object.keys(props.domainRules).map(ruleDomain => ({
+    label: ruleDomain,
+    value: ruleDomain
+  }));
+});
 
-const vClickOutside = {
-  mounted(el: any, binding: any) {
-    el.clickOutsideEvent = function (event: Event) {
-      if (!(el == event.target || el.contains(event.target))) {
-        binding.value(event, el);
-      }
-    };
-    document.body.addEventListener('click', el.clickOutsideEvent);
-  },
-  unmounted(el: any) {
-    document.body.removeEventListener('click', el.clickOutsideEvent);
+const onRuleDomainChange = (newDomain: string) => {
+  if (props.domainRules && props.domainRules[newDomain] !== undefined) {
+    loadRule(newDomain, props.domainRules[newDomain]);
   }
 };
 
@@ -226,7 +219,6 @@ watch(() => props.modelValue, async (newVal) => {
     } catch (e) {}
 
     domain.value = initialDomain;
-    dropdownOpen.value = false;
     currentCss = '';
 
     if (props.domainRules && props.domainRules[domain.value]) {
@@ -256,7 +248,6 @@ watch(() => props.modelValue, async (newVal) => {
 const loadRule = (ruleDomain: string, cssString: string) => {
   domain.value = ruleDomain;
   currentCss = cssString;
-  dropdownOpen.value = false;
   if (editorView) {
     editorView.dispatch({
       changes: { from: 0, to: editorView.state.doc.length, insert: cssString }
@@ -400,8 +391,6 @@ const stopDrag = () => {
 }
 
 .value-input {
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
   outline: none;
   color: var(--text-primary);
 }

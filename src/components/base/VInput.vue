@@ -4,6 +4,7 @@
     :value="modelValue"
     :placeholder="placeholder"
     :disabled="disabled"
+    :readonly="readonly"
     class="v-input"
     @input="onInput"
     @keyup.enter="$emit('enter', $event)"
@@ -25,6 +26,10 @@ defineProps({
     default: 'text',
   },
   disabled: {
+    type: Boolean,
+    default: false,
+  },
+  readonly: {
     type: Boolean,
     default: false,
   },
