@@ -13,12 +13,30 @@ export const useDownloads = () => {
       const allTasks = await db.downloads.toArray()
       logger.info('Downloads', `[Renderer] loadTasks: Found ${allTasks.length} tasks in Dexie database.`)
       
-      // Auto-pause downloading tasks on startup
+      // Auto-pause active downloading tasks & check file existence on startup
       for (const t of allTasks) {
         if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
           t.status = 'paused'
           t.speed = 0
           await db.downloads.put(t)
+        } else if (t.savePath && window.electronAPI && window.electronAPI.fileExists) {
+          try {
+            const exists = await window.electronAPI.fileExists(t.savePath)
+            if (!exists && t.status === 'completed') {
+              t.status = 'file_removed'
+              t.speed = 0
+              await db.downloads.put(t)
+              logger.info('Downloads', `[Startup Check] Task "${t.name}" file missing, updated status to file_removed.`)
+            } else if (exists && (t.status === 'file_removed' || t.status === 'file_corrupted')) {
+              t.status = 'completed'
+              t.progress = 100
+              t.speed = 0
+              await db.downloads.put(t)
+              logger.info('Downloads', `[Startup Check] Task "${t.name}" file found, restored status to completed.`)
+            }
+          } catch (err: any) {
+            logger.error('Downloads', `[Startup Check] Failed to check file for task ${t.id}: ${err.message}`)
+          }
         }
       }
       tasks.value = await db.downloads.orderBy('createdAt').reverse().toArray()
@@ -72,7 +90,11 @@ export const useDownloads = () => {
           // if (data.speed !== undefined) t.speed = data.speed (Frontend calculation instead)
           if (data.downloadedSegments !== undefined) t.downloadedSegments = data.downloadedSegments
           if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
-          if (data.errorMsg) t.errorMsg = data.errorMsg
+          if (t.status === 'completed') {
+            delete t.errorMsg
+          } else if (data.errorMsg) {
+            t.errorMsg = data.errorMsg
+          }
 
           if (t.totalSegments && t.totalSegments > 0) {
             t.progress = Math.min(100, Math.round((t.downloadedSegments! / t.totalSegments!) * 100))

@@ -589,6 +589,31 @@ ipcMain.handle('compile-adblock-rules', async (_event, sourcesData: Record<strin
   return updateCompiledRules(sourcesData);
 });
 
+ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => {
+  try {
+    if (!oldPath || !newPath) {
+      return { success: false, error: '文件路径不能为空' };
+    }
+    const newDir = path.dirname(newPath);
+    await fs.promises.mkdir(newDir, { recursive: true });
+
+    try {
+      await fs.promises.rename(oldPath, newPath);
+    } catch (err: any) {
+      if (err.code === 'EXDEV') {
+        await fs.promises.copyFile(oldPath, newPath);
+        await fs.promises.unlink(oldPath);
+      } else {
+        throw err;
+      }
+    }
+    return { success: true };
+  } catch (err: any) {
+    logger.error('Main', `Failed to move/rename file from ${oldPath} to ${newPath}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()

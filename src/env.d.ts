@@ -34,6 +34,7 @@ interface Window {
     cancelDownload: (id: string) => void
     deleteFile: (filePath: string) => Promise<boolean>
     fileExists: (filePath: string) => Promise<boolean>
+    moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
     onDownloadProgress: (callback: (data: any) => void) => void
     syncAdBlockSource: (url: string) => Promise<{ success: boolean, count: number, content?: string, error?: string }>
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>

@@ -148,6 +148,12 @@
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
                 </v-button>
+                <VButton variant="icon-secondary" title="编辑任务" @click.stop="openEditTask(task)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </VButton>
                 <VButton variant="icon-secondary" title="打开所在目录" @click.stop="openDirectory(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -159,10 +165,16 @@
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
                 </VButton>
-                <VButton variant="icon-danger" title="删除任务" @click.stop="confirmDelete(task)">
+                <VButton variant="icon-danger" title="删除记录与文件" @click.stop="confirmDeleteFileAndRecord(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </VButton>
+                <VButton variant="icon-danger" title="删除记录" @click.stop="confirmDeleteRecordOnly(task)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
                   </svg>
                 </VButton>
               </div>
@@ -177,7 +189,7 @@
 
             <div class="task-meta">
               <span class="status-text" :class="task.status">{{ getStatusText(task.status) }}</span>
-              <span v-if="task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
+              <span v-if="task.errorMsg && task.status !== 'completed'" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
               <span class="meta-divider">•</span>
               <span class="size-text">{{ formatBytes(task.receivedBytes) }} {{ task.totalBytes > 0 ? '/ ' + formatBytes(task.totalBytes) : '' }}</span>
               <template v-if="task.totalSegments && task.totalSegments > 0">
@@ -218,6 +230,10 @@
       :default-dir="saveDefaultDir"
       :type="'audio'"
     />
+    <EditTaskDialog
+      v-model:visible="editTaskDialogVisible"
+      :task="editingTask"
+    />
   </div>
 </template>
 
@@ -232,6 +248,7 @@ import ImagePreviewDialog from '../components/features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../components/features/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../components/features/VideoPlayerDialog.vue';
 import SaveMediaDialog from '../components/features/SaveMediaDialog.vue';
+import EditTaskDialog from '../components/features/EditTaskDialog.vue';
 import { useSettings } from '../composables/useSettings';
 import { logger } from '../services/logger';
 
@@ -245,6 +262,14 @@ const activeAudioPreviewUrl = ref<string | null>(null);
 const activeVideoPreviewUrl = ref<string | null>(null);
 
 const saveDialogVisible = ref(false);
+
+const editTaskDialogVisible = ref(false);
+const editingTask = ref<any>(null);
+
+const openEditTask = (task: any) => {
+  editingTask.value = task;
+  editTaskDialogVisible.value = true;
+};
 const saveTargetUrl = ref('');
 const saveDefaultName = ref('');
 const saveDefaultDir = ref('');
@@ -613,37 +638,41 @@ const openDirectory = async (task: any) => {
   }
 };
 
-const confirmDelete = async (task: any) => {
+const confirmDeleteFileAndRecord = async (task: any) => {
   let fileExists = false;
   if (window.electronAPI) {
     fileExists = await window.electronAPI.fileExists(task.savePath);
   }
 
-  if (fileExists) {
-    const confirmed = await confirm({
-      title: '删除任务',
-      message: '确定删除任务及本地文件吗？',
-      confirmText: '删除',
-      cancelText: '取消',
-      type: 'danger'
-    });
+  const message = fileExists
+    ? `确定删除任务记录"${task.name}" 及本地文件吗？`
+    : `确定要删除任务记录 "${task.name}" 吗？（文件已移除）`;
 
-    if (confirmed) {
-      deleteTask(task.id, true);
-      showMessage('已删除任务和文件', 'success');
-    }
-  } else {
-    const confirmed = await confirm({
-      title: '删除任务',
-      message: `确定要删除任务 "${task.name}" 吗？`,
-      confirmText: '删除',
-      cancelText: '取消'
-    });
+  const confirmed = await confirm({
+    title: '删除记录与文件',
+    message,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
 
-    if (confirmed) {
-      deleteTask(task.id, false);
-      showMessage('已删除任务', 'success');
-    }
+  if (confirmed) {
+    deleteTask(task.id, fileExists);
+    showMessage(fileExists ? '已删除任务记录与文件' : '已删除任务记录', 'success');
+  }
+};
+
+const confirmDeleteRecordOnly = async (task: any) => {
+  const confirmed = await confirm({
+    title: '删除记录',
+    message: `确定仅删除任务记录 "${task.name}" 吗？（本地文件将保留）`,
+    confirmText: '删除记录',
+    cancelText: '取消'
+  });
+
+  if (confirmed) {
+    deleteTask(task.id, false);
+    showMessage('已删除任务记录', 'success');
   }
 };
 </script>
@@ -966,10 +995,33 @@ const confirmDelete = async (task: any) => {
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 16px;
+  display: flex;
+  align-items: center;
 
-  &.file-removed {
+  &.file-removed span {
     text-decoration: line-through;
     opacity: 0.6;
+  }
+}
+
+.edit-name-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  opacity: 0.4;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+
+  &:hover {
+    opacity: 1;
+    color: var(--color-accent);
+    background: var(--bg-surface-active);
   }
 }
 

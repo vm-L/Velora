@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelDownload: (id: string) => ipcRenderer.send('cancel-download', id),
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
+  moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('move-file', oldPath, newPath),
   onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download-progress', (_event, data) => callback(data)),
   syncAdBlockSource: (url: string) => ipcRenderer.invoke('sync-adblock-source', url),
   compileAdBlockRules: (sourcesData: Record<string, string>) => ipcRenderer.invoke('compile-adblock-rules', sourcesData),
