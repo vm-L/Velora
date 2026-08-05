@@ -13,18 +13,21 @@
     </div>
 
     <div class="menu-top">
-      <router-link to="/" class="menu-item" active-class="active">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9 22 9 12 15 12 15 22"></polyline>
-        </svg>
+      <router-link to="/" class="menu-item" active-class="active" :title="isCollapsed ? '主页' : ''">
+        <div class="menu-icon-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+        </div>
         <span class="menu-text">主页</span>
       </router-link>
 
       <div class="menu-group">
-        <div class="group-title">
+        <div class="group-title" :title="isCollapsed ? 'CMS 资源' : ''">
           <v-animated-text text="CMS 资源" :isCollapsed="isCollapsed" />
+          <div class="collapsed-divider"></div>
         </div>
         <div v-if="state.cmsResources.length === 0" class="empty-item">
           <span class="menu-text">暂未配置资源</span>
@@ -35,24 +38,28 @@
           :to="getLastRoute(item.id)"
           class="menu-item sub-item"
           :class="{ active: isCmsActive(item.id) }"
+          :title="isCollapsed ? item.name : ''"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-            <line x1="7" y1="2" x2="7" y2="22"></line>
-            <line x1="17" y1="2" x2="17" y2="22"></line>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-            <line x1="2" y1="7" x2="7" y2="7"></line>
-            <line x1="2" y1="17" x2="7" y2="17"></line>
-            <line x1="17" y1="17" x2="22" y2="17"></line>
-            <line x1="17" y1="7" x2="22" y2="7"></line>
-          </svg>
+          <div class="menu-icon-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+              <line x1="7" y1="2" x2="7" y2="22"></line>
+              <line x1="17" y1="2" x2="17" y2="22"></line>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <line x1="2" y1="7" x2="7" y2="7"></line>
+              <line x1="2" y1="17" x2="7" y2="17"></line>
+              <line x1="17" y1="17" x2="22" y2="17"></line>
+              <line x1="17" y1="7" x2="22" y2="7"></line>
+            </svg>
+          </div>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
       </div>
 
       <div class="menu-group">
-        <div class="group-title">
+        <div class="group-title" :title="isCollapsed ? '网站资源' : ''">
           <v-animated-text text="网站资源" :isCollapsed="isCollapsed" />
+          <div class="collapsed-divider"></div>
         </div>
         <div v-if="state.externalSites.length === 0" class="empty-item">
           <span class="menu-text">暂未配置资源</span>
@@ -63,29 +70,19 @@
           :to="`/resource/ext/${item.id}`"
           class="menu-item sub-item"
           active-class="active"
+          :title="isCollapsed ? item.name : ''"
         >
-          <img v-if="item.icon" :src="item.icon" class="resource-icon" referrerpolicy="no-referrer" />
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-          </svg>
+          <div class="menu-icon-wrap">
+            <img v-if="item.icon" :src="item.icon" class="resource-icon" referrerpolicy="no-referrer" />
+            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
       </div>
-    </div>
-
-    <div class="menu-bottom">
-      <router-link to="/settings" class="menu-item" active-class="active">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path
-            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
-          </path>
-        </svg>
-        <span class="menu-text">设置</span>
-      </router-link>
     </div>
   </div>
 </template>
@@ -141,6 +138,12 @@ const toggleSidebar = () => {
   overflow: hidden;
   flex-shrink: 0;
   cursor: pointer;
+  transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 0;
+  justify-content: center;
 }
 
 .sidebar-title {
@@ -184,31 +187,79 @@ const toggleSidebar = () => {
 
 .menu-top {
   flex: 1;
-  padding-top: 10px;
+  padding-top: 8px;
   overflow-y: auto;
 }
 
 .menu-group {
-  margin-top: 16px;
+  margin-top: 14px;
+  transition: margin 0.3s ease;
+}
+
+.sidebar.collapsed .menu-group {
+  margin-top: 8px;
 }
 
 .group-title {
   padding: 0 22px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.5px;
   text-transform: uppercase;
   user-select: none;
-  height: 18px; /* Maintain height when collapsed */
+  height: 18px;
   overflow: hidden;
+  position: relative;
+  transition: all 0.3s ease;
 }
 
-.sub-item svg,
-.sub-item .resource-icon {
-  margin-left: 2px;
-  margin-right: 18px;
+.collapsed-divider {
+  display: none;
+}
+
+.sidebar.collapsed .group-title :deep(.animated-text-container) {
+  display: none !important;
+}
+
+.sidebar.collapsed .group-title {
+  padding: 0;
+  margin: 10px 0 6px;
+  height: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.sidebar.collapsed .collapsed-divider {
+  display: block;
+  width: 24px;
+  height: 1.5px;
+  background: var(--border-color);
+  border-radius: 1px;
+  transition: all 0.2s ease;
+}
+
+.sidebar.collapsed .group-title:hover .collapsed-divider {
+  width: 32px;
+  background: var(--color-accent);
+}
+
+.menu-icon-wrap {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 14px;
+  transition: margin 0.3s ease;
+}
+
+.sidebar.collapsed .menu-icon-wrap {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
 }
 
 .resource-icon {
@@ -219,22 +270,30 @@ const toggleSidebar = () => {
   display: block;
 }
 
-.menu-bottom {
-  margin-top: auto;
-  padding-bottom: 20px;
-}
-
 .menu-item {
-  padding: 12px 22px;
+  padding: 0 16px;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: 15px;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   white-space: nowrap;
-  height: 48px;
+  height: 44px;
+  margin: 2px 8px;
+  border-radius: 8px;
   text-decoration: none;
+  box-sizing: border-box;
+}
+
+.sidebar.collapsed .menu-item {
+  margin: 4px auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  align-items: center;
+  border-radius: 10px;
 }
 
 button.menu-item {
@@ -246,19 +305,6 @@ button.menu-item {
   outline: none;
 }
 
-.menu-item svg,
-.menu-item .resource-icon {
-  flex-shrink: 0;
-  margin-right: 16px;
-  transition: margin 0.3s ease;
-  display: block;
-}
-
-.sidebar.collapsed .menu-item svg,
-.sidebar.collapsed .menu-item .resource-icon {
-  margin-right: 0;
-}
-
 .menu-item .menu-text {
   opacity: 1;
   transition: opacity 0.2s ease-in-out;
@@ -266,8 +312,7 @@ button.menu-item {
 }
 
 .sidebar.collapsed .menu-item .menu-text {
-  opacity: 0;
-  pointer-events: none;
+  display: none !important;
 }
 
 .menu-item:hover {
@@ -278,8 +323,13 @@ button.menu-item {
 .menu-item.active {
   background: var(--bg-surface-active);
   color: var(--color-accent);
-  box-shadow: inset -3px 0 0 var(--color-accent);
   font-weight: 500;
+}
+
+.sidebar.collapsed .menu-item.active {
+  background: var(--bg-surface-active);
+  color: var(--color-accent);
+  box-shadow: none;
 }
 
 .empty-item {

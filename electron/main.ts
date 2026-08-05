@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, protocol, webContents } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, webContents } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'

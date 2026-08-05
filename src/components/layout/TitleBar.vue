@@ -2,6 +2,15 @@
   <div class="title-bar">
     <div class="title-bar-text"></div>
     <div class="title-bar-controls">
+      <router-link to="/settings" class="control-btn settings-btn" title="设置">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+          </path>
+        </svg>
+      </router-link>
       <button class="control-btn theme-btn" :title="state.theme === 'dark' ? '浅色模式' : '深色模式'" @click="toggleTheme">
         <svg v-if="state.theme === 'dark'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -134,11 +143,18 @@ const toggleTheme = (event: MouseEvent) => {
   background: transparent;
   color: var(--text-primary);
   font-size: 16px;
-  transition: background 0.2s;
+  transition: all 0.2s;
   outline: none;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .control-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+.control-btn.router-link-active {
+  color: var(--color-accent);
   background: var(--bg-surface-hover);
 }
 
