@@ -5,6 +5,7 @@ import { logger } from '../services/logger'
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
 let isListenersInitialized = false
+const notifiedErrorTaskIds = new Set<string>()
 
 export const useDownloads = () => {
   const loadTasks = async () => {
@@ -107,8 +108,14 @@ export const useDownloads = () => {
           
           logger.info('Downloads', `[Renderer] Local database & task status updated. status: ${t.status}, progress: ${t.progress}%`)
           
+          // Reset error notification flag when task starts downloading
+          if (t.status === 'downloading' || t.status === 'resolving' || t.status === 'processing') {
+            notifiedErrorTaskIds.delete(t.id)
+          }
+
           // Trigger notifications
           if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'completed') {
+            notifiedErrorTaskIds.delete(t.id)
             const { useNotification } = await import('./useNotification')
             useNotification().showNotification({
               type: 'success',
@@ -117,14 +124,17 @@ export const useDownloads = () => {
               sourceRoute: '/'
             })
           } else if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'error') {
-            const { useNotification } = await import('./useNotification')
-            useNotification().showNotification({
-              type: 'error',
-              title: '下载失败',
-              message: t.name,
-              detail: t.errorMsg,
-              sourceRoute: '/'
-            })
+            if (!notifiedErrorTaskIds.has(t.id)) {
+              notifiedErrorTaskIds.add(t.id)
+              const { useNotification } = await import('./useNotification')
+              useNotification().showNotification({
+                type: 'error',
+                title: '下载失败',
+                message: t.name,
+                detail: t.errorMsg,
+                sourceRoute: '/'
+              })
+            }
           }
         }
       })

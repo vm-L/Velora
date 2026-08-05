@@ -397,11 +397,12 @@ class Downloader {
           } catch (e: any) {
             attempts++
             if (e.name === 'AbortError') throw e
-            if (attempts >= 3) {
-              logger.info('Downloader', `[M3U8Downloader] 分片 ${seg.index} 重试失败: ${e.message}`)
-              throw new Error(`分片 ${seg.index} 下载失败`)
+            if (attempts >= 5) {
+              logger.info('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 5 次均失败: ${e.message}`)
+              abortController.abort()
+              throw new Error(`分片 ${seg.index} 下载失败 (${e.message})`)
             }
-            await new Promise(r => setTimeout(r, 500 * attempts))
+            await new Promise(r => setTimeout(r, Math.min(3000, 1000 * Math.pow(1.5, attempts))))
           }
         }
       }
@@ -686,10 +687,12 @@ class Downloader {
             } catch (err: any) {
               attempts++
               if (err.name === 'AbortError') throw err
-              if (attempts >= 3) {
-                throw new Error(`分块 ${chunkItem.index} 下载失败`)
+              if (attempts >= 5) {
+                logger.info('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 5 次均失败: ${err.message}`)
+                abortController.abort()
+                throw new Error(`分块 ${chunkItem.index} 下载失败 (${err.message})`)
               }
-              await new Promise(r => setTimeout(r, 500 * attempts))
+              await new Promise(r => setTimeout(r, Math.min(3000, 1000 * Math.pow(1.5, attempts))))
             }
           }
         }
