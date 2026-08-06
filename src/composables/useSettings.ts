@@ -53,6 +53,27 @@ export const BUILTIN_ADBLOCK_SOURCES: AdBlockSource[] = [
   }
 ];
 
+export interface CustomScript {
+  id: string;
+  name: string;
+  domain: string;
+  code: string;
+  runAt: 'document-start' | 'dom-ready' | 'document-end';
+}
+
+export interface ParseRuleItem {
+  id: string;
+  key: string;
+  regex: string;
+}
+
+export interface ParseRule {
+  id: string;
+  domain: string;
+  actionType: 'download' | 'copy';
+  items: ParseRuleItem[];
+}
+
 export const state = reactive({
   closeBehavior: 'tray',
   theme: 'light',
@@ -66,17 +87,10 @@ export const state = reactive({
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
   customScripts: {} as Record<string, CustomScript[]>,
+  customParseRules: {} as Record<string, ParseRule[]>,
   adBlockSources: [] as AdBlockSource[],
   loaded: false
 })
-
-export interface CustomScript {
-  id: string;
-  name: string;
-  domain: string;
-  code: string;
-  runAt: 'document-start' | 'dom-ready' | 'document-end';
-}
 
 export const useSettings = () => {
   const loadSettings = async () => {
@@ -92,6 +106,7 @@ export const useSettings = () => {
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
     state.customScripts = (await window.electronAPI.getSetting('customScripts')) || {}
+    state.customParseRules = (await window.electronAPI.getSetting('customParseRules')) || {}
 
     // Load adblock sources & merge built-ins
     const savedSources: AdBlockSource[] = (await window.electronAPI.getSetting('adBlockSources')) || [];
@@ -176,6 +191,11 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customScripts', JSON.parse(JSON.stringify(scripts)))
   }
 
+  const saveCustomParseRules = async (rules: Record<string, ParseRule[]>) => {
+    state.customParseRules = rules
+    await window.electronAPI.setSetting('customParseRules', JSON.parse(JSON.stringify(rules)))
+  }
+
   const saveAdBlockSources = async (sources: AdBlockSource[]) => {
     state.adBlockSources = sources;
     await window.electronAPI.setSetting('adBlockSources', JSON.parse(JSON.stringify(sources)));
@@ -247,6 +267,7 @@ export const useSettings = () => {
     saveExternalSites, 
     saveCustomStyles,
     saveCustomScripts,
+    saveCustomParseRules,
     saveAdBlockSources,
     syncAdBlockSourceItem,
     syncAllAdBlockSources,

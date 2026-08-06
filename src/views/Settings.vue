@@ -135,14 +135,13 @@
           @drop="onDrop($event, 'cms', index)">
 
           <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'cms', index)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"></line>
-              <line x1="8" y1="12" x2="21" y2="12"></line>
-              <line x1="8" y1="18" x2="21" y2="18"></line>
-              <line x1="3" y1="6" x2="3.01" y2="6"></line>
-              <line x1="3" y1="12" x2="3.01" y2="12"></line>
-              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
             </svg>
           </div>
 
@@ -185,14 +184,13 @@
           @drop="onDrop($event, 'ext', index)">
 
           <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'ext', index)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"></line>
-              <line x1="8" y1="12" x2="21" y2="12"></line>
-              <line x1="8" y1="18" x2="21" y2="18"></line>
-              <line x1="3" y1="6" x2="3.01" y2="6"></line>
-              <line x1="3" y1="12" x2="3.01" y2="12"></line>
-              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
             </svg>
           </div>
 
@@ -214,6 +212,7 @@
             <div class="action-buttons">
               <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
               <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
+              <v-button variant="secondary" class="edit-btn" @click="openParseManager(item)">管理解析</v-button>
               <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
               <v-button variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</v-button>
             </div>
@@ -228,6 +227,40 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Parse Rule Management Modal -->
+    <div v-if="managingParseFor" class="modal-overlay" @click.self="closeParseManager">
+      <div class="modal-content" style="max-width: 600px; width: 90vw;">
+        <div class="modal-header">
+          <h3>管理解析规则 - {{ managingParseFor.name }}</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="closeParseManager">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </v-button>
+        </div>
+
+        <div class="modal-body">
+          <div v-if="!currentParseRules || currentParseRules.length === 0" class="empty-state">
+            暂无已保存的解析规则。
+          </div>
+          <div v-else class="domain-list">
+            <div v-for="rule in currentParseRules" :key="rule.id" class="domain-group">
+              <div class="domain-title" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
+                <span class="domain-name" style="font-size: 13px; font-weight: 500;">
+                  {{ rule.domain }} <span style="font-size: 12px; color: var(--color-accent); font-weight: normal;">({{ rule.actionType === 'download' ? '下载' : (rule.actionType === 'copy' ? '复制' : rule.actionType) }})</span>
+                </span>
+                <div style="display: flex; gap: 8px;">
+                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openParseEditor(rule)">编辑</v-button>
+                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteParseRule(rule)">删除</v-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     
@@ -308,13 +341,18 @@
       :code="editingStyleCode" 
       @save="onSaveStyle" 
     />
+    <ParseRuleDialog
+      v-model="parseRuleDialogVisible"
+      :resource-id="managingParseFor?.id || ''"
+      :editing-rule="editingParseRule"
+    />
     <AdBlockDialog v-model:visible="showAdBlockModal" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { CustomScript, useSettings } from '../composables/useSettings';
+import { CustomScript, ParseRule, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
 import { useMessage } from '../composables/useMessage';
 import { logger } from '../services/logger';
@@ -322,6 +360,7 @@ import VButton from '../components/base/VButton.vue';
 
 import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
 import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue';
+import ParseRuleDialog from '../components/features/ParseRuleDialog.vue';
 import AdBlockDialog from '../components/features/AdBlockDialog.vue';
 import VInput from '../components/base/VInput.vue';
 
@@ -338,6 +377,7 @@ const {
   saveExternalSites, 
   saveCustomStyles,
   saveCustomScripts,
+  saveCustomParseRules,
   syncAllAdBlockSources
 } = useSettings();
 const { confirm } = useConfirm();
@@ -555,6 +595,49 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
 
 
 const managingScriptsFor = ref<any>(null);
+
+const managingParseFor = ref<any>(null);
+const parseRuleDialogVisible = ref(false);
+const editingParseRule = ref<ParseRule | null>(null);
+
+const currentParseRules = computed(() => {
+  if (!managingParseFor.value) return [];
+  return state.customParseRules[managingParseFor.value.id] || [];
+});
+
+const openParseManager = (item: any) => {
+  managingParseFor.value = item;
+};
+
+const closeParseManager = () => {
+  managingParseFor.value = null;
+};
+
+const openParseEditor = (rule: ParseRule) => {
+  editingParseRule.value = rule;
+  parseRuleDialogVisible.value = true;
+};
+
+const deleteParseRule = async (rule: ParseRule) => {
+  if (!managingParseFor.value) return;
+  const confirmed = await confirm({
+    title: '删除解析规则',
+    message: `确定要删除匹配规则 "${rule.domain}" (${rule.actionType === 'download' ? '下载' : '复制'}) 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
+  const resId = managingParseFor.value.id;
+  const rules = (state.customParseRules[resId] || []).filter(r => r.id !== rule.id);
+  const updatedAll = {
+    ...state.customParseRules,
+    [resId]: rules
+  };
+  await saveCustomParseRules(updatedAll);
+  showMessage({ text: '解析规则删除成功', type: 'success' });
+};
 const currentScripts = computed(() => {
   if (!managingScriptsFor.value) return [];
   return state.customScripts[managingScriptsFor.value.id] || [];

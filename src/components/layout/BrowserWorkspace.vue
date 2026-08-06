@@ -42,23 +42,33 @@
       </div>
       <div class="func-spacer"></div>
       <div class="func-group">
-        <button class="func-btn" :class="{ 'active': scriptInjectorVisible }" v-tooltip="'注入脚本'" @click="toggleScriptInjector">
+        <v-button variant="icon" class="func-btn" :class="{ 'active': parseRuleVisible }" v-tooltip="'解析规则'" @click="toggleParseRule">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="20" y1="20" x2="10" y2="10"></line>
+            <line x1="13" y1="13" x2="10" y2="10" stroke-width="3"></line>
+            <path d="M7 1l1.2 2.3L10.5 4.5L8.2 5.7L7 8l-1.2-2.3L3.5 4.5l2.3-1.2z" fill="currentColor" stroke="none"></path>
+            <path d="M3 12v3M1.5 13.5h3" stroke-width="1.5"></path>
+            <path d="M16 3v3M14.5 4.5h3" stroke-width="1.5"></path>
+          </svg>
+        </v-button>
+
+        <v-button variant="icon" class="func-btn" :class="{ 'active': scriptInjectorVisible }" v-tooltip="'注入脚本'" @click="toggleScriptInjector">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
             stroke-linecap="round" stroke-linejoin="round">
             <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
               font-weight="800" font-size="11" fill="currentColor" stroke="none">JS</text>
           </svg>
-        </button>
+        </v-button>
 
-        <button class="func-btn" :class="{ 'active': inspectorVisible }" v-tooltip="'注入样式'" @click="toggleInspector">
+        <v-button variant="icon" class="func-btn" :class="{ 'active': inspectorVisible }" v-tooltip="'注入样式'" @click="toggleInspector">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
             stroke-linecap="round" stroke-linejoin="round">
             <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
               font-weight="800" font-size="11" fill="currentColor" stroke="none">CSS</text>
           </svg>
-        </button>
+        </v-button>
 
-        <button class="func-btn" :class="{ 'active': isPickingElementImage }" v-tooltip="'捕获图片'"
+        <v-button variant="icon" class="func-btn" :class="{ 'active': isPickingElementImage }" v-tooltip="'捕获图片'"
           @click="pickElementImage">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
@@ -69,15 +79,15 @@
             <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
             <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="2" fill="none"></path>
           </svg>
-        </button>
+        </v-button>
 
-        <button class="func-btn" :class="{ 'active': isPickingElementText }" v-tooltip="'复制文本'"
+        <v-button variant="icon" class="func-btn" :class="{ 'active': isPickingElementText }" v-tooltip="'复制文本'"
           @click="pickElementText">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
           </svg>
-        </button>
+        </v-button>
 
         <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
           @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
@@ -160,6 +170,9 @@
     <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" @close="activeVideoPreview = null"
       @download="onDownloadVideo" />
 
+    <!-- Parse Rule Dialog -->
+    <ParseRuleDialog v-model="parseRuleVisible" :resource-id="resourceId" :current-url="activeTab?.url || ''" />
+
     <!-- Script Injector Dialog -->
     <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="activeTab?.url || ''"
       :scripts="settingsState.customScripts[resourceId] || []" @executeScript="onExecuteScript" @save="onSaveScript"
@@ -206,8 +219,11 @@
       </div>
       <div class="menu-item" @click="triggerSilentParse">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"></polyline>
-          <polyline points="8 6 2 12 8 18"></polyline>
+          <line x1="20" y1="20" x2="10" y2="10"></line>
+          <line x1="13" y1="13" x2="10" y2="10" stroke-width="3"></line>
+          <path d="M7 1l1.2 2.3L10.5 4.5L8.2 5.7L7 8l-1.2-2.3L3.5 4.5l2.3-1.2z" fill="currentColor" stroke="none"></path>
+          <path d="M3 12v3M1.5 13.5h3" stroke-width="1.5"></path>
+          <path d="M16 3v3M14.5 4.5h3" stroke-width="1.5"></path>
         </svg>
         <span>{{ isContextMenuTargetLink ? '解析链接' : '解析页面' }}</span>
       </div>
@@ -221,8 +237,10 @@ import { useWorkspaces } from '../../composables/useWorkspaces';
 import { useSettings } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
 
+import VButton from '../base/VButton.vue';
 import InspectorDialog from '../features/InspectorDialog.vue';
 import ScriptInjectorDialog from '../features/ScriptInjectorDialog.vue';
+import ParseRuleDialog from '../features/ParseRuleDialog.vue';
 import SnifferDropdown from '../features/SnifferDropdown.vue';
 import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
@@ -238,6 +256,11 @@ const props = defineProps<{
   resourceId: string;
   resourceUrl: string;
 }>();
+
+const parseRuleVisible = ref(false);
+const toggleParseRule = () => {
+  parseRuleVisible.value = !parseRuleVisible.value;
+};
 
 const { showMessage } = useMessage();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
@@ -279,6 +302,28 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   nextTick(() => {
     if (contextMenuRef.value) {
       contextMenuRef.value.focus();
+      const menuWidth = contextMenuRef.value.offsetWidth || 150;
+      const menuHeight = contextMenuRef.value.offsetHeight || 120;
+      const winWidth = window.innerWidth;
+      const winHeight = window.innerHeight;
+
+      let finalX = px;
+      let finalY = py;
+
+      // 防止超出右视界：如果向右展开超出视界右边缘，向左翻转展开
+      if (px + menuWidth > winWidth - 12) {
+        finalX = Math.max(12, px - menuWidth);
+      }
+
+      // 防止超出下视界：如果向下展开超出视界下边缘，向上翻转展开
+      if (py + menuHeight > winHeight - 12) {
+        finalY = Math.max(12, py - menuHeight);
+      }
+
+      contextMenuPos.value = {
+        x: finalX,
+        y: finalY
+      };
     }
   });
 };
