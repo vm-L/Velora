@@ -663,6 +663,84 @@ ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: n
   }
 });
 
+ipcMain.handle('silent-parse-html', async (_event, targetUrl: string) => {
+  try {
+    if (!targetUrl) {
+      return { success: false, error: '目标链接不能为空' };
+    }
+
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+        webSecurity: false
+      }
+    });
+
+    let isResolved = false;
+
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      const cleanup = () => {
+        if (!win.isDestroyed()) {
+          win.destroy();
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          cleanup();
+          resolve({ success: false, error: '页面加载超时 (15s)' });
+        }
+      }, 15000);
+
+      win.webContents.on('did-finish-load', async () => {
+        if (isResolved) return;
+        try {
+          const html = await win.webContents.executeJavaScript('document.documentElement.outerHTML');
+          isResolved = true;
+          clearTimeout(timer);
+          clipboard.writeText(html || '');
+          cleanup();
+          resolve({ success: true });
+        } catch (err: any) {
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timer);
+            cleanup();
+            resolve({ success: false, error: err.message });
+          }
+        }
+      });
+
+      win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+        if (isResolved) return;
+        if (errorCode === -3) return; // ignore ABORTED
+        isResolved = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve({ success: false, error: `加载失败: ${errorDescription} (${errorCode})` });
+      });
+
+      win.loadURL(targetUrl).catch((err) => {
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve({ success: false, error: err.message });
+        }
+      });
+    });
+  } catch (err: any) {
+    logger.error('Main', `Silent parse error for ${targetUrl}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()

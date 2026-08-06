@@ -204,6 +204,13 @@
         </svg>
         <span>复制文本</span>
       </div>
+      <div class="menu-item" @click="triggerSilentParse">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+        <span>{{ isContextMenuTargetLink ? '解析链接' : '解析页面' }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -239,6 +246,8 @@ const { state: settingsState, saveCustomStyles, saveCustomScripts, saveExternalS
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuTabId = ref('');
+const contextMenuTargetUrl = ref('');
+const isContextMenuTargetLink = ref(false);
 const contextMenuRef = ref<HTMLElement | null>(null);
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
@@ -248,6 +257,18 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
   const px = typeof params?.x === 'number' ? params.x : (typeof e.clientX === 'number' ? e.clientX : 0);
   const py = typeof params?.y === 'number' ? params.y : (typeof e.clientY === 'number' ? e.clientY : 0);
+
+  const link = params?.linkURL || params?.linkUrl;
+  const page = params?.pageURL || params?.pageUrl;
+  const tab = workspace.value?.tabs.find(t => t.id === tabId);
+
+  if (link) {
+    isContextMenuTargetLink.value = true;
+    contextMenuTargetUrl.value = link;
+  } else {
+    isContextMenuTargetLink.value = false;
+    contextMenuTargetUrl.value = page || tab?.url || '';
+  }
 
   contextMenuPos.value = {
     x: px,
@@ -275,6 +296,66 @@ const triggerPickImage = () => {
 const triggerCopyText = () => {
   contextMenuVisible.value = false;
   pickElementText();
+};
+
+const isParsingHtml = ref(false);
+
+const triggerSilentParse = async () => {
+  const isLink = isContextMenuTargetLink.value;
+  contextMenuVisible.value = false;
+  const targetUrl = contextMenuTargetUrl.value || activeTab.value?.url;
+  if (!targetUrl) {
+    showMessage({ text: '未找到可解析的目标链接', type: 'error' });
+    return;
+  }
+
+  const toastId = `silent-parse-${props.resourceId}`;
+  const labelText = isLink ? '链接' : '页面';
+
+  showMessage({
+    id: toastId,
+    text: `正在解析${labelText}`,
+    type: 'loading',
+    duration: 0
+  });
+
+  isParsingHtml.value = true;
+  try {
+    if (window.electronAPI && window.electronAPI.silentParseHtml) {
+      const res = await window.electronAPI.silentParseHtml(targetUrl);
+      if (res.success) {
+        showMessage({
+          id: toastId,
+          text: `解析成功`,
+          type: 'success',
+          duration: 1500
+        });
+      } else {
+        showMessage({
+          id: toastId,
+          text: `解析失败: ${res.error || '未知错误'}`,
+          type: 'error',
+          duration: 2500
+        });
+      }
+    } else {
+      showMessage({
+        id: toastId,
+        text: '当前环境不支持解析功能',
+        type: 'error',
+        duration: 1500
+      });
+    }
+  } catch (err: any) {
+    showMessage({
+      id: toastId,
+      text: `解析发生异常: ${err.message || err}`,
+      type: 'error',
+      duration: 2500
+    });
+  } finally {
+    isParsingHtml.value = false;
+  }
 };
 const workspace = computed(() => getWorkspace(props.resourceId));
 const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId));
