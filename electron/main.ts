@@ -704,9 +704,8 @@ ipcMain.handle('silent-parse-html', async (_event, targetUrl: string) => {
           const html = await win.webContents.executeJavaScript('document.documentElement.outerHTML');
           isResolved = true;
           clearTimeout(timer);
-          clipboard.writeText(html || '');
           cleanup();
-          resolve({ success: true });
+          resolve({ success: true, html });
         } catch (err: any) {
           if (!isResolved) {
             isResolved = true;

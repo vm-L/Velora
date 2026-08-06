@@ -118,9 +118,9 @@
           </div>
           <div class="save-body">
             <div class="save-location-group">
-              <label>保存位置</label>
+              <label>下载位置</label>
               <div class="location-input-row">
-                <v-input v-model="saveDirectory" type="text" placeholder="选择或输入目录..." />
+                <v-input v-model="saveDirectory" type="text" placeholder="选择或输入下载目录..." />
                 <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">浏览</v-button>
               </div>
             </div>
@@ -421,7 +421,7 @@ const { addDownload } = useDownloads();
 
 const confirmSave = async () => {
   if (!saveDirectory.value) {
-    showMessage('请先选择保存目录', 'error');
+    showMessage('请先选择下载目录', 'error');
     return;
   }
   

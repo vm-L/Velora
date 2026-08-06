@@ -64,7 +64,8 @@ export interface CustomScript {
 export interface ParseRuleItem {
   id: string;
   key: string;
-  regex: string;
+  value: string;
+  regex?: string;
 }
 
 export interface ParseRule {

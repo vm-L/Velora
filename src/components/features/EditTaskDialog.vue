@@ -140,7 +140,7 @@ const saveEdit = async () => {
     return;
   }
   if (!dir) {
-    showMessage('请选择保存目录', 'error');
+    showMessage('请选择下载目录', 'error');
     return;
   }
 

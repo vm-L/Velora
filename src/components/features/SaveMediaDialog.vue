@@ -3,33 +3,53 @@
     <div v-if="visible" class="save-overlay" @mousedown.stop>
       <div class="save-modal">
         <div class="save-header">
-          <h3>保存{{ typeName }}</h3>
+          <h3>下载{{ typeName }}</h3>
         </div>
         <div class="save-body">
+          <!-- 1. 文件名称 -->
           <div class="save-location-group">
-            <label>保存位置</label>
+            <label>文件名称</label>
+            <div class="location-input-row">
+              <VInputSelect
+                v-model="fileName"
+                placeholder="输入或选择文件名称..."
+                :options="computedNameOptions"
+                class="flex-1"
+              />
+            </div>
+          </div>
+
+          <!-- 2. 文件地址 -->
+          <div class="save-location-group" style="margin-top: 16px;">
+            <label>文件地址</label>
+            <div class="location-input-row">
+              <VInputSelect
+                v-model="fileUrl"
+                placeholder="输入或选择文件地址..."
+                :options="computedUrlOptions"
+                class="flex-1"
+              />
+            </div>
+          </div>
+
+          <!-- 3. 下载目录 -->
+          <div class="save-location-group" style="margin-top: 16px;">
+            <label>下载目录</label>
             <div class="location-input-row">
               <VInputSelect
                 v-model="saveDirectory"
-                placeholder="选择或输入目录..."
+                placeholder="选择或输入下载目录..."
                 :options="dirTreeOptions"
                 class="flex-1"
               />
               <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">选择</v-button>
             </div>
           </div>
-
-          <div class="save-location-group" style="margin-top: 16px;">
-            <label>文件名称</label>
-            <div class="location-input-row">
-              <v-input v-model="fileName" type="text" placeholder="输入文件名称..." />
-            </div>
-          </div>
         </div>
         <div class="save-footer">
           <v-button variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</v-button>
           <v-button variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
-            {{ isSaving ? '保存中...' : '确认保存' }}
+            {{ isSaving ? '下载中...' : '确认下载' }}
           </v-button>
         </div>
       </div>
@@ -42,7 +62,6 @@ import { ref, computed, watch } from 'vue';
 import { useDownloads } from '../../composables/useDownloads';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 
 const props = defineProps<{
@@ -51,6 +70,8 @@ const props = defineProps<{
   defaultName: string;
   defaultDir: string;
   type: string; // 'audio', 'video', 'image', 'file'
+  nameOptions?: string[];
+  urlOptions?: string[];
 }>();
 
 const emit = defineEmits(['update:visible', 'saved']);
@@ -59,9 +80,19 @@ const { addDownload } = useDownloads();
 const { showMessage } = useMessage();
 
 const saveDirectory = ref('');
+const fileUrl = ref('');
 const fileName = ref('');
 const isSaving = ref(false);
 const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
+
+const computedNameOptions = computed<InputSelectOption[]>(() => {
+  return (props.nameOptions || []).map(n => ({ label: n, value: n }));
+});
+
+const computedUrlOptions = computed<InputSelectOption[]>(() => {
+  const list = props.urlOptions && props.urlOptions.length > 0 ? props.urlOptions : (props.url ? [props.url] : []);
+  return list.map(u => ({ label: u, value: u }));
+});
 
 const dirTreeOptions = computed<InputSelectOption[]>(() => {
   return dirTreeList.value.map(item => ({
@@ -113,6 +144,7 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     pauseAllMedia();
     saveDirectory.value = props.defaultDir;
+    fileUrl.value = props.url || (props.urlOptions && props.urlOptions[0]) || '';
     loadDirTree();
     
     let rawName = props.defaultName || 'video';
@@ -127,7 +159,8 @@ watch(() => props.visible, (newVal) => {
 
     // Determine target final extension
     let targetExt = ext;
-    if (props.type === 'video' || props.url.toLowerCase().includes('.m3u8') || ext.toLowerCase() === 'm3u8' || ext.toLowerCase() === 'ts') {
+    const targetUrl = fileUrl.value.toLowerCase();
+    if (props.type === 'video' || targetUrl.includes('.m3u8') || ext.toLowerCase() === 'm3u8' || ext.toLowerCase() === 'ts') {
       targetExt = 'mp4';
     } else if (props.type === 'audio') {
       targetExt = targetExt || 'mp3';
@@ -162,7 +195,11 @@ const getExtension = (urlOrName: string) => {
 
 const confirmSave = async () => {
   if (!saveDirectory.value) {
-    showMessage('请先选择保存目录', 'error');
+    showMessage('请先选择下载目录', 'error');
+    return;
+  }
+  if (!fileUrl.value.trim()) {
+    showMessage('文件地址不能为空', 'error');
     return;
   }
   if (!fileName.value.trim()) {
@@ -170,9 +207,10 @@ const confirmSave = async () => {
     return;
   }
 
+  let targetUrl = fileUrl.value.trim();
   let finalName = fileName.value.trim();
-  let targetExt = getExtension(props.defaultName);
-  if (props.type === 'video' || props.url.toLowerCase().includes('.m3u8') || targetExt.toLowerCase() === 'm3u8' || targetExt.toLowerCase() === 'ts') {
+  let targetExt = getExtension(props.defaultName) || getExtension(targetUrl);
+  if (props.type === 'video' || targetUrl.toLowerCase().includes('.m3u8') || targetExt.toLowerCase() === 'm3u8' || targetExt.toLowerCase() === 'ts') {
     targetExt = 'mp4';
   }
   
@@ -186,7 +224,7 @@ const confirmSave = async () => {
 
   try {
     const savePath = `${saveDirectory.value}/${finalName}`;
-    const added = await addDownload(props.url, finalName, savePath);
+    const added = await addDownload(targetUrl, finalName, savePath);
     
     if (added) {
       showMessage('已添加到下载任务', 'success');

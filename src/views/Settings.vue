@@ -32,17 +32,9 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
             <v-button variant="secondary" :disabled="isUpdatingAllRules" @click="handleUpdateAllRules">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'spin-icon': isUpdatingAllRules }">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
               {{ isUpdatingAllRules ? '更新中...' : '更新' }}
             </v-button>
             <v-button variant="secondary" @click="showAdBlockModal = true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
               编辑
             </v-button>
           </div>
@@ -161,7 +153,6 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
               <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
               <v-button variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</v-button>
             </div>
@@ -210,9 +201,9 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
-              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
               <v-button variant="secondary" class="edit-btn" @click="openParseManager(item)">管理解析</v-button>
+              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
+              <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
               <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
               <v-button variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</v-button>
             </div>

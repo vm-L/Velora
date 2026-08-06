@@ -43,78 +43,38 @@
       <div class="func-spacer"></div>
       <div class="func-group">
         <v-button variant="icon" class="func-btn" :class="{ 'active': parseRuleVisible }" v-tooltip="'解析规则'" @click="toggleParseRule">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="20" y1="20" x2="10" y2="10"></line>
-            <line x1="13" y1="13" x2="10" y2="10" stroke-width="3"></line>
-            <path d="M7 1l1.2 2.3L10.5 4.5L8.2 5.7L7 8l-1.2-2.3L3.5 4.5l2.3-1.2z" fill="currentColor" stroke="none"></path>
-            <path d="M3 12v3M1.5 13.5h3" stroke-width="1.5"></path>
-            <path d="M16 3v3M14.5 4.5h3" stroke-width="1.5"></path>
-          </svg>
+          <VIcon name="magic" size="16" />
         </v-button>
 
         <v-button variant="icon" class="func-btn" :class="{ 'active': scriptInjectorVisible }" v-tooltip="'注入脚本'" @click="toggleScriptInjector">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
-              font-weight="800" font-size="11" fill="currentColor" stroke="none">JS</text>
-          </svg>
+          <VIcon name="js" size="16" />
         </v-button>
 
         <v-button variant="icon" class="func-btn" :class="{ 'active': inspectorVisible }" v-tooltip="'注入样式'" @click="toggleInspector">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="system-ui, sans-serif"
-              font-weight="800" font-size="11" fill="currentColor" stroke="none">CSS</text>
-          </svg>
+          <VIcon name="css" size="16" />
         </v-button>
 
         <v-button variant="icon" class="func-btn" :class="{ 'active': isPickingElementImage }" v-tooltip="'捕获图片'"
           @click="pickElementImage">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor" stroke="currentColor" stroke-width="2"
-              stroke-linejoin="round"></polygon>
-            <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" stroke="currentColor" stroke-width="2"
-              fill="none"></rect>
-            <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
-            <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" stroke="currentColor" stroke-width="2" fill="none"></path>
-          </svg>
+          <VIcon name="pick-image" size="16" />
         </v-button>
 
         <v-button variant="icon" class="func-btn" :class="{ 'active': isPickingElementText }" v-tooltip="'复制文本'"
           @click="pickElementText">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
+          <VIcon name="copy-text" size="16" />
         </v-button>
 
         <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
           @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
           <template #icon>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-              <line x1="7" y1="2" x2="7" y2="22"></line>
-              <line x1="17" y1="2" x2="17" y2="22"></line>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <line x1="2" y1="7" x2="7" y2="7"></line>
-              <line x1="2" y1="17" x2="7" y2="17"></line>
-              <line x1="17" y1="17" x2="22" y2="17"></line>
-              <line x1="17" y1="7" x2="22" y2="7"></line>
-            </svg>
+            <VIcon name="video-sniffer" size="16" />
           </template>
         </SnifferDropdown>
 
         <SnifferDropdown type="audio" title="音频嗅探器" tooltip="音频嗅探器" :items="activeTab?.sniffedAudios || []"
           @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
           <template #icon>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 18V5l12-2v13"></path>
-              <circle cx="6" cy="18" r="3"></circle>
-              <circle cx="18" cy="16" r="3"></circle>
-            </svg>
+            <VIcon name="audio-sniffer" size="16" />
           </template>
         </SnifferDropdown>
         <div class="func-divider"></div>
@@ -195,36 +155,29 @@
       :default-name="saveDefaultName"
       :default-dir="saveDefaultDir"
       :type="saveType"
+      :name-options="saveNameOptions"
+      :url-options="saveUrlOptions"
+    />
+
+    <ParseRuleSelectDialog
+      v-model:visible="ruleSelectModalVisible"
+      :rules="pendingMatchingRules"
+      @select="onRuleSelected"
     />
 
     <!-- Context Menu -->
     <div v-show="contextMenuVisible" class="context-menu" tabindex="-1" ref="contextMenuRef" @blur="hideAllContextMenus"
       :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }" @click.stop>
       <div class="menu-item" @click="triggerPickImage">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="3 3 7 12 9 9 12 7 3 3" fill="currentColor"></polygon>
-          <rect x="11" y="12" width="11" height="9" rx="1.5" ry="1.5" fill="none"></rect>
-          <circle cx="14" cy="15" r="0.5" fill="currentColor" stroke="none"></circle>
-          <path d="M11 19l3-3l2.5 2.5l2.5-3.5l2 2" fill="none"></path>
-        </svg>
+        <VIcon name="pick-image" size="14" />
         <span>捕获图片</span>
       </div>
       <div class="menu-item" @click="triggerCopyText">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
+        <VIcon name="copy-text" size="14" />
         <span>复制文本</span>
       </div>
       <div class="menu-item" @click="triggerSilentParse">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="20" y1="20" x2="10" y2="10"></line>
-          <line x1="13" y1="13" x2="10" y2="10" stroke-width="3"></line>
-          <path d="M7 1l1.2 2.3L10.5 4.5L8.2 5.7L7 8l-1.2-2.3L3.5 4.5l2.3-1.2z" fill="currentColor" stroke="none"></path>
-          <path d="M3 12v3M1.5 13.5h3" stroke-width="1.5"></path>
-          <path d="M16 3v3M14.5 4.5h3" stroke-width="1.5"></path>
-        </svg>
+        <VIcon name="magic" size="14" />
         <span>{{ isContextMenuTargetLink ? '解析链接' : '解析页面' }}</span>
       </div>
     </div>
@@ -234,13 +187,15 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useWorkspaces } from '../../composables/useWorkspaces';
-import { useSettings } from '../../composables/useSettings';
+import { useSettings, type ParseRule, type ParseRuleItem } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
 
 import VButton from '../base/VButton.vue';
+import VIcon from '../base/VIcon.vue';
 import InspectorDialog from '../features/InspectorDialog.vue';
 import ScriptInjectorDialog from '../features/ScriptInjectorDialog.vue';
 import ParseRuleDialog from '../features/ParseRuleDialog.vue';
+import ParseRuleSelectDialog from '../features/ParseRuleSelectDialog.vue';
 import SnifferDropdown from '../features/SnifferDropdown.vue';
 import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
@@ -343,7 +298,184 @@ const triggerCopyText = () => {
   pickElementText();
 };
 
+const saveNameOptions = ref<string[]>([]);
+const saveUrlOptions = ref<string[]>([]);
+
+const ruleSelectModalVisible = ref(false);
+const pendingMatchingRules = ref<ParseRule[]>([]);
+const pendingParseContext = ref<{ targetUrl: string; htmlText: string; toastId: string } | null>(null);
 const isParsingHtml = ref(false);
+
+// 域名通配符匹配逻辑
+const matchDomainPattern = (urlStr: string, domainPattern: string): boolean => {
+  if (!urlStr || !domainPattern) return false;
+  const pattern = domainPattern.trim();
+  if (pattern === '*' || pattern === '*://*/*' || pattern === '*://*') return true;
+
+  try {
+    const urlObj = new URL(urlStr);
+    const host = urlObj.hostname;
+
+    // 1. 转为精确通配符正则表达式
+    const escapedPattern = pattern
+      .replace(/[+?^${}()|[\]\\]/g, '\\$&') // 转义正则元字符，保留 . 和 *
+      .replace(/\./g, '\\.')              // . 转为 \.
+      .replace(/\*/g, '.*');              // * 转为 .*
+
+    const reg = new RegExp(`^${escapedPattern}$`, 'i');
+    if (reg.test(urlStr) || reg.test(host)) return true;
+
+    // 2. 补全末尾斜杠兼容 (如 https://www.bilibili.com 匹配 *://www.bilibili.com/*)
+    const altUrl = urlStr.endsWith('/') ? urlStr.slice(0, -1) : (urlStr + '/');
+    if (reg.test(altUrl)) return true;
+
+    // 3. 主机名与基础域名后缀匹配回退
+    const cleanPattern = pattern
+      .replace(/^\*:\/\//, '')
+      .replace(/\/\*$/, '')
+      .replace(/^\*\./, '')
+      .replace(/\*/g, '');
+
+    if (cleanPattern) {
+      if (host === cleanPattern || host.endsWith('.' + cleanPattern) || urlStr.includes(cleanPattern)) {
+        return true;
+      }
+    }
+  } catch {
+    if (domainPattern === '*' || urlStr.includes(domainPattern)) return true;
+  }
+
+  return false;
+};
+
+// 解析单个 Rule Item
+const evaluateParseItem = (htmlText: string, item: ParseRuleItem): string | string[] | null => {
+  const valPattern = (item.value ?? item.regex ?? '').trim();
+  if (!valPattern) return null;
+
+  // 判断是否被 '/' 包裹进行正则匹配，例如 /pattern/flags
+  const isRegexPattern = /^\/(.+)\/([gimsuy]*)$/.test(valPattern);
+  if (isRegexPattern) {
+    const match = valPattern.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (match) {
+      try {
+        let patternStr = match[1];
+        let flagsStr = match[2] || '';
+        if (!flagsStr.includes('g')) flagsStr += 'g';
+
+        const reg = new RegExp(patternStr, flagsStr);
+        const matches: string[] = [];
+        let m: RegExpExecArray | null;
+
+        while ((m = reg.exec(htmlText)) !== null) {
+          const val = m[1] !== undefined ? m[1] : m[0];
+          matches.push(val);
+          if (!reg.global) break;
+        }
+
+        if (matches.length === 0) return null;
+        if (matches.length === 1) return matches[0];
+        return matches;
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  // 普通固定文本
+  return valPattern;
+};
+
+// 执行特定匹配域名规则的所有行为类型
+const executeMatchedRulesForDomain = async (_targetUrl: string, htmlText: string, selectedDomain: string, toastId: string) => {
+  const allRules = settingsState.customParseRules[props.resourceId] || [];
+  const domainRules = allRules.filter(r => r.domain === selectedDomain);
+
+  let hasExec = false;
+
+  for (const rule of domainRules) {
+    if (rule.actionType === 'download') {
+      hasExec = true;
+      let nameResult: string | string[] | null = null;
+      let urlResult: string | string[] | null = null;
+
+      rule.items.forEach(it => {
+        if (it.key === '文件名称') {
+          nameResult = evaluateParseItem(htmlText, it);
+        } else if (it.key === '文件链接') {
+          urlResult = evaluateParseItem(htmlText, it);
+        }
+      });
+
+      const nameOptions = Array.isArray(nameResult) ? nameResult : (nameResult ? [nameResult] : []);
+      const urlOptions = Array.isArray(urlResult) ? urlResult : (urlResult ? [urlResult] : []);
+
+      // 当下载类型没有匹配到文件名或文件链接时，弹出错误提示
+      if (nameOptions.length === 0 || urlOptions.length === 0) {
+        showMessage({
+          id: toastId,
+          text: '解析失败：未从当前页面匹配到有效的文件名或文件链接',
+          type: 'error',
+          duration: 2500
+        });
+        return;
+      }
+
+      // 配置并弹出下载保存弹窗
+      saveTargetUrl.value = urlOptions[0];
+      saveDefaultName.value = nameOptions[0];
+      saveDefaultDir.value = settingsState.videoDirectory || settingsState.fileDirectory || '';
+      saveType.value = 'video';
+      saveNameOptions.value = nameOptions;
+      saveUrlOptions.value = urlOptions;
+      saveDialogVisible.value = true;
+
+      showMessage({
+        id: toastId,
+        text: '解析成功',
+        type: 'success',
+        duration: 1500
+      });
+    } else if (rule.actionType === 'copy') {
+      hasExec = true;
+      const copyObj: Record<string, any> = {};
+
+      rule.items.forEach(it => {
+        const res = evaluateParseItem(htmlText, it);
+        // 复制类型没有匹配到则不用提示，直接 value 值为空，当匹配到多个则使用数组
+        copyObj[it.key] = res !== null ? res : '';
+      });
+
+      const jsonString = JSON.stringify(copyObj, null, 2);
+
+      try {
+        await navigator.clipboard.writeText(jsonString);
+        showMessage({
+          id: toastId,
+          text: '解析成功，数据已复制到剪切板！',
+          type: 'success',
+          duration: 1500
+        });
+      } catch (err: any) {
+        showMessage({
+          id: toastId,
+          text: `复制到剪切板失败: ${err.message || err}`,
+          type: 'error',
+          duration: 2500
+        });
+      }
+    }
+  }
+
+  if (!hasExec) {
+    showMessage({
+      id: toastId,
+      text: '所选规则暂无配置解析项',
+      type: 'error',
+      duration: 2000
+    });
+  }
+};
 
 const triggerSilentParse = async () => {
   const isLink = isContextMenuTargetLink.value;
@@ -359,36 +491,91 @@ const triggerSilentParse = async () => {
 
   showMessage({
     id: toastId,
-    text: `正在解析${labelText}`,
+    text: `正在解析${labelText}...`,
     type: 'loading',
     duration: 0
   });
 
   isParsingHtml.value = true;
   try {
-    if (window.electronAPI && window.electronAPI.silentParseHtml) {
-      const res = await window.electronAPI.silentParseHtml(targetUrl);
-      if (res.success) {
+    let htmlText = '';
+
+    if (!isLink) {
+      // 解析当前页面：直接获取当前 webview 的 DOM HTML，无需后台打开新页面
+      const tabId = contextMenuTabId.value || workspace.value?.activeTabId;
+      const webview = document.getElementById(`webview-${tabId}`) as any;
+      if (webview && typeof webview.executeJavaScript === 'function') {
+        try {
+          htmlText = await webview.executeJavaScript('document.documentElement.outerHTML');
+        } catch (err: any) {
+          showMessage({
+            id: toastId,
+            text: `获取当前页面内容失败: ${err.message || err}`,
+            type: 'error',
+            duration: 2500
+          });
+          return;
+        }
+      }
+    }
+
+    if (!htmlText) {
+      // 解析超链接：后台打开链接获取 HTML
+      if (!window.electronAPI || !window.electronAPI.silentParseHtml) {
         showMessage({
           id: toastId,
-          text: `解析成功`,
-          type: 'success',
+          text: '当前环境不支持解析功能',
+          type: 'error',
           duration: 1500
         });
-      } else {
+        return;
+      }
+
+      const res = await window.electronAPI.silentParseHtml(targetUrl);
+      if (!res.success || !res.html) {
         showMessage({
           id: toastId,
-          text: `解析失败: ${res.error || '未知错误'}`,
+          text: `解析失败: ${res.error || '获取页面内容失败'}`,
           type: 'error',
           duration: 2500
         });
+        return;
       }
-    } else {
+      htmlText = res.html;
+    }
+    const allRules = settingsState.customParseRules[props.resourceId] || [];
+
+    // 根据 URL 匹配该 workspace 下的解析规则
+    const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
+
+    if (matchedRules.length === 0) {
       showMessage({
         id: toastId,
-        text: '当前环境不支持解析功能',
+        text: '当前页面 URL 未匹配到任何解析规则，请先配置解析规则',
         type: 'error',
-        duration: 1500
+        duration: 2500
+      });
+      return;
+    }
+
+    // 按域名规则匹配项分组
+    const matchedDomainSet = new Set<string>();
+    matchedRules.forEach(r => matchedDomainSet.add(r.domain));
+    const uniqueMatchedDomains = Array.from(matchedDomainSet);
+
+    if (uniqueMatchedDomains.length === 1) {
+      // 单个匹配规则：直接执行规则
+      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId);
+    } else {
+      // 多个匹配规则：弹窗让用户手动选择执行哪个规则
+      pendingMatchingRules.value = matchedRules;
+      pendingParseContext.value = { targetUrl, htmlText, toastId };
+      ruleSelectModalVisible.value = true;
+      showMessage({
+        id: toastId,
+        text: '页面匹配到多个解析规则，请在弹窗中选择...',
+        type: 'info',
+        duration: 2000
       });
     }
   } catch (err: any) {
@@ -400,6 +587,20 @@ const triggerSilentParse = async () => {
     });
   } finally {
     isParsingHtml.value = false;
+  }
+};
+
+const onRuleSelected = async (selectedDomain: string) => {
+  if (pendingParseContext.value) {
+    const { targetUrl, htmlText, toastId } = pendingParseContext.value;
+    showMessage({
+      id: toastId,
+      text: '正在执行选定的解析规则...',
+      type: 'loading',
+      duration: 0
+    });
+    await executeMatchedRulesForDomain(targetUrl, htmlText, selectedDomain, toastId);
+    pendingParseContext.value = null;
   }
 };
 const workspace = computed(() => getWorkspace(props.resourceId));

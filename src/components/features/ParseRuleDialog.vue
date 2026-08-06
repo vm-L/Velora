@@ -3,21 +3,12 @@
     <!-- Header -->
     <div class="inspector-header" @mousedown="startDrag">
       <div class="header-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="20" y1="20" x2="10" y2="10"></line>
-          <line x1="13" y1="13" x2="10" y2="10" stroke-width="3"></line>
-          <path d="M7 1l1.2 2.3L10.5 4.5L8.2 5.7L7 8l-1.2-2.3L3.5 4.5l2.3-1.2z" fill="currentColor" stroke="none"></path>
-          <path d="M3 12v3M1.5 13.5h3" stroke-width="1.5"></path>
-          <path d="M16 3v3M14.5 4.5h3" stroke-width="1.5"></path>
-        </svg>
+        <VIcon name="magic" size="14" />
         解析规则
       </div>
       <div class="header-actions">
         <v-button variant="icon" class="action-btn close-btn" @click="close" title="关闭">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <VIcon name="close" size="12" />
         </v-button>
       </div>
     </div>
@@ -56,11 +47,8 @@
           <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1; min-height: 220px;">
             <div class="label-row" style="margin-bottom: 8px;">
               <label>解析项编辑</label>
-              <v-button variant="text" class="text-btn" @click="addItem">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 2px;">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
+              <v-button v-if="currentRule.actionType !== 'download'" variant="text" class="text-btn" @click="addItem">
+                <VIcon name="plus" size="12" style="margin-right: 2px;" />
                 新增解析项
               </v-button>
             </div>
@@ -86,14 +74,7 @@
                   @dragstart="onDragStart(idx)"
                   title="按住拖拽排序"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-                    <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-                    <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-                    <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-                    <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-                    <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-                  </svg>
+                  <VIcon name="drag-handle" size="14" />
                 </div>
 
                 <!-- Key 输入框 -->
@@ -102,28 +83,26 @@
                     v-model="item.key" 
                     placeholder="Key" 
                     class="item-input"
+                    :disabled="currentRule.actionType === 'download'"
                     :class="{ 'is-invalid': itemErrors[idx]?.key }"
                     @blur="validateKey(idx)"
                   />
                 </div>
 
-                <!-- Regex 输入框 -->
-                <div class="field-wrap regex-wrap">
+                <!-- Value 输入框 -->
+                <div class="field-wrap value-wrap">
                   <v-input 
-                    v-model="item.regex" 
-                    placeholder="正则表达式" 
+                    v-model="item.value" 
+                    placeholder="Value (支持正则表达式或常量)" 
                     class="item-input mono-input"
-                    :class="{ 'is-invalid': itemErrors[idx]?.regex }"
-                    @blur="validateRegex(idx)"
+                    :class="{ 'is-invalid': itemErrors[idx]?.value }"
+                    @blur="validateValue(idx)"
                   />
                 </div>
 
                 <!-- 删除操作 Icon -->
-                <v-button variant="icon" class="delete-icon-btn" @click="removeItem(idx)" title="删除解析项">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
+                <v-button v-if="currentRule.actionType !== 'download'" variant="icon" class="delete-icon-btn" @click="removeItem(idx)" title="删除解析项">
+                  <VIcon name="close" size="14" />
                 </v-button>
               </div>
             </div>
@@ -143,6 +122,7 @@
 import { ref, computed, watch, reactive } from 'vue';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 import { useSettings, type ParseRule } from '../../composables/useSettings';
 import { useMessage } from '../../composables/useMessage';
@@ -194,8 +174,15 @@ const currentRule = ref<ParseRule>({
   items: []
 });
 
-const itemErrors = reactive<Record<number, { key?: boolean; regex?: boolean }>>({});
+const itemErrors = reactive<Record<number, { key?: boolean; value?: boolean }>>({});
 const draggedIndex = ref<number | null>(null);
+
+const normalizeItems = (items: any[]) => {
+  return (items || []).map(it => ({
+    ...it,
+    value: it.value ?? it.regex ?? ''
+  }));
+};
 
 const historyDomainOptions = computed<InputSelectOption[]>(() => {
   const rules = settingsState.customParseRules[props.resourceId] || [];
@@ -210,12 +197,26 @@ const historyDomainOptions = computed<InputSelectOption[]>(() => {
   return Array.from(set).map(d => ({ label: d, value: d }));
 });
 
+const ensureDownloadDefaults = () => {
+  if (currentRule.value.actionType === 'download') {
+    const items = currentRule.value.items || [];
+    const item0 = items[0] || { id: Math.random().toString(36).substring(2, 9), key: '文件名称', value: '' };
+    const item1 = items[1] || { id: Math.random().toString(36).substring(2, 9), key: '文件链接', value: '' };
+    item0.key = '文件名称';
+    item1.key = '文件链接';
+    currentRule.value.items = [item0, item1];
+  }
+};
+
 watch(() => props.modelValue, (val) => {
   if (val) {
     for (const key in itemErrors) delete itemErrors[key];
 
     if (props.editingRule) {
-      currentRule.value = JSON.parse(JSON.stringify(props.editingRule));
+      const rule = JSON.parse(JSON.stringify(props.editingRule));
+      rule.items = normalizeItems(rule.items);
+      currentRule.value = rule;
+      ensureDownloadDefaults();
     } else {
       let defaultDomain = '*';
       if (props.currentUrl) {
@@ -239,8 +240,13 @@ const loadExistingRule = () => {
   const rules = settingsState.customParseRules[props.resourceId] || [];
   const found = rules.find(r => r.domain === currentRule.value.domain && r.actionType === currentRule.value.actionType);
   if (found) {
-    currentRule.value = JSON.parse(JSON.stringify(found));
+    const rule = JSON.parse(JSON.stringify(found));
+    rule.items = normalizeItems(rule.items);
+    currentRule.value = rule;
+  } else {
+    currentRule.value.items = [];
   }
+  ensureDownloadDefaults();
 };
 
 const onDomainOrActionChange = () => {
@@ -251,7 +257,7 @@ const addItem = () => {
   currentRule.value.items.push({
     id: Math.random().toString(36).substring(2, 9),
     key: '',
-    regex: ''
+    value: ''
   });
 };
 
@@ -284,47 +290,46 @@ const validateKey = (idx: number) => {
   return true;
 };
 
-const createRegExp = (rawPattern: string): RegExp => {
-  const trimmed = rawPattern.trim();
-  if (!trimmed) return new RegExp('');
-
-  // 检查是否为 /pattern/flags 格式
-  const match = trimmed.match(/^\/(.+)\/([gimsuy]*)$/);
-  if (match) {
-    return new RegExp(match[1], match[2]);
-  }
-  // 否则直接作为原生正则字符串 't.*t'
-  return new RegExp(trimmed);
-};
-
-const validateRegex = (idx: number) => {
+const validateValue = (idx: number) => {
   const item = currentRule.value.items[idx];
   if (!item) return;
-  const r = item.regex.trim();
+  const val = (item.value ?? item.regex ?? '').trim();
+  item.value = val;
 
   if (!itemErrors[idx]) itemErrors[idx] = {};
 
-  if (!r) {
-    itemErrors[idx].regex = true;
+  if (!val) {
+    itemErrors[idx].value = true;
     return false;
   }
 
-  try {
-    createRegExp(r);
-    itemErrors[idx].regex = false;
-    return true;
-  } catch {
-    itemErrors[idx].regex = true;
-    return false;
+  // 根据是否被 '/' 包裹来进行判断：如 '/demo/' 此时为正则表达式，'demo' 则为固定的值
+  const isRegexPattern = /^\/(.+)\/([gimsuy]*)$/.test(val);
+  if (isRegexPattern) {
+    const match = val.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (match) {
+      try {
+        new RegExp(match[1], match[2]);
+        itemErrors[idx].value = false;
+        return true;
+      } catch {
+        itemErrors[idx].value = true;
+        return false;
+      }
+    }
   }
+
+  // 普通固定值：非空即合规
+  itemErrors[idx].value = false;
+  return true;
 };
 
 const validateAll = () => {
   let valid = true;
   currentRule.value.items.forEach((_, idx) => {
     const kValid = validateKey(idx);
-    const rValid = validateRegex(idx);
-    if (!kValid || !rValid) valid = false;
+    const vValid = validateValue(idx);
+    if (!kValid || !vValid) valid = false;
   });
   return valid;
 };
@@ -352,7 +357,7 @@ const save = async () => {
   }
 
   if (currentRule.value.items.length > 0 && !validateAll()) {
-    showMessage({ text: '解析项存在重复Key或非法正则表达式，请检查后重试', type: 'error' });
+    showMessage({ text: '解析项存在重复Key或非法Value，请检查后重试', type: 'error' });
     return;
   }
 
