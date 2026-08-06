@@ -36,7 +36,7 @@ interface Window {
     fileExists: (filePath: string) => Promise<boolean>
     moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
     getDirectoryTree: (rootDir: string, maxDepth?: number) => Promise<Array<{ path: string, name: string, depth: number }>>
-    silentParseHtml: (targetUrl: string) => Promise<{ success: boolean; html?: string; error?: string }>
+    silentParseHtml: (targetUrl: string, scripts?: string[], evalExprs?: string[]) => Promise<{ success: boolean; html?: string; evaluatedVars?: Record<string, any>; error?: string }>
     onDownloadProgress: (callback: (data: any) => void) => void
     syncAdBlockSource: (url: string) => Promise<{ success: boolean, count: number, content?: string, error?: string }>
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>

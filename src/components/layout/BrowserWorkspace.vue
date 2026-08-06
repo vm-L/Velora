@@ -303,7 +303,7 @@ const saveUrlOptions = ref<string[]>([]);
 
 const ruleSelectModalVisible = ref(false);
 const pendingMatchingRules = ref<ParseRule[]>([]);
-const pendingParseContext = ref<{ targetUrl: string; htmlText: string; toastId: string } | null>(null);
+const pendingParseContext = ref<{ targetUrl: string; htmlText: string; toastId: string; evaluator?: (expr: string) => Promise<any> } | null>(null);
 const isParsingHtml = ref(false);
 
 // 域名通配符匹配逻辑
@@ -348,12 +348,16 @@ const matchDomainPattern = (urlStr: string, domainPattern: string): boolean => {
   return false;
 };
 
-// 解析单个 Rule Item
-const evaluateParseItem = (htmlText: string, item: ParseRuleItem): string | string[] | null => {
+// 解析单个 Rule Item (支持 /正则/、'固定常量' 及 全局变量名/JS表达式)
+const evaluateParseItem = async (
+  htmlText: string,
+  item: ParseRuleItem,
+  evaluator?: (expr: string) => Promise<any>
+): Promise<string | string[] | null> => {
   const valPattern = (item.value ?? item.regex ?? '').trim();
   if (!valPattern) return null;
 
-  // 判断是否被 '/' 包裹进行正则匹配，例如 /pattern/flags
+  // 1. 以 '/' 包裹：正则匹配，例如 /pattern/flags
   const isRegexPattern = /^\/(.+)\/([gimsuy]*)$/.test(valPattern);
   if (isRegexPattern) {
     const match = valPattern.match(/^\/(.+)\/([gimsuy]*)$/);
@@ -382,12 +386,39 @@ const evaluateParseItem = (htmlText: string, item: ParseRuleItem): string | stri
     }
   }
 
-  // 普通固定文本
-  return valPattern;
+  // 2. 以单引号或双引号包裹：固定常量值，例如 'demo' 或 "hello world"
+  const isQuotedString = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(valPattern);
+  if (isQuotedString) {
+    const match = valPattern.match(/^'([\s\S]*)'$|^"([\s\S]*)"$/);
+    if (match) {
+      return match[1] !== undefined ? match[1] : match[2];
+    }
+  }
+
+  // 3. 直接输入：读取全局变量 / 执行 JS 表达式 (如 window.__playinfo__)
+  if (evaluator) {
+    try {
+      const res = await evaluator(valPattern);
+      if (res === undefined || res === null) return null;
+      if (Array.isArray(res)) return res.map(v => (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+      if (typeof res === 'object') return JSON.stringify(res);
+      return String(res);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 };
 
 // 执行特定匹配域名规则的所有行为类型
-const executeMatchedRulesForDomain = async (_targetUrl: string, htmlText: string, selectedDomain: string, toastId: string) => {
+const executeMatchedRulesForDomain = async (
+  _targetUrl: string,
+  htmlText: string,
+  selectedDomain: string,
+  toastId: string,
+  evaluator?: (expr: string) => Promise<any>
+) => {
   const allRules = settingsState.customParseRules[props.resourceId] || [];
   const domainRules = allRules.filter(r => r.domain === selectedDomain);
 
@@ -399,13 +430,13 @@ const executeMatchedRulesForDomain = async (_targetUrl: string, htmlText: string
       let nameResult: string | string[] | null = null;
       let urlResult: string | string[] | null = null;
 
-      rule.items.forEach(it => {
+      for (const it of rule.items) {
         if (it.key === '文件名称') {
-          nameResult = evaluateParseItem(htmlText, it);
+          nameResult = await evaluateParseItem(htmlText, it, evaluator);
         } else if (it.key === '文件链接') {
-          urlResult = evaluateParseItem(htmlText, it);
+          urlResult = await evaluateParseItem(htmlText, it, evaluator);
         }
-      });
+      }
 
       const nameOptions = Array.isArray(nameResult) ? nameResult : (nameResult ? [nameResult] : []);
       const urlOptions = Array.isArray(urlResult) ? urlResult : (urlResult ? [urlResult] : []);
@@ -440,11 +471,11 @@ const executeMatchedRulesForDomain = async (_targetUrl: string, htmlText: string
       hasExec = true;
       const copyObj: Record<string, any> = {};
 
-      rule.items.forEach(it => {
-        const res = evaluateParseItem(htmlText, it);
+      for (const it of rule.items) {
+        const res = await evaluateParseItem(htmlText, it, evaluator);
         // 复制类型没有匹配到则不用提示，直接 value 值为空，当匹配到多个则使用数组
         copyObj[it.key] = res !== null ? res : '';
-      });
+      }
 
       const jsonString = JSON.stringify(copyObj, null, 2);
 
@@ -499,14 +530,18 @@ const triggerSilentParse = async () => {
   isParsingHtml.value = true;
   try {
     let htmlText = '';
+    let evaluator: ((expr: string) => Promise<any>) | undefined;
 
     if (!isLink) {
-      // 解析当前页面：直接获取当前 webview 的 DOM HTML，无需后台打开新页面
+      // 解析当前页面：直接获取当前 webview 的 DOM HTML，并在网页内部执行 JS 读取全局变量
       const tabId = contextMenuTabId.value || workspace.value?.activeTabId;
       const webview = document.getElementById(`webview-${tabId}`) as any;
       if (webview && typeof webview.executeJavaScript === 'function') {
         try {
           htmlText = await webview.executeJavaScript('document.documentElement.outerHTML');
+          evaluator = async (code: string) => {
+            return await webview.executeJavaScript(code);
+          };
         } catch (err: any) {
           showMessage({
             id: toastId,
@@ -520,7 +555,7 @@ const triggerSilentParse = async () => {
     }
 
     if (!htmlText) {
-      // 解析超链接：后台打开链接获取 HTML
+      // 解析超链接：收集要求值的全局变量表达式，在后台静默窗口中求值
       if (!window.electronAPI || !window.electronAPI.silentParseHtml) {
         showMessage({
           id: toastId,
@@ -531,7 +566,28 @@ const triggerSilentParse = async () => {
         return;
       }
 
-      const res = await window.electronAPI.silentParseHtml(targetUrl);
+      // 匹配当前 Workspace 下与目标链接 URL 符合的自定义 JS 脚本
+      const workspaceScripts = settingsState.customScripts[props.resourceId] || [];
+      const matchedScripts = workspaceScripts
+        .filter(s => s.code && s.code.trim() && matchDomainPattern(targetUrl, s.domain))
+        .map(s => s.code);
+
+      // 收集可能需要求值的全局变量表达式 (既非 /.../ 正则也非引号字符串)
+      const allRules = settingsState.customParseRules[props.resourceId] || [];
+      const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
+      const evalExprs: string[] = [];
+      matchedRules.forEach(r => {
+        r.items.forEach(it => {
+          const val = (it.value ?? it.regex ?? '').trim();
+          const isRegex = /^\/(.+)\/([gimsuy]*)$/.test(val);
+          const isQuoted = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(val);
+          if (val && !isRegex && !isQuoted) {
+            evalExprs.push(val);
+          }
+        });
+      });
+
+      const res = await window.electronAPI.silentParseHtml(targetUrl, matchedScripts, evalExprs);
       if (!res.success || !res.html) {
         showMessage({
           id: toastId,
@@ -542,6 +598,8 @@ const triggerSilentParse = async () => {
         return;
       }
       htmlText = res.html;
+      const evaluatedVars = res.evaluatedVars || {};
+      evaluator = async (expr: string) => evaluatedVars[expr];
     }
     const allRules = settingsState.customParseRules[props.resourceId] || [];
 
@@ -565,11 +623,11 @@ const triggerSilentParse = async () => {
 
     if (uniqueMatchedDomains.length === 1) {
       // 单个匹配规则：直接执行规则
-      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId);
+      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator);
     } else {
       // 多个匹配规则：弹窗让用户手动选择执行哪个规则
       pendingMatchingRules.value = matchedRules;
-      pendingParseContext.value = { targetUrl, htmlText, toastId };
+      pendingParseContext.value = { targetUrl, htmlText, toastId, evaluator };
       ruleSelectModalVisible.value = true;
       showMessage({
         id: toastId,
@@ -592,14 +650,14 @@ const triggerSilentParse = async () => {
 
 const onRuleSelected = async (selectedDomain: string) => {
   if (pendingParseContext.value) {
-    const { targetUrl, htmlText, toastId } = pendingParseContext.value;
+    const { targetUrl, htmlText, toastId, evaluator } = pendingParseContext.value;
     showMessage({
       id: toastId,
       text: '正在执行选定的解析规则...',
       type: 'loading',
       duration: 0
     });
-    await executeMatchedRulesForDomain(targetUrl, htmlText, selectedDomain, toastId);
+    await executeMatchedRulesForDomain(targetUrl, htmlText, selectedDomain, toastId, evaluator);
     pendingParseContext.value = null;
   }
 };

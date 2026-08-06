@@ -93,7 +93,7 @@
                 <div class="field-wrap value-wrap">
                   <v-input 
                     v-model="item.value" 
-                    placeholder="Value (支持正则表达式或常量)" 
+                    placeholder="Value (/正则/、'常量' 或 全局变量)" 
                     class="item-input mono-input"
                     :class="{ 'is-invalid': itemErrors[idx]?.value }"
                     @blur="validateValue(idx)"

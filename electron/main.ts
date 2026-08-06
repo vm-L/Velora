@@ -663,7 +663,7 @@ ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: n
   }
 });
 
-ipcMain.handle('silent-parse-html', async (_event, targetUrl: string) => {
+ipcMain.handle('silent-parse-html', async (_event, targetUrl: string, scripts?: string[], evalExprs?: string[]) => {
   try {
     if (!targetUrl) {
       return { success: false, error: '目标链接不能为空' };
@@ -683,7 +683,7 @@ ipcMain.handle('silent-parse-html', async (_event, targetUrl: string) => {
 
     let isResolved = false;
 
-    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+    return new Promise<{ success: boolean; html?: string; evaluatedVars?: Record<string, any>; error?: string }>((resolve) => {
       const cleanup = () => {
         if (!win.isDestroyed()) {
           win.destroy();
@@ -701,11 +701,38 @@ ipcMain.handle('silent-parse-html', async (_event, targetUrl: string) => {
       win.webContents.on('did-finish-load', async () => {
         if (isResolved) return;
         try {
+          // 匹配并顺序执行传入的 JS 脚本
+          if (Array.isArray(scripts) && scripts.length > 0) {
+            for (const scriptCode of scripts) {
+              if (scriptCode && scriptCode.trim()) {
+                try {
+                  await win.webContents.executeJavaScript(scriptCode);
+                } catch (scriptErr) {
+                  console.error('[silent-parse-html] 执行自定义 JS 脚本发生错误:', scriptErr);
+                }
+              }
+            }
+          }
+
+          // 求值全局变量表达式
+          const evaluatedVars: Record<string, any> = {};
+          if (Array.isArray(evalExprs) && evalExprs.length > 0) {
+            for (const expr of evalExprs) {
+              if (expr && expr.trim()) {
+                try {
+                  evaluatedVars[expr] = await win.webContents.executeJavaScript(expr);
+                } catch {
+                  evaluatedVars[expr] = null;
+                }
+              }
+            }
+          }
+
           const html = await win.webContents.executeJavaScript('document.documentElement.outerHTML');
           isResolved = true;
           clearTimeout(timer);
           cleanup();
-          resolve({ success: true, html });
+          resolve({ success: true, html, evaluatedVars });
         } catch (err: any) {
           if (!isResolved) {
             isResolved = true;
