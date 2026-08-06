@@ -141,7 +141,7 @@ export const useDownloads = () => {
     }
   }
 
-  const addDownload = async (url: string, name: string, savePath: string): Promise<boolean> => {
+  const addDownload = async (url: string, name: string, savePath: string, customReferer?: string): Promise<boolean> => {
     logger.info('Downloads', `[Renderer] addDownload invoked. url: ${url}, name: ${name}, savePath: ${savePath}`)
     try {
       const existingTask = tasks.value.find(t => t.savePath === savePath)
@@ -159,9 +159,19 @@ export const useDownloads = () => {
         
         if (confirmed) {
           if (existingTask) {
-            await deleteTask(existingTask.id, true)
-          } else if (window.electronAPI) {
-            await window.electronAPI.deleteFile(savePath)
+            logger.info('Downloads', `[Renderer] User chose to overwrite. Removing existing task ID: ${existingTask.id}`)
+            if (window.electronAPI) {
+              window.electronAPI.cancelDownload(existingTask.id)
+            }
+            tasks.value = tasks.value.filter(t => t.id !== existingTask.id)
+            await db.downloads.delete(existingTask.id)
+          }
+          try {
+            if (window.electronAPI && window.electronAPI.deleteFile) {
+              await window.electronAPI.deleteFile(savePath)
+            }
+          } catch (e) {
+            logger.warn('Downloads', `[Renderer] Failed to delete existing file: ${e}`)
           }
         } else {
           logger.info('Downloads', `[Renderer] addDownload canceled: Task or file already exists and user skipped.`)
@@ -180,6 +190,7 @@ export const useDownloads = () => {
         receivedBytes: 0,
         totalBytes: 0,
         speed: 0,
+        referer: customReferer,
         createdAt: Date.now(),
         updatedAt: Date.now()
       }
@@ -191,7 +202,7 @@ export const useDownloads = () => {
       
       if (window.electronAPI) {
         logger.info('Downloads', `[Renderer] addDownload: Triggering startDownload IPC for ID: ${id}`)
-        window.electronAPI.startDownload({ id, url, savePath, startBytes: 0 })
+        window.electronAPI.startDownload({ id, url, savePath, startBytes: 0, referer: task.referer })
       }
       
       return true
@@ -233,7 +244,8 @@ export const useDownloads = () => {
         url: t.url, 
         savePath: t.savePath, 
         startBytes: t.receivedBytes,
-        downloadedSegments: t.downloadedSegments
+        downloadedSegments: t.downloadedSegments,
+        referer: t.referer
       })
     }
   }

@@ -7,6 +7,7 @@ import path from 'path'
 import { Readable } from 'stream'
 import { storeManager } from './store'
 import { logger } from './logger'
+import { clientManager } from './main'
 
 export interface DownloadCommand {
   id: string
@@ -14,6 +15,23 @@ export interface DownloadCommand {
   savePath: string
   startBytes: number
   downloadedSegments?: number
+  referer?: string
+  origin?: string
+}
+
+export function getHeadersForUrl(_urlStr: string, customReferer?: string, _customOrigin?: string, clientId?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  }
+
+  if (clientId) {
+    headers['X-Velora-Client-Id'] = clientId
+  }
+  if (customReferer) {
+    headers['X-Velora-Referer'] = customReferer
+  }
+
+  return headers
 }
 
 export interface M3U8Segment {
@@ -152,6 +170,14 @@ class Downloader {
   async startDownload(cmd: DownloadCommand) {
     logger.info('Downloader', `[Downloader] startDownload ID: ${cmd.id}, URL: ${cmd.url}, savePath: ${cmd.savePath}, startBytes: ${cmd.startBytes}`)
 
+    if (cmd.url && cmd.referer) {
+      clientManager.registerClient({
+        clientId: cmd.id,
+        referer: cmd.referer,
+        origin: cmd.origin
+      })
+    }
+
     if (this.activeDownloads.has(cmd.id) || this.pendingQueue.some(c => c.id === cmd.id)) {
       logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
       return
@@ -184,13 +210,29 @@ class Downloader {
     }
   }
 
+  private async isM3U8UrlOrContent(url: string, headers: any, signal: AbortSignal): Promise<boolean> {
+    const lower = url.toLowerCase()
+    if (lower.includes('.m3u8')) return true
+    try {
+      const res = await net.fetch(url, {
+        headers: { ...headers, 'Range': 'bytes=0-512' },
+        signal: signal as any
+      })
+      const text = await res.text()
+      return text.includes('#EXTM3U')
+    } catch {
+      return false
+    }
+  }
+
   private async runTask(cmd: DownloadCommand) {
     const abortController = new AbortController()
     this.activeDownloads.set(cmd.id, { abortController })
     this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
     try {
-      const isM3U8 = cmd.url.toLowerCase().includes('.m3u8')
+      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id)
+      const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal)
       if (isM3U8) {
         await this.downloadM3U8Task(cmd, abortController)
       } else {
@@ -204,6 +246,7 @@ class Downloader {
         this.sendProgress({ id: cmd.id, status: 'error', errorMsg: err.message })
       }
     } finally {
+      clientManager.unregisterClient(cmd.id)
       this.activeDownloads.delete(cmd.id)
       this.checkQueue()
     }
@@ -224,14 +267,7 @@ class Downloader {
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
-    let origin = ''
-    try {
-      origin = new URL(url).origin
-    } catch {}
-    const headers = {
-      'Referer': origin,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
+    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
 
     const segments = await parseM3U8(url, headers)
     if (segments.length === 0) {
@@ -499,15 +535,7 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    let origin = ''
-    try {
-      origin = new URL(url).origin
-    } catch {}
-
-    const headers: any = {
-      'Referer': origin,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
+    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
 
     let isRangeSupported = false
     let totalBytes = 0

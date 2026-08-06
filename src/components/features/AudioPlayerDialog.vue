@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onUnmounted } from 'vue';
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
@@ -85,6 +85,7 @@ const formatMediaSrc = (rawUrl: string): string => {
 const props = defineProps<{
   url: string | null;
   hideDownload?: boolean;
+  pageUrl?: string;
 }>();
 
 const emit = defineEmits<{
@@ -92,6 +93,22 @@ const emit = defineEmits<{
   (e: 'download', url: string): void;
 }>();
 
+const previewClientId = 'preview_audio_' + Math.random().toString(36).slice(2);
+
+watch(() => [props.url, props.pageUrl], ([u, p]) => {
+  if (p && window.electronAPI && window.electronAPI.createMediaClient) {
+    window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
+  }
+  if (u && p && window.electronAPI && window.electronAPI.setMediaReferer) {
+    window.electronAPI.setMediaReferer(u, p);
+  }
+}, { immediate: true });
+
+onUnmounted(() => {
+  if (window.electronAPI && window.electronAPI.destroyMediaClient) {
+    window.electronAPI.destroyMediaClient(previewClientId);
+  }
+});
 const dialogRef = ref<HTMLElement | null>(null);
 const audioRef = ref<HTMLAudioElement | null>(null);
 

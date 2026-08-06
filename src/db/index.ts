@@ -12,6 +12,7 @@ export interface DownloadTask {
   speed: number; // bytes per second
   downloadedSegments?: number;
   totalSegments?: number;
+  referer?: string;
   errorMsg?: string;
   createdAt: number;
   updatedAt: number;

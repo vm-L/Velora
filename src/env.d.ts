@@ -37,6 +37,9 @@ interface Window {
     moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
     getDirectoryTree: (rootDir: string, maxDepth?: number) => Promise<Array<{ path: string, name: string, depth: number }>>
     silentParseHtml: (targetUrl: string, scripts?: string[], evalExprs?: string[]) => Promise<{ success: boolean; html?: string; evaluatedVars?: Record<string, any>; error?: string }>
+    setMediaReferer: (mediaUrl: string, pageUrl: string) => Promise<void>
+    createMediaClient: (config: { clientId: string, referer: string, origin?: string }) => Promise<void>
+    destroyMediaClient: (clientId: string) => Promise<void>
     onDownloadProgress: (callback: (data: any) => void) => void
     syncAdBlockSource: (url: string) => Promise<{ success: boolean, count: number, content?: string, error?: string }>
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>

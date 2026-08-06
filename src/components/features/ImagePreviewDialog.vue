@@ -157,7 +157,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
+import { useMessage } from '../../composables/useMessage';
+import { useSettings } from '../../composables/useSettings';
+import VButton from '../base/VButton.vue';
+import VInput from '../base/VInput.vue';
+import VCheckbox from '../base/VCheckbox.vue';
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
@@ -174,11 +179,6 @@ const formatMediaSrc = (rawUrl: string): string => {
   const port = window.__SERVER_PORT__ || 0;
   return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
 };
-import { useMessage } from '../../composables/useMessage';
-import { useSettings } from '../../composables/useSettings';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VCheckbox from '../base/VCheckbox.vue';
 
 const props = defineProps<{
   id: string;
@@ -188,11 +188,29 @@ const props = defineProps<{
   initialX?: number;
   initialY?: number;
   hideDownload?: boolean;
+  pageUrl?: string;
 }>();
 
 const emit = defineEmits(['close', 'focus', 'interaction-start', 'interaction-end']);
 const { showMessage } = useMessage();
 const { state: settingsState } = useSettings();
+
+const previewClientId = 'preview_image_' + Math.random().toString(36).slice(2);
+
+watch(() => [props.url, props.pageUrl], ([u, p]) => {
+  if (p && window.electronAPI && window.electronAPI.createMediaClient) {
+    window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
+  }
+  if (u && p && window.electronAPI && window.electronAPI.setMediaReferer) {
+    window.electronAPI.setMediaReferer(u, p);
+  }
+}, { immediate: true });
+
+onUnmounted(() => {
+  if (window.electronAPI && window.electronAPI.destroyMediaClient) {
+    window.electronAPI.destroyMediaClient(previewClientId);
+  }
+});
 
 // Save Overlay State
 const showSaveOverlay = ref(false);
@@ -453,7 +471,7 @@ const confirmSave = async () => {
     let addedCount = 0;
     for (const item of itemsToSave) {
       const savePath = `${saveDirectory.value}/${item.name}`;
-      const added = await addDownload(item.url, item.name, savePath);
+      const added = await addDownload(item.url, item.name, savePath, props.pageUrl);
       if (added) addedCount++;
     }
     

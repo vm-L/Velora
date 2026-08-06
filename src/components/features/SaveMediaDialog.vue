@@ -63,6 +63,7 @@ import { useDownloads } from '../../composables/useDownloads';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
+import { sanitizeFilename } from '../../utils/filename';
 
 const props = defineProps<{
   visible: boolean;
@@ -72,6 +73,7 @@ const props = defineProps<{
   type: string; // 'audio', 'video', 'image', 'file'
   nameOptions?: string[];
   urlOptions?: string[];
+  pageUrl?: string;
 }>();
 
 const emit = defineEmits(['update:visible', 'saved']);
@@ -208,7 +210,7 @@ const confirmSave = async () => {
   }
 
   let targetUrl = fileUrl.value.trim();
-  let finalName = fileName.value.trim();
+  let finalName = sanitizeFilename(fileName.value.trim());
   let targetExt = getExtension(props.defaultName) || getExtension(targetUrl);
   if (props.type === 'video' || targetUrl.toLowerCase().includes('.m3u8') || targetExt.toLowerCase() === 'm3u8' || targetExt.toLowerCase() === 'ts') {
     targetExt = 'mp4';
@@ -224,7 +226,7 @@ const confirmSave = async () => {
 
   try {
     const savePath = `${saveDirectory.value}/${finalName}`;
-    const added = await addDownload(targetUrl, finalName, savePath);
+    const added = await addDownload(targetUrl, finalName, savePath, props.pageUrl);
     
     if (added) {
       showMessage('已添加到下载任务', 'success');

@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import http from 'http'
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
+import { getHeadersForUrl } from './downloader'
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -98,6 +99,85 @@ const clearPrivacyData = async () => {
     logger.info('Privacy', 'Browser cache and storage data cleared successfully.')
   } catch (e: any) {
     logger.error('Privacy', `Failed to clear privacy data: ${e.message}`)
+  }
+}
+export const globalMediaPageMap = new Map<string, string>();
+export const globalHostPageMap = new Map<string, string>();
+export const webContentsUrlMap = new Map<number, string>();
+
+export function isLocalUrl(urlStr?: string): boolean {
+  if (!urlStr) return true;
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || u.protocol === 'file:' || u.protocol === 'app:' || u.protocol === 'velora:';
+  } catch {
+    return true;
+  }
+}
+
+export function registerMediaReferer(mediaUrl: string, pageUrl: string) {
+  if (!mediaUrl || !pageUrl || isLocalUrl(pageUrl)) return;
+  globalMediaPageMap.set(mediaUrl, pageUrl);
+  try {
+    const u = new URL(mediaUrl);
+    const host = u.hostname.toLowerCase();
+    if (host) {
+      globalHostPageMap.set(host, pageUrl);
+    }
+  } catch {}
+}
+
+export interface VeloraClientConfig {
+  clientId: string;
+  referer: string;
+  origin?: string;
+}
+
+class VeloraClientManager {
+  private clients = new Map<string, VeloraClientConfig>();
+
+  registerClient(config: VeloraClientConfig) {
+    if (!config.clientId) return;
+    let origin = config.origin;
+    if (!origin && config.referer) {
+      try { origin = new URL(config.referer).origin; } catch {}
+    }
+    this.clients.set(config.clientId, {
+      clientId: config.clientId,
+      referer: config.referer || '',
+      origin: origin || ''
+    });
+  }
+
+  unregisterClient(clientId: string) {
+    this.clients.delete(clientId);
+  }
+
+  getClient(clientId: string): VeloraClientConfig | undefined {
+    return this.clients.get(clientId);
+  }
+}
+
+export const clientManager = new VeloraClientManager();
+
+function getHeaderValue(headers: Record<string, string | string[] | undefined>, key: string): string | undefined {
+  const lowerKey = key.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lowerKey) {
+      const val = headers[k];
+      return Array.isArray(val) ? val[0] : val;
+    }
+  }
+  return undefined;
+}
+
+function removeHeaderCaseInsensitive(headers: Record<string, any>, key: string) {
+  const lowerKey = key.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === lowerKey) {
+      delete headers[k];
+    }
   }
 }
 
@@ -208,7 +288,7 @@ function createWindow() {
 
   ipcMain.handle('fetch-image-base64', async (_, url: string) => {
     try {
-      const response = await net.fetch(url, { headers: { 'Referer': '' } })
+      const response = await net.fetch(url, { headers: getHeadersForUrl(url) })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const buffer = await response.arrayBuffer()
       let contentType = response.headers.get('content-type') || 'image/x-icon'
@@ -223,7 +303,7 @@ function createWindow() {
 
   ipcMain.handle('fetch-url', async (_, url: string) => {
     try {
-      const response = await net.fetch(url)
+      const response = await net.fetch(url, { headers: getHeadersForUrl(url) })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const text = await response.text()
       try {
@@ -239,7 +319,7 @@ function createWindow() {
 
   ipcMain.handle('copy-image', async (_, url: string) => {
     try {
-      const response = await net.fetch(url, { headers: { 'Referer': '' } })
+      const response = await net.fetch(url, { headers: getHeadersForUrl(url) })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const buffer = await response.arrayBuffer()
       const image = nativeImage.createFromBuffer(Buffer.from(buffer))
@@ -264,7 +344,7 @@ function createWindow() {
     const results = []
     for (const file of files) {
       try {
-        const response = await net.fetch(file.url, { headers: { 'Referer': '' } })
+        const response = await net.fetch(file.url, { headers: getHeadersForUrl(file.url) })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const buffer = await response.arrayBuffer()
         const savePath = path.join(dirPath, file.name)
@@ -276,6 +356,22 @@ function createWindow() {
       }
     }
     return results
+  })
+
+  ipcMain.handle('set-media-referer', (_, mediaUrl: string, pageUrl: string) => {
+    registerMediaReferer(mediaUrl, pageUrl);
+  })
+
+  ipcMain.handle('create-media-client', (_, config: VeloraClientConfig) => {
+    if (config && config.clientId) {
+      clientManager.registerClient(config);
+    }
+  })
+
+  ipcMain.handle('destroy-media-client', (_, clientId: string) => {
+    if (clientId) {
+      clientManager.unregisterClient(clientId);
+    }
   })
 
   // Downloader IPCs
@@ -340,6 +436,10 @@ function createWindow() {
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
     (details, callback) => {
+      if (details.resourceType === 'mainFrame') {
+        return callback({});
+      }
+
       const url = details.url;
 
       // AdBlock Interceptor
@@ -348,7 +448,7 @@ function createWindow() {
         return callback({ cancel: true });
       }
 
-      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
+      if (details.resourceType === 'subFrame' || details.resourceType === 'script' || details.resourceType === 'stylesheet') {
         return callback({});
       }
 
@@ -462,6 +562,11 @@ function createWindow() {
       }
 
       if (type && mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        const activePageUrl = webContentsUrlMap.get(details.webContentsId);
+        if (activePageUrl) {
+          registerMediaReferer(url, activePageUrl);
+        }
+
         mainWindow.webContents.send('media-sniffed', {
           webContentsId: details.webContentsId,
           url,
@@ -474,19 +579,57 @@ function createWindow() {
     }
   );
 
-  // Anti-Hotlinking bypass: Spoof Referer and Origin to match the requested domain
+  // Referer and Origin header handling: Set to client config (X-Velora-Client-Id) or webpage referrer if present, otherwise strip local/empty
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['*://*/*'] },
     (details, callback) => {
-      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed() && details.webContentsId === mainWindow.webContents.id) {
-        if (details.resourceType === 'media' || details.resourceType === 'xhr' || details.resourceType === 'fetch') {
-          try {
-            const origin = new URL(details.url).origin;
-            details.requestHeaders['Referer'] = origin + '/';
-            details.requestHeaders['Origin'] = origin;
-          } catch {}
-        }
+      if (details.resourceType === 'mainFrame') {
+        return callback({ requestHeaders: details.requestHeaders });
       }
+
+      const explicitClientId = getHeaderValue(details.requestHeaders, 'X-Velora-Client-Id');
+      const explicitRef = getHeaderValue(details.requestHeaders, 'X-Velora-Referer');
+      const existingRef = getHeaderValue(details.requestHeaders, 'Referer');
+
+      let clientConfig: VeloraClientConfig | undefined;
+      if (explicitClientId) {
+        clientConfig = clientManager.getClient(explicitClientId);
+      }
+
+      let exactMappedRef = globalMediaPageMap.get(details.url);
+      let hostMappedRef: string | undefined;
+      try {
+        const u = new URL(details.url);
+        hostMappedRef = globalHostPageMap.get(u.hostname.toLowerCase());
+      } catch {}
+
+      let webContentsRef = webContentsUrlMap.get(details.webContentsId);
+
+      let targetReferer = clientConfig?.referer || explicitRef || exactMappedRef || hostMappedRef || existingRef || details.referrer || webContentsRef;
+
+      if (isLocalUrl(targetReferer)) {
+        targetReferer = clientConfig?.referer || explicitRef || exactMappedRef || hostMappedRef || (isLocalUrl(webContentsRef) ? '' : webContentsRef) || '';
+      }
+
+      if (targetReferer) {
+        try {
+          const targetOrigin = clientConfig?.origin || new URL(targetReferer).origin;
+          removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
+          removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
+          details.requestHeaders['Referer'] = targetReferer;
+          details.requestHeaders['Origin'] = targetOrigin;
+        } catch {
+          removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
+          removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
+        }
+      } else {
+        removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
+        removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
+      }
+
+      removeHeaderCaseInsensitive(details.requestHeaders, 'X-Velora-Client-Id');
+      removeHeaderCaseInsensitive(details.requestHeaders, 'X-Velora-Referer');
+
       callback({ requestHeaders: details.requestHeaders });
     }
   );
@@ -542,6 +685,17 @@ app.on('before-quit', (e) => {
 })
 
 app.on('web-contents-created', (event, contents) => {
+  contents.on('did-navigate', (_, url) => {
+    if (url && !isLocalUrl(url)) {
+      webContentsUrlMap.set(contents.id, url);
+    }
+  });
+  contents.on('did-navigate-in-page', (_, url) => {
+    if (url && !isLocalUrl(url)) {
+      webContentsUrlMap.set(contents.id, url);
+    }
+  });
+
   if (contents.getType() === 'webview') {
     contents.on('enter-html-full-screen', () => {
       mainWindow?.setFullScreen(true)

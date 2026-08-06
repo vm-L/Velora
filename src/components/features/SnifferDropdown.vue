@@ -58,6 +58,7 @@
       :default-name="saveDefaultName"
       :default-dir="saveDefaultDir"
       :type="type"
+      :page-url="pageUrl"
     />
   </div>
 </template>
@@ -72,6 +73,7 @@ const props = defineProps<{
   title: string;
   tooltip: string;
   items: { url: string, timestamp: number; }[];
+  pageUrl?: string;
 }>();
 
 const emit = defineEmits(['clear', 'preview']);

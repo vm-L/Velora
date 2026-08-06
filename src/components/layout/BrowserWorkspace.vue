@@ -65,14 +65,14 @@
         </v-button>
 
         <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
-          @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
+          :page-url="getCurrentPageUrl()" @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
           <template #icon>
             <VIcon name="video-sniffer" size="16" />
           </template>
         </SnifferDropdown>
 
         <SnifferDropdown type="audio" title="音频嗅探器" tooltip="音频嗅探器" :items="activeTab?.sniffedAudios || []"
-          @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
+          :page-url="getCurrentPageUrl()" @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
           <template #icon>
             <VIcon name="audio-sniffer" size="16" />
           </template>
@@ -117,35 +117,35 @@
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
         :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
         @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
-        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate" @did-navigate-in-page="onDidNavigate"
+        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate($event, tab.id)" @did-navigate-in-page="onDidNavigate($event, tab.id)"
         @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
       </webview>
     </div>
 
     <!-- Audio Player Dialog -->
-    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" @close="activeAudioPreview = null"
+    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageUrl()" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
 
     <!-- Video Player Dialog -->
-    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" @close="activeVideoPreview = null"
+    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" :page-url="getCurrentPageUrl()" @close="activeVideoPreview = null"
       @download="onDownloadVideo" />
 
     <!-- Parse Rule Dialog -->
-    <ParseRuleDialog v-model="parseRuleVisible" :resource-id="resourceId" :current-url="activeTab?.url || ''" />
+    <ParseRuleDialog v-model="parseRuleVisible" :resource-id="resourceId" :current-url="getCurrentPageUrl()" />
 
     <!-- Script Injector Dialog -->
-    <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="activeTab?.url || ''"
+    <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="getCurrentPageUrl()"
       :scripts="settingsState.customScripts[resourceId] || []" @executeScript="onExecuteScript" @save="onSaveScript"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Inspector Dialog -->
-    <InspectorDialog v-model="inspectorVisible" :url="activeTab?.url || ''"
+    <InspectorDialog v-model="inspectorVisible" :url="getCurrentPageUrl()"
       :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Image Preview Dialogs -->
     <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" :id="img.id" :url="img.url" :urls="img.urls"
-      :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" @close="onClosePreview" @focus="onFocusPreview"
+      :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" :page-url="getCurrentPageUrl()" @close="onClosePreview" @focus="onFocusPreview"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <SaveMediaDialog
@@ -157,6 +157,7 @@
       :type="saveType"
       :name-options="saveNameOptions"
       :url-options="saveUrlOptions"
+      :page-url="getCurrentPageUrl()"
     />
 
     <ParseRuleSelectDialog
@@ -189,6 +190,7 @@ import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useWorkspaces } from '../../composables/useWorkspaces';
 import { useSettings, type ParseRule, type ParseRuleItem } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
+import { sanitizeFilename } from '../../utils/filename';
 
 import VButton from '../base/VButton.vue';
 import VIcon from '../base/VIcon.vue';
@@ -438,7 +440,8 @@ const executeMatchedRulesForDomain = async (
         }
       }
 
-      const nameOptions = Array.isArray(nameResult) ? nameResult : (nameResult ? [nameResult] : []);
+      const rawNameOptions = Array.isArray(nameResult) ? nameResult : (nameResult ? [nameResult] : []);
+      const nameOptions = rawNameOptions.map(n => sanitizeFilename(n)).filter(Boolean);
       const urlOptions = Array.isArray(urlResult) ? urlResult : (urlResult ? [urlResult] : []);
 
       // 当下载类型没有匹配到文件名或文件链接时，弹出错误提示
@@ -968,7 +971,31 @@ const onStartLoading = (tabId: string) => {
 };
 
 
-const onDidNavigate = () => {
+const getCurrentPageUrl = (): string => {
+  const wv = activeWebview();
+  if (wv && typeof wv.getURL === 'function') {
+    try {
+      const u = wv.getURL();
+      if (u && u !== 'about:blank') return u;
+    } catch {}
+  }
+  return activeTab.value?.url || props.resourceUrl || '';
+};
+
+const onDidNavigate = (event?: any, tabId?: string) => {
+  const targetId = tabId || workspace.value?.activeTabId;
+  if (targetId) {
+    let newUrl = event?.url;
+    if (!newUrl) {
+      const wv = activeWebview();
+      if (wv && typeof wv.getURL === 'function') {
+        try { newUrl = wv.getURL(); } catch {}
+      }
+    }
+    if (newUrl && newUrl !== 'about:blank') {
+      updateTab(props.resourceId, targetId, { url: newUrl });
+    }
+  }
   syncAddressBar();
 };
 

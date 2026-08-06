@@ -140,12 +140,30 @@ import { logger } from '../../services/logger';
 const props = defineProps<{
   url: string | null;
   hideDownload?: boolean;
+  pageUrl?: string;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'download', url: string): void;
 }>();
+
+const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
+
+watch(() => [props.url, props.pageUrl], ([u, p]) => {
+  if (p && window.electronAPI && window.electronAPI.createMediaClient) {
+    window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
+  }
+  if (u && p && window.electronAPI && window.electronAPI.setMediaReferer) {
+    window.electronAPI.setMediaReferer(u, p);
+  }
+}, { immediate: true });
+
+onUnmounted(() => {
+  if (window.electronAPI && window.electronAPI.destroyMediaClient) {
+    window.electronAPI.destroyMediaClient(previewClientId);
+  }
+});
 
 const dialogRef = ref<HTMLElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
@@ -282,8 +300,23 @@ const loadVideo = async () => {
     hls = null;
   }
 
+  const isM3U8 = playUrl.toLowerCase().includes('.m3u8') || await (async () => {
+    try {
+      const res = await fetch(playUrl, {
+        headers: {
+          'X-Velora-Client-Id': previewClientId,
+          ...(props.pageUrl ? { 'X-Velora-Referer': props.pageUrl } : {})
+        }
+      });
+      const text = await res.text();
+      return text.includes('#EXTM3U');
+    } catch {
+      return false;
+    }
+  })();
+
   // 判断是否走 HLS.js 播放
-  if (playUrl.toLowerCase().includes('.m3u8')) {
+  if (isM3U8) {
     try {
       const HlsModule = await import('hls.js');
       const Hls = HlsModule.default || HlsModule;
@@ -293,6 +326,22 @@ const loadVideo = async () => {
           autoStartLoad: true,
           startPosition: -1,
           capLevelToPlayerSize: false,
+          fetchSetup: (context: any, initParams: any) => {
+            initParams.headers = {
+              ...(initParams.headers || {}),
+              'X-Velora-Client-Id': previewClientId,
+              ...(props.pageUrl ? { 'X-Velora-Referer': props.pageUrl } : {})
+            };
+            return new Request(context.url, initParams);
+          },
+          xhrSetup: (xhr: XMLHttpRequest) => {
+            try {
+              xhr.setRequestHeader('X-Velora-Client-Id', previewClientId);
+              if (props.pageUrl) {
+                xhr.setRequestHeader('X-Velora-Referer', props.pageUrl);
+              }
+            } catch {}
+          }
         });
         
         hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
