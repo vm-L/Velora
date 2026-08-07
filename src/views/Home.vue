@@ -644,12 +644,13 @@ const confirmDeleteFileAndRecord = async (task: any) => {
     fileExists = await window.electronAPI.fileExists(task.savePath);
   }
 
-  const message = fileExists
-    ? `确定删除任务记录"${task.name}" 及本地文件吗？`
-    : `确定要删除任务记录 "${task.name}" 吗？（文件已移除）`;
+  const isUnfinished = task.status !== 'completed';
+  const message = isUnfinished
+    ? (fileExists ? `确定要取消并删除未完成的任务 "${task.name}" 及其已下载的临时文件吗？` : `确定要删除任务记录 "${task.name}" 吗？`)
+    : (fileExists ? `确定删除任务记录 "${task.name}" 及本地文件吗？` : `确定要删除任务记录 "${task.name}" 吗？（文件已移除）`);
 
   const confirmed = await confirm({
-    title: '删除记录与文件',
+    title: isUnfinished ? '删除未完成任务' : '删除记录与文件',
     message,
     confirmText: '删除',
     cancelText: '取消',
@@ -657,22 +658,25 @@ const confirmDeleteFileAndRecord = async (task: any) => {
   });
 
   if (confirmed) {
-    deleteTask(task.id, fileExists);
-    showMessage(fileExists ? '已删除任务记录与文件' : '已删除任务记录', 'success');
+    await deleteTask(task.id, fileExists || isUnfinished);
+    showMessage(fileExists || isUnfinished ? (isUnfinished ? '已删除任务与已下载的临时文件' : '已删除任务记录与文件') : '已删除任务记录', 'success');
   }
 };
 
 const confirmDeleteRecordOnly = async (task: any) => {
+  const isUnfinished = task.status !== 'completed';
   const confirmed = await confirm({
     title: '删除记录',
-    message: `确定仅删除任务记录 "${task.name}" 吗？（本地文件将保留）`,
+    message: isUnfinished
+      ? `确定删除未完成的任务记录 "${task.name}" 吗？（已下载的临时文件将被同步清除）`
+      : `确定仅删除任务记录 "${task.name}" 吗？（本地文件将保留）`,
     confirmText: '删除记录',
     cancelText: '取消'
   });
 
   if (confirmed) {
-    deleteTask(task.id, false);
-    showMessage('已删除任务记录', 'success');
+    await deleteTask(task.id, isUnfinished);
+    showMessage(isUnfinished ? '已删除未完成任务与临时文件' : '已删除任务记录', 'success');
   }
 };
 </script>

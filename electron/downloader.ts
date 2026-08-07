@@ -507,7 +507,7 @@ class Downloader {
    * 通用视频 (MP4 / AVI 等) 的断点续传、HTTP Range 分块多线程加速与内存缓冲
    */
   private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController) {
-    const { id, url, savePath } = cmd
+    const { id, url, savePath, startBytes = 0 } = cmd
 
     const chunkSize = 4 * 1024 * 1024 // 4MB
     const progressPath = savePath + '.velora'

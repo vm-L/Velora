@@ -398,25 +398,47 @@ function createWindow() {
   })
 
   ipcMain.handle('delete-file', async (_, filePath: string) => {
-    try {
-      if (fs.existsSync(filePath)) {
-        await fs.promises.unlink(filePath)
+    if (!filePath) return false;
+    const targets = [
+      filePath,
+      filePath + '.temp.ts',
+      filePath + '.temp',
+      filePath + '.tmp',
+      filePath + '.velora',
+      filePath + '.ts'
+    ];
+    let anyDeleted = false;
+    for (const targetPath of targets) {
+      if (fs.existsSync(targetPath)) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await fs.promises.unlink(targetPath);
+            anyDeleted = true;
+            logger.info('Main', `Deleted file: ${targetPath}`);
+            break;
+          } catch (e: any) {
+            if (attempt < 4) {
+              await new Promise(r => setTimeout(r, 150));
+            } else {
+              logger.error('Main', `Failed to delete file ${targetPath}: ${e.message}`);
+            }
+          }
+        }
       }
-      if (fs.existsSync(filePath + '.velora')) {
-        await fs.promises.unlink(filePath + '.velora')
-      }
-      if (fs.existsSync(filePath + '.ts')) {
-        await fs.promises.unlink(filePath + '.ts')
-      }
-      return true
-    } catch (e) {
-      logger.error('Main', 'Failed to delete file: ' + e)
     }
-    return false
+    return anyDeleted;
   })
 
   ipcMain.handle('file-exists', async (_, filePath: string) => {
-    return fs.existsSync(filePath)
+    if (!filePath) return false;
+    return (
+      fs.existsSync(filePath) ||
+      fs.existsSync(filePath + '.temp.ts') ||
+      fs.existsSync(filePath + '.temp') ||
+      fs.existsSync(filePath + '.tmp') ||
+      fs.existsSync(filePath + '.velora') ||
+      fs.existsSync(filePath + '.ts')
+    );
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {

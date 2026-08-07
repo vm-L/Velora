@@ -260,7 +260,9 @@ export const useDownloads = () => {
       if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
         if (window.electronAPI) window.electronAPI.cancelDownload(id)
       }
-      if (deleteFile && window.electronAPI) {
+      const isUnfinished = t.status !== 'completed';
+      const shouldDeleteFile = deleteFile || isUnfinished;
+      if (shouldDeleteFile && window.electronAPI) {
         await window.electronAPI.deleteFile(t.savePath)
       }
       await db.downloads.delete(id)

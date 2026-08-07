@@ -300,20 +300,40 @@ const loadVideo = async () => {
     hls = null;
   }
 
-  const isM3U8 = playUrl.toLowerCase().includes('.m3u8') || await (async () => {
+  const checkM3U8Content = async (targetUrl: string): Promise<boolean> => {
+    if (!targetUrl) return false;
+    // 1. 本地媒体服务器流与本地文件路径直接跳过探查（绝对不是网络 M3U8 列表）
+    if (targetUrl.includes('127.0.0.1:') || targetUrl.includes('localhost:') || /^\/|^[a-zA-Z]:[\\/]/i.test(targetUrl)) {
+      return false;
+    }
+    // 2. 已有常见音视频/图像标准扩展名直接跳过探查
+    if (/\.(mp4|webm|mkv|avi|flv|mp3|wav|ogg|aac|png|jpe?g|webp)$/i.test(targetUrl.split('?')[0])) {
+      return false;
+    }
+
     try {
-      const res = await fetch(playUrl, {
+      // 3. 仅对可疑网络资源使用 Range 探查前 512 字节头部签名，绝不一次性将大文件文本读入内存
+      const res = await fetch(targetUrl, {
         headers: {
           'X-Velora-Client-Id': previewClientId,
+          'Range': 'bytes=0-512',
           ...(props.pageUrl ? { 'X-Velora-Referer': props.pageUrl } : {})
         }
       });
-      const text = await res.text();
+      if (!res.ok && res.status !== 206) return false;
+      const reader = res.body?.getReader();
+      if (!reader) return false;
+      const { value } = await reader.read();
+      reader.cancel();
+      if (!value) return false;
+      const text = new TextDecoder().decode(value);
       return text.includes('#EXTM3U');
     } catch {
       return false;
     }
-  })();
+  };
+
+  const isM3U8 = playUrl.toLowerCase().includes('.m3u8') || await checkM3U8Content(playUrl);
 
   // 判断是否走 HLS.js 播放
   if (isM3U8) {
