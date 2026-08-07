@@ -90,6 +90,22 @@ let mainWindow: BrowserWindow | null = null
 
 const iconBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAySURBVDhPY/iPBoB0AOP///8xpE2D0RgagEEoMIIGRA8MA2EwhgbgNQChwAhgBwMDAB1eF1y5w6OaAAAAAElFTkSuQmCC'
 
+const getAppIcon = () => {
+  const iconPaths = [
+    path.join(__dirname, '../public/icon.png'),
+    path.join(__dirname, 'resources/icon.png'),
+    path.join(process.cwd(), 'public/icon.png'),
+    path.join(process.cwd(), 'build/icon.png')
+  ];
+  for (const p of iconPaths) {
+    if (fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) return img;
+    }
+  }
+  return nativeImage.createFromDataURL(iconBase64);
+};
+
 const clearPrivacyData = async () => {
   try {
     await session.defaultSession.clearCache()
@@ -182,11 +198,13 @@ function removeHeaderCaseInsensitive(headers: Record<string, any>, key: string) 
 }
 
 function createWindow() {
+  const appIcon = getAppIcon();
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 850,
     resizable: true,
     title: "Velora",
+    icon: appIcon,
     autoHideMenuBar: true,
     frame: false,
     hasShadow: false,
@@ -676,14 +694,15 @@ app.whenReady().then(async () => {
     }
   });
 
-  const trayIcon = nativeImage.createFromDataURL(iconBase64)
-  tray = new Tray(trayIcon)
+  const appIcon = getAppIcon();
+  const trayIcon = appIcon.isEmpty() ? nativeImage.createFromDataURL(iconBase64) : appIcon.resize({ width: 16, height: 16 });
+  tray = new Tray(trayIcon);
   const contextMenu = Menu.buildFromTemplate([
     { label: '显示应用', click: () => { if (mainWindow) mainWindow.show() } },
     { type: 'separator' },
     { label: '完全退出', click: () => { app.quit() } }
   ])
-  tray.setToolTip('Hello Electron')
+  tray.setToolTip('Velora')
   tray.setContextMenu(contextMenu)
   
   tray.on('click', () => { if (mainWindow) mainWindow.show() })
