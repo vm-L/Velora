@@ -159,12 +159,6 @@
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
                 </VButton>
-                <VButton variant="icon-secondary" title="复制链接" @click.stop="copyUrl(task.url)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </VButton>
                 <VButton variant="icon-danger" title="删除记录与文件" @click.stop="confirmDeleteFileAndRecord(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="3 6 5 6 21 6"></polyline>
@@ -573,10 +567,7 @@ const formatETA = (total: number, received: number, speed: number) => {
   return `${hours}小时${remMin}分`;
 };
 
-const copyUrl = (url: string) => {
-  navigator.clipboard.writeText(url);
-  showMessage('下载链接已复制', 'success');
-};
+
 
 const openDirectory = async (task: any) => {
   if (!task.savePath) {

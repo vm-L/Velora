@@ -27,6 +27,20 @@
           </div>
 
           <div class="form-group" style="margin-top: 14px;">
+            <label>任务链接</label>
+            <div class="url-input-row">
+              <v-input :model-value="taskUrl" type="text" readonly placeholder="任务链接..." class="flex-1" />
+              <v-button variant="secondary" size="small" @click="handleCopyUrl">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>复制</span>
+              </v-button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
             <label>当前目录</label>
             <div class="dir-input-row">
               <VInputSelect
@@ -74,6 +88,7 @@ const { updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
 
 const taskName = ref('');
+const taskUrl = ref('');
 const saveDirectory = ref('');
 const isSaving = ref(false);
 const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
@@ -100,6 +115,7 @@ const loadDirTree = async (dir: string) => {
 watch(() => [props.visible, props.task], () => {
   if (props.visible && props.task) {
     taskName.value = props.task.name || '';
+    taskUrl.value = props.task.url || '';
     if (props.task.savePath) {
       // Extract dir
       const normalized = props.task.savePath.replace(/\\/g, '/');
@@ -119,6 +135,16 @@ watch(() => [props.visible, props.task], () => {
 
 const close = () => {
   emit('update:visible', false);
+};
+
+const handleCopyUrl = async () => {
+  if (!taskUrl.value) return;
+  try {
+    await navigator.clipboard.writeText(taskUrl.value);
+    showMessage('链接已复制到剪切板', 'success');
+  } catch (err: any) {
+    showMessage(`复制失败: ${err.message || err}`, 'error');
+  }
 };
 
 const handleSelectDirectory = async () => {
@@ -294,9 +320,11 @@ const saveEdit = async () => {
     margin-bottom: 6px;
   }
 
-  .dir-input-row {
+  .dir-input-row,
+  .url-input-row {
     display: flex;
     gap: 8px;
+    align-items: center;
   }
 }
 
