@@ -45,6 +45,7 @@ interface Window {
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>
     exportResourcesJson: (data: any) => Promise<{ success: boolean; cancelled?: boolean; filePath?: string; error?: string }>
     importResourcesJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: any; error?: string }>
+    getPageCredentials: (pageUrl: string) => Promise<{ success: boolean; referer?: string; userAgent?: string; cookie?: string; error?: string }>
     log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }

@@ -520,6 +520,24 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('get-page-credentials', async (_event, pageUrl: string) => {
+    try {
+      if (!pageUrl) return { success: false, error: '缺少页面 URL' };
+      const urlObj = new URL(pageUrl);
+      const cookies = await session.defaultSession.cookies.get({ domain: urlObj.hostname });
+      const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      const userAgent = session.defaultSession.getUserAgent();
+      return {
+        success: true,
+        referer: pageUrl,
+        userAgent,
+        cookie: cookieStr
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {

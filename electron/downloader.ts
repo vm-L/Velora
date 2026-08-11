@@ -17,9 +17,18 @@ export interface DownloadCommand {
   downloadedSegments?: number
   referer?: string
   origin?: string
+  cookie?: string
+  headers?: Record<string, string>
 }
 
-export function getHeadersForUrl(_urlStr: string, customReferer?: string, _customOrigin?: string, clientId?: string): Record<string, string> {
+export function getHeadersForUrl(
+  _urlStr: string,
+  customReferer?: string,
+  _customOrigin?: string,
+  clientId?: string,
+  customCookie?: string,
+  customHeaders?: Record<string, string>
+): Record<string, string> {
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   }
@@ -29,6 +38,13 @@ export function getHeadersForUrl(_urlStr: string, customReferer?: string, _custo
   }
   if (customReferer) {
     headers['X-Velora-Referer'] = customReferer
+    headers['Referer'] = customReferer
+  }
+  if (customCookie) {
+    headers['Cookie'] = customCookie
+  }
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
   }
 
   return headers
@@ -231,7 +247,7 @@ class Downloader {
     this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
     try {
-      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id)
+      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
       const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal)
       if (isM3U8) {
         await this.downloadM3U8Task(cmd, abortController)
@@ -267,7 +283,7 @@ class Downloader {
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
-    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
+    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
 
     const segments = await parseM3U8(url, headers)
     if (segments.length === 0) {
@@ -535,7 +551,7 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
+    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
 
     let isRangeSupported = false
     let totalBytes = 0

@@ -270,6 +270,31 @@ export const useDownloads = () => {
     }
   }
 
+  const auditDiskFiles = async () => {
+    let updatedCount = 0;
+    if (!window.electronAPI || !window.electronAPI.fileExists) return 0;
+    for (const t of tasks.value) {
+      if (t.savePath) {
+        try {
+          const exists = await window.electronAPI.fileExists(t.savePath);
+          if (!exists && t.status === 'completed') {
+            t.status = 'file_removed';
+            t.speed = 0;
+            await db.downloads.put(JSON.parse(JSON.stringify(t)));
+            updatedCount++;
+          } else if (exists && (t.status === 'file_removed' || t.status === 'file_corrupted')) {
+            t.status = 'completed';
+            t.progress = 100;
+            t.speed = 0;
+            await db.downloads.put(JSON.parse(JSON.stringify(t)));
+            updatedCount++;
+          }
+        } catch (e) {}
+      }
+    }
+    return updatedCount;
+  };
+
   return {
     tasks,
     isInitialized,
@@ -279,6 +304,7 @@ export const useDownloads = () => {
     pauseTask,
     resumeTask,
     deleteTask,
-    updateTaskDb
+    updateTaskDb,
+    auditDiskFiles
   }
 }

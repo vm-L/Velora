@@ -47,5 +47,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compileAdBlockRules: (sourcesData: Record<string, string>) => ipcRenderer.invoke('compile-adblock-rules', sourcesData),
   exportResourcesJson: (data: any) => ipcRenderer.invoke('export-resources-json', data),
   importResourcesJson: () => ipcRenderer.invoke('import-resources-json'),
+  getPageCredentials: (pageUrl: string) => ipcRenderer.invoke('get-page-credentials', pageUrl),
   log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
 })

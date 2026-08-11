@@ -25,6 +25,12 @@
           </div>
           <div class="metric-value">{{ errorCount }}</div>
         </div>
+        <div class="metric-card" :class="{ active: activeFilter === 'file_removed' }" @click="toggleFilter('file_removed')">
+          <div class="metric-label">
+            <span class="status-dot warning" style="background: #f59e0b;"></span>文件丢失
+          </div>
+          <div class="metric-value">{{ fileRemovedCount }}</div>
+        </div>
       </div>
 
       <div class="operation-panel">
@@ -54,6 +60,13 @@
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
               删除
+            </v-button>
+            <v-button variant="secondary" @click="handleAuditDiskFiles" title="审计已下载文件是否存在于磁盘上">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              审计磁盘
             </v-button>
           </div>
         </div>
@@ -246,10 +259,21 @@ import EditTaskDialog from '../components/features/EditTaskDialog.vue';
 import { useSettings } from '../composables/useSettings';
 import { logger } from '../services/logger';
 
-const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
+const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb, auditDiskFiles } = useDownloads();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
+
+const fileRemovedCount = computed(() => tasks.value.filter(t => t.status === 'file_removed').length);
+
+const handleAuditDiskFiles = async () => {
+  const updated = await auditDiskFiles();
+  if (updated > 0) {
+    showMessage(`磁盘审计完成：已同步更新 ${updated} 项任务的文件状态`, 'success');
+  } else {
+    showMessage('磁盘审计完成：所有已完成任务的文件在磁盘上均完好存留！', 'success');
+  }
+};
 
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);

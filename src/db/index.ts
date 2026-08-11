@@ -13,6 +13,8 @@ export interface DownloadTask {
   downloadedSegments?: number;
   totalSegments?: number;
   referer?: string;
+  cookie?: string;
+  headers?: Record<string, string>;
   errorMsg?: string;
   createdAt: number;
   updatedAt: number;
