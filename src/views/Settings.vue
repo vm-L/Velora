@@ -218,6 +218,25 @@
         </div>
       </div>
 
+      <!-- Resource Backup & Migration -->
+      <div class="settings-section-title">资源备份与迁移</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-info" style="min-width: 0; flex: 1;">
+            <h3>资源配置备份 (.json)</h3>
+            <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">包含网页列表、域名解析规则、注入脚本与 CMS 资源站配置</p>
+          </div>
+          <div class="action-buttons" style="display: flex; gap: 8px; shrink-0;">
+            <v-button variant="secondary" @click="handleImportResources">
+              导入
+            </v-button>
+            <v-button variant="secondary" @click="handleExportResources">
+              导出
+            </v-button>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Parse Rule Management Modal -->
@@ -338,6 +357,51 @@
       :editing-rule="editingParseRule"
     />
     <AdBlockDialog v-model:visible="showAdBlockModal" />
+
+    <!-- Resource Import Strategy Modal -->
+    <div v-if="pendingImportData" class="modal-overlay" @click.self="pendingImportData = null">
+      <div class="modal-content" style="max-width: 480px; width: 90vw;">
+        <div class="modal-header">
+          <h3>导入资源配置 - 选择冲突策略</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="pendingImportData = null">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 20px 24px;">
+          <p style="font-size: 14px; color: var(--text-primary); margin-bottom: 12px; line-height: 1.5;">
+            已成功读取备份数据：<strong>{{ importSummaryText }}</strong>。
+          </p>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+            当遇到与当前系统中已存在的重复资源或规则时，请选择恢复策略：
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div 
+              class="strategy-option"
+              :class="{ active: importMode === 'merge' }"
+              @click="importMode = 'merge'"
+            >
+              <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-primary);">增量合并（推荐）</div>
+              <div style="font-size: 12px; color: var(--text-secondary);">保持现有配置不变，仅追加备份中不存在的新资源与域名解析规则</div>
+            </div>
+            <div 
+              class="strategy-option"
+              :class="{ active: importMode === 'overwrite' }"
+              @click="importMode = 'overwrite'"
+            >
+              <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--color-error, #ef4444);">覆盖重置</div>
+              <div style="font-size: 12px; color: var(--text-secondary);">使用备份文件全面替换当前系统的所有网站、解析规则与 CMS 配置</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border-light);">
+          <v-button variant="secondary" @click="pendingImportData = null">取消</v-button>
+          <v-button variant="primary" @click="confirmImportResources">确认导入</v-button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -346,6 +410,8 @@ import { ref, computed } from 'vue';
 import { CustomScript, ParseRule, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
 import { useMessage } from '../composables/useMessage';
+import { useOpenedResources } from '../composables/useOpenedResources';
+import { useOpenedCMS } from '../composables/useOpenedCMS';
 import { logger } from '../services/logger';
 import VButton from '../components/base/VButton.vue';
 
@@ -369,10 +435,66 @@ const {
   saveCustomStyles,
   saveCustomScripts,
   saveCustomParseRules,
-  syncAllAdBlockSources
+  syncAllAdBlockSources,
+  exportResourceBackup,
+  importResourceBackup
 } = useSettings();
 const { confirm } = useConfirm();
 const { showMessage } = useMessage();
+
+const pendingImportData = ref<any>(null);
+const importMode = ref<'merge' | 'overwrite'>('merge');
+
+const importSummaryText = computed(() => {
+  if (!pendingImportData.value?.data) return '';
+  const d = pendingImportData.value.data;
+  const webCount = (d.webResources || []).length;
+  const cmsCount = (d.cmsResources || []).length;
+  const ruleCount = Object.values(d.customParseRules || {}).reduce((acc: number, cur: any) => acc + (cur?.length || 0), 0);
+  const scriptCount = Object.values(d.customScripts || {}).reduce((acc: number, cur: any) => acc + (cur?.length || 0), 0);
+  return `${webCount} 个网站资源、${cmsCount} 个 CMS 资源站点、${ruleCount} 条解析规则与 ${scriptCount} 条注入脚本`;
+});
+
+const handleExportResources = async () => {
+  try {
+    const res = await exportResourceBackup();
+    if (res.success && res.filePath) {
+      showMessage(`资源配置已导出至: ${res.filePath}`, 'success');
+    } else if (res.error) {
+      showMessage(`导出失败: ${res.error}`, 'error');
+    }
+  } catch (err: any) {
+    showMessage(`导出失败: ${err.message}`, 'error');
+  }
+};
+
+const handleImportResources = async () => {
+  try {
+    const res = await window.electronAPI.importResourcesJson();
+    if (res.cancelled) return;
+    if (!res.success || !res.data) {
+      showMessage(res.error || '导入备份文件无效', 'error');
+      return;
+    }
+    pendingImportData.value = res.data;
+    importMode.value = 'merge';
+  } catch (err: any) {
+    showMessage(`读取导入文件失败: ${err.message}`, 'error');
+  }
+};
+
+const confirmImportResources = async () => {
+  if (!pendingImportData.value) return;
+  try {
+    await importResourceBackup(pendingImportData.value, importMode.value);
+    const modeText = importMode.value === 'overwrite' ? '覆盖重置' : '增量合并';
+    showMessage(`资源与规则已成功以【${modeText}】模式完成导入！`, 'success');
+  } catch (err: any) {
+    showMessage(`导入失败: ${err.message}`, 'error');
+  } finally {
+    pendingImportData.value = null;
+  }
+};
 
 const showAdBlockModal = ref(false);
 const isUpdatingAllRules = ref(false);
@@ -528,15 +650,20 @@ const cancelEdit = () => {
   editTempUrl.value = '';
 };
 
+const { updateResourceUrl } = useOpenedResources();
+const { updateCMSUrl } = useOpenedCMS();
+
 const saveEdit = (type: 'cms' | 'ext', index: number) => {
   if (type === 'cms') {
     const resources = [...state.cmsResources];
     resources[index] = { ...resources[index], name: editTempName.value, url: editTempUrl.value };
     saveCmsResources(resources);
+    updateCMSUrl(resources[index].id, editTempUrl.value);
   } else {
     const sites = [...state.externalSites];
     sites[index] = { ...sites[index], name: editTempName.value, url: editTempUrl.value };
     saveExternalSites(sites);
+    updateResourceUrl(sites[index].id, editTempUrl.value);
   }
   cancelEdit();
 };
@@ -1146,5 +1273,25 @@ const deleteDomainStyle = async (domain: string) => {
   100% {
     transform: rotate(360deg);
   }
+}
+
+.strategy-option {
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg-surface);
+}
+
+.strategy-option:hover {
+  border-color: var(--color-accent);
+  background: var(--bg-surface-hover);
+}
+
+.strategy-option.active {
+  border-color: var(--color-accent);
+  background: var(--bg-surface-active);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 </style>

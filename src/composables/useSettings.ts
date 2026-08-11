@@ -253,6 +253,83 @@ export const useSettings = () => {
     return totalSynced;
   }
 
+  const exportResourceBackup = async () => {
+    const payload = {
+      type: 'velora-resource-backup',
+      version: '1.0.0',
+      timestamp: Date.now(),
+      data: {
+        webResources: JSON.parse(JSON.stringify(state.externalSites || [])),
+        customParseRules: JSON.parse(JSON.stringify(state.customParseRules || {})),
+        customScripts: JSON.parse(JSON.stringify(state.customScripts || {})),
+        cmsResources: JSON.parse(JSON.stringify(state.cmsResources || []))
+      }
+    };
+    return await window.electronAPI.exportResourcesJson(payload);
+  };
+
+  const importResourceBackup = async (backupData: any, mode: 'overwrite' | 'merge') => {
+    const data = backupData?.data || {};
+    const newWebResources: ResourceItem[] = data.webResources || [];
+    const newParseRules: Record<string, ParseRule[]> = data.customParseRules || {};
+    const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
+    const newCmsResources: ResourceItem[] = data.cmsResources || [];
+
+    if (mode === 'overwrite') {
+      await saveExternalSites(newWebResources);
+      await saveCustomParseRules(newParseRules);
+      await saveCustomScripts(newScripts);
+      await saveCmsResources(newCmsResources);
+    } else {
+      // 增量合并模式
+      const currentWebMap = new Map((state.externalSites || []).map(r => [r.id, r]));
+      for (const item of newWebResources) {
+        if (!currentWebMap.has(item.id)) {
+          currentWebMap.set(item.id, item);
+        }
+      }
+      await saveExternalSites(Array.from(currentWebMap.values()));
+
+      const mergedRules: Record<string, ParseRule[]> = { ...(state.customParseRules || {}) };
+      for (const [resId, rules] of Object.entries(newParseRules)) {
+        if (!mergedRules[resId]) {
+          mergedRules[resId] = rules;
+        } else {
+          const existingIds = new Set(mergedRules[resId].map(r => r.id));
+          for (const rule of rules) {
+            if (!existingIds.has(rule.id)) {
+              mergedRules[resId].push(rule);
+            }
+          }
+        }
+      }
+      await saveCustomParseRules(mergedRules);
+
+      const mergedScripts: Record<string, CustomScript[]> = { ...(state.customScripts || {}) };
+      for (const [resId, scripts] of Object.entries(newScripts)) {
+        if (!mergedScripts[resId]) {
+          mergedScripts[resId] = scripts;
+        } else {
+          const existingIds = new Set(mergedScripts[resId].map(s => s.id));
+          for (const script of scripts) {
+            if (!existingIds.has(script.id)) {
+              mergedScripts[resId].push(script);
+            }
+          }
+        }
+      }
+      await saveCustomScripts(mergedScripts);
+
+      const currentCmsMap = new Map((state.cmsResources || []).map(r => [r.id, r]));
+      for (const item of newCmsResources) {
+        if (!currentCmsMap.has(item.id)) {
+          currentCmsMap.set(item.id, item);
+        }
+      }
+      await saveCmsResources(Array.from(currentCmsMap.values()));
+    }
+  };
+
   return { 
     state, 
     loadSettings, 
@@ -272,6 +349,8 @@ export const useSettings = () => {
     saveAdBlockSources,
     syncAdBlockSourceItem,
     syncAllAdBlockSources,
-    recompileRules
+    recompileRules,
+    exportResourceBackup,
+    importResourceBackup
   }
 }

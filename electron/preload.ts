@@ -45,5 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDownloadProgress: (callback: (data: any) => void) => ipcRenderer.on('download-progress', (_event, data) => callback(data)),
   syncAdBlockSource: (url: string) => ipcRenderer.invoke('sync-adblock-source', url),
   compileAdBlockRules: (sourcesData: Record<string, string>) => ipcRenderer.invoke('compile-adblock-rules', sourcesData),
+  exportResourcesJson: (data: any) => ipcRenderer.invoke('export-resources-json', data),
+  importResourcesJson: () => ipcRenderer.invoke('import-resources-json'),
   log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
 })

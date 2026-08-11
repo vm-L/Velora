@@ -17,6 +17,15 @@ export const useOpenedCMS = () => {
         url,
         lastRoute: initialRoute || `/resource/cms/${id}`
       })
+    } else {
+      existing.url = url
+    }
+  }
+
+  const updateCMSUrl = (id: string, newUrl: string) => {
+    const existing = openedCMS.value.find(c => c.id === id)
+    if (existing) {
+      existing.url = newUrl
     }
   }
 
@@ -36,5 +45,5 @@ export const useOpenedCMS = () => {
     openedCMS.value = openedCMS.value.filter(c => c.id !== id)
   }
 
-  return { openedCMS, openCMS, updateLastRoute, getLastRoute, removeCMS }
+  return { openedCMS, openCMS, updateCMSUrl, updateLastRoute, getLastRoute, removeCMS }
 }

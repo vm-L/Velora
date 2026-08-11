@@ -483,6 +483,43 @@ function createWindow() {
     );
   })
 
+  ipcMain.handle('export-resources-json', async (_event, data: any) => {
+    try {
+      const { filePath } = await dialog.showSaveDialog({
+        title: '导出网站与 CMS 资源配置',
+        defaultPath: `velora-resources-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON 备份文件 (*.json)', extensions: ['json'] }]
+      });
+      if (!filePath) return { success: false, cancelled: true };
+      const jsonStr = JSON.stringify(data, null, 2);
+      await fs.promises.writeFile(filePath, jsonStr, 'utf-8');
+      return { success: true, filePath };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('import-resources-json', async () => {
+    try {
+      const { filePaths, canceled } = await dialog.showOpenDialog({
+        title: '选择要导入的资源 JSON 备份文件',
+        filters: [{ name: 'JSON 备份文件 (*.json)', extensions: ['json'] }],
+        properties: ['openFile']
+      });
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { success: false, cancelled: true };
+      }
+      const content = await fs.promises.readFile(filePaths[0], 'utf-8');
+      const data = JSON.parse(content);
+      if (!data || data.type !== 'velora-resource-backup') {
+        return { success: false, error: '无效的备份文件：格式缺失 velora-resource-backup 校验标识' };
+      }
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: `读取解析备份文件失败: ${err.message || String(err)}` };
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {

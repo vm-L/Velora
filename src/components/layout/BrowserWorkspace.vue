@@ -673,8 +673,8 @@ const getResourceIcon = () => {
 };
 
 const init = () => {
-  if (props.resourceId && props.resourceUrl) {
-    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon());
+  if (props.resourceId && currentResourceUrl.value) {
+    initWorkspace(props.resourceId, currentResourceUrl.value, getResourceIcon());
   }
 };
 
@@ -825,8 +825,14 @@ const onCloseTab = (tabId: string) => {
   closeTab(props.resourceId, tabId);
 };
 
+const currentResourceUrl = computed(() => {
+  const site = settingsState.externalSites.find(r => r.id === props.resourceId);
+  if (site && site.url) return site.url;
+  return props.resourceUrl;
+});
+
 const onAddDefaultTab = () => {
-  addTab(props.resourceId, props.resourceUrl, getResourceIcon());
+  addTab(props.resourceId, currentResourceUrl.value, getResourceIcon());
 };
 
 // Webview Events

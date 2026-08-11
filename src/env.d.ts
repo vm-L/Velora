@@ -43,6 +43,8 @@ interface Window {
     onDownloadProgress: (callback: (data: any) => void) => void
     syncAdBlockSource: (url: string) => Promise<{ success: boolean, count: number, content?: string, error?: string }>
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>
+    exportResourcesJson: (data: any) => Promise<{ success: boolean; cancelled?: boolean; filePath?: string; error?: string }>
+    importResourcesJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: any; error?: string }>
     log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }
