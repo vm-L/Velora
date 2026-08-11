@@ -26,6 +26,7 @@ error
 .env
 .env.local
 .env.*.local
+data/
 
 # Editor / IDE settings
 .vscode/*

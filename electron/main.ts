@@ -2,6 +2,30 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
+
+// 配置本地绿色同级目录数据存储路径 (dev 及打包便携版数据均归集于程序同级目录的 data/ 文件夹内)
+const getLocalDataDir = () => {
+  let baseDir = process.cwd();
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    baseDir = process.env.PORTABLE_EXECUTABLE_DIR;
+  } else if (app.isPackaged) {
+    baseDir = path.dirname(app.getPath('exe'));
+  }
+  const dataDir = path.join(baseDir, 'data');
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch {
+      // ignore
+    }
+  }
+  return dataDir;
+};
+
+const localDataPath = getLocalDataDir();
+app.setPath('userData', localDataPath);
+app.setPath('sessionData', path.join(localDataPath, 'session'));
+
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
 
@@ -75,10 +99,10 @@ import { exec } from 'child_process'
 // Create a polyfill for __dirname in ESM if needed, though we are compiling via vite-plugin-electron which handles __dirname if we use standard CJS/ESM mixed. 
 // However, standard electron vite plugin setup allows CJS. Let's stick to CJS-like paths or use path.join(process.env.DIST, ...)
 
-process.env.DIST_ELECTRON = path.join(__dirname, '..')
-process.env.DIST = path.join(process.env.DIST_ELECTRON, '../dist')
+process.env.DIST_ELECTRON = __dirname
+process.env.DIST = path.join(__dirname, '../dist')
 process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
-  ? path.join(process.env.DIST_ELECTRON, '../public')
+  ? path.join(__dirname, '../public')
   : process.env.DIST
 
 import { storeManager, setupStoreHandlers } from './store'

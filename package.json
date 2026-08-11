@@ -2,10 +2,11 @@
   "name": "velora",
   "version": "1.0.0",
   "description": "this is a electron init",
+  "author": "JY",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build && electron-builder",
+    "build": "vue-tsc && vite build && electron-builder && node -e \"const fs=require('fs'); fs.rmSync('release/win-unpacked', {recursive:true, force:true}); fs.rmSync('release/builder-effective-config.yaml', {force:true});\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,7 +15,6 @@
     "codemirror": "^6.0.2",
     "dexie": "^4.4.4",
     "electron-store": "^11.0.2",
-    "ffmpeg-static": "^5.3.0",
     "hls.js": "^1.6.16",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"
@@ -41,20 +41,21 @@
       "dist-electron",
       "public"
     ],
+    "forceCodeSigning": false,
     "win": {
       "icon": "public/icon.png",
+      "signAndEditExecutable": false,
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ]
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+    "portable": {
+      "artifactName": "${productName}.${ext}"
     }
   }
 }
