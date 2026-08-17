@@ -46,17 +46,6 @@
               <v-button variant="secondary" size="small" @click="handleSelectDirectory">移至目录</v-button>
             </div>
           </div>
-
-          <div class="form-group" style="margin-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label style="margin-bottom: 0;">防盗链凭据 (Referer & Cookie)</label>
-              <v-button variant="secondary" size="small" style="font-size: 11px; padding: 2px 8px;" @click="handleCaptureCredentials">
-                一键获取网页凭据
-              </v-button>
-            </div>
-            <v-input v-model="taskReferer" type="text" placeholder="Referer 请求头 (如 https://domain.com/...)" />
-            <v-input v-model="taskCookie" type="text" placeholder="Cookie 字符串 (包含登录与防盗链 Token)" style="margin-top: 8px;" />
-          </div>
         </div>
 
         <!-- Modal Footer -->
@@ -95,8 +84,6 @@ const { showMessage } = useMessage();
 
 const taskName = ref('');
 const taskUrl = ref('');
-const taskReferer = ref('');
-const taskCookie = ref('');
 const saveDirectory = ref('');
 const isSaving = ref(false);
 const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
@@ -124,8 +111,6 @@ watch(() => [props.visible, props.task], () => {
   if (props.visible && props.task) {
     taskName.value = props.task.name || '';
     taskUrl.value = props.task.url || '';
-    taskReferer.value = props.task.referer || '';
-    taskCookie.value = props.task.cookie || '';
     if (props.task.savePath) {
       // Extract dir
       const normalized = props.task.savePath.replace(/\\/g, '/');
@@ -154,25 +139,6 @@ const handleCopyUrl = async () => {
     showMessage('链接已复制到剪切板', 'success');
   } catch (err: any) {
     showMessage(`复制失败: ${err.message || err}`, 'error');
-  }
-};
-
-const handleCaptureCredentials = async () => {
-  const targetUrl = taskReferer.value || taskUrl.value;
-  if (!targetUrl) return;
-  if (window.electronAPI && window.electronAPI.getPageCredentials) {
-    try {
-      const res = await window.electronAPI.getPageCredentials(targetUrl);
-      if (res.success) {
-        if (res.referer) taskReferer.value = res.referer;
-        if (res.cookie) taskCookie.value = res.cookie;
-        showMessage('已成功获取当前网页的 Referer 与 Cookie 凭据！', 'success');
-      } else {
-        showMessage(res.error || '获取凭据失败', 'error');
-      }
-    } catch (err: any) {
-      showMessage(`获取凭据失败: ${err.message}`, 'error');
-    }
   }
 };
 
@@ -220,9 +186,6 @@ const saveEdit = async () => {
 
     const newSavePath = `${dir.replace(/[/\\]+$/, '')}/${newFileName}`;
 
-    props.task.referer = taskReferer.value.trim();
-    props.task.cookie = taskCookie.value.trim();
-
     let oldFileExists = false;
     if (oldPath && window.electronAPI && window.electronAPI.fileExists) {
       oldFileExists = await window.electronAPI.fileExists(oldPath);
@@ -242,7 +205,7 @@ const saveEdit = async () => {
 
       props.task.name = name;
       await updateTaskDb(props.task);
-      showMessage('任务信息与凭据更新成功', 'success');
+      showMessage('任务名称与文件定位更新成功', 'success');
     } else {
       // File missing at old path -> update DB record first
       props.task.name = name;

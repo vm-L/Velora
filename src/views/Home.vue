@@ -55,13 +55,6 @@
               </svg>
               删除
             </v-button>
-            <v-button variant="secondary" @click="handleAuditDiskFiles" title="审计已下载文件是否存在于磁盘上">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-              </svg>
-              审计磁盘
-            </v-button>
           </div>
         </div>
 
@@ -190,7 +183,7 @@
 
             <div class="task-meta">
               <span class="status-text" :class="task.status">{{ getStatusText(task.status) }}</span>
-              <span v-if="task.errorMsg && task.status !== 'completed'" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
+              <span v-if="task.status === 'error' && task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
               <span class="meta-divider">•</span>
               <span class="size-text">{{ formatBytes(task.receivedBytes) }} {{ task.totalBytes > 0 ? '/ ' + formatBytes(task.totalBytes) : '' }}</span>
               <template v-if="task.totalSegments && task.totalSegments > 0">
@@ -253,19 +246,10 @@ import EditTaskDialog from '../components/features/EditTaskDialog.vue';
 import { useSettings } from '../composables/useSettings';
 import { logger } from '../services/logger';
 
-const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb, auditDiskFiles } = useDownloads();
+const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
-
-const handleAuditDiskFiles = async () => {
-  const updated = await auditDiskFiles();
-  if (updated > 0) {
-    showMessage(`磁盘审计完成：已同步更新 ${updated} 项任务的文件状态`, 'success');
-  } else {
-    showMessage('磁盘审计完成：所有已完成任务的文件在磁盘上均完好存留！', 'success');
-  }
-};
 
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);

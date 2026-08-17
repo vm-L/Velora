@@ -42,7 +42,7 @@ import { useOpenedCMS } from './composables/useOpenedCMS';
 
 const route = useRoute();
 const { state, loadSettings } = useSettings();
-const { loadTasks, initListeners, isInitialized } = useDownloads();
+const { loadTasks, initListeners, isInitialized, auditDiskFiles } = useDownloads();
 const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 
@@ -53,6 +53,7 @@ onMounted(async () => {
   if (!isInitialized.value) {
     await loadTasks();
     initListeners();
+    await auditDiskFiles();
   }
 
   // 启动所有 CMS 资源与网站资源的后台静默预加载

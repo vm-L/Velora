@@ -85,16 +85,21 @@ export const useDownloads = () => {
           const t = tasks.value[index]
           const prevStatus = t.status
           
-          if (data.status) t.status = data.status
+          if (data.status) {
+            t.status = data.status
+            if (t.status !== 'error') {
+              delete t.errorMsg
+            }
+          }
           if (data.totalBytes !== undefined) t.totalBytes = data.totalBytes
           if (data.receivedBytes !== undefined) t.receivedBytes = data.receivedBytes
           // if (data.speed !== undefined) t.speed = data.speed (Frontend calculation instead)
           if (data.downloadedSegments !== undefined) t.downloadedSegments = data.downloadedSegments
           if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
-          if (t.status === 'completed') {
-            delete t.errorMsg
-          } else if (data.errorMsg) {
+          if (data.errorMsg) {
             t.errorMsg = data.errorMsg
+          } else if (t.status !== 'error') {
+            delete t.errorMsg
           }
 
           if (t.totalSegments && t.totalSegments > 0) {
@@ -226,6 +231,7 @@ export const useDownloads = () => {
     if (t) {
       t.status = 'paused'
       t.speed = 0
+      delete t.errorMsg
       await db.downloads.put(JSON.parse(JSON.stringify(t)))
     }
   }
@@ -233,6 +239,7 @@ export const useDownloads = () => {
   const resumeTask = async (id: string) => {
     const t = tasks.value.find(t => t.id === id)
     if (t && window.electronAPI) {
+      delete t.errorMsg
       const exists = await window.electronAPI.fileExists(t.savePath);
       if (exists) {
         t.status = 'completed';
@@ -288,12 +295,14 @@ export const useDownloads = () => {
           if (!exists && t.status === 'completed') {
             t.status = 'file_removed';
             t.speed = 0;
+            delete t.errorMsg;
             await db.downloads.put(JSON.parse(JSON.stringify(t)));
             updatedCount++;
           } else if (exists && (t.status === 'file_removed' || t.status === 'file_corrupted')) {
             t.status = 'completed';
             t.progress = 100;
             t.speed = 0;
+            delete t.errorMsg;
             await db.downloads.put(JSON.parse(JSON.stringify(t)));
             updatedCount++;
           }

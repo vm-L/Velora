@@ -17,18 +17,9 @@ export interface DownloadCommand {
   downloadedSegments?: number
   referer?: string
   origin?: string
-  cookie?: string
-  headers?: Record<string, string>
 }
 
-export function getHeadersForUrl(
-  _urlStr: string,
-  customReferer?: string,
-  _customOrigin?: string,
-  clientId?: string,
-  customCookie?: string,
-  customHeaders?: Record<string, string>
-): Record<string, string> {
+export function getHeadersForUrl(_urlStr: string, customReferer?: string, _customOrigin?: string, clientId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   }
@@ -37,20 +28,7 @@ export function getHeadersForUrl(
     headers['X-Velora-Client-Id'] = clientId
   }
   if (customReferer) {
-    let refOrigin = customReferer
-    try {
-      const u = new URL(customReferer)
-      if (u.origin && u.origin !== 'null') refOrigin = u.origin
-    } catch {}
-    headers['X-Velora-Referer'] = refOrigin
-    headers['Referer'] = refOrigin
-    headers['Origin'] = refOrigin
-  }
-  if (customCookie) {
-    headers['Cookie'] = customCookie
-  }
-  if (customHeaders) {
-    Object.assign(headers, customHeaders)
+    headers['X-Velora-Referer'] = customReferer
   }
 
   return headers
@@ -253,7 +231,7 @@ class Downloader {
     this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
     try {
-      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
+      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id)
       const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal)
       if (isM3U8) {
         await this.downloadM3U8Task(cmd, abortController)
@@ -289,7 +267,7 @@ class Downloader {
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
-    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
+    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
 
     const segments = await parseM3U8(url, headers)
     if (segments.length === 0) {
@@ -555,7 +533,7 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id, cmd.cookie, cmd.headers)
+    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
 
     let isRangeSupported = false
     let totalBytes = 0
