@@ -158,12 +158,17 @@ export function isLocalUrl(urlStr?: string): boolean {
 
 export function registerMediaReferer(mediaUrl: string, pageUrl: string) {
   if (!mediaUrl || !pageUrl || isLocalUrl(pageUrl)) return;
-  globalMediaPageMap.set(mediaUrl, pageUrl);
+  let targetOrigin = pageUrl;
+  try {
+    const u = new URL(pageUrl);
+    if (u.origin && u.origin !== 'null') targetOrigin = u.origin;
+  } catch {}
+  globalMediaPageMap.set(mediaUrl, targetOrigin);
   try {
     const u = new URL(mediaUrl);
     const host = u.hostname.toLowerCase();
     if (host) {
-      globalHostPageMap.set(host, pageUrl);
+      globalHostPageMap.set(host, targetOrigin);
     }
   } catch {}
 }
@@ -179,14 +184,21 @@ class VeloraClientManager {
 
   registerClient(config: VeloraClientConfig) {
     if (!config.clientId) return;
+    let referer = config.referer || '';
     let origin = config.origin;
-    if (!origin && config.referer) {
-      try { origin = new URL(config.referer).origin; } catch {}
-    }
+    try {
+      if (referer) {
+        const u = new URL(referer);
+        if (u.origin && u.origin !== 'null') {
+          origin = u.origin;
+          referer = u.origin;
+        }
+      }
+    } catch {}
     this.clients.set(config.clientId, {
       clientId: config.clientId,
-      referer: config.referer || '',
-      origin: origin || ''
+      referer: referer,
+      origin: origin || referer
     });
   }
 
@@ -524,12 +536,13 @@ function createWindow() {
     try {
       if (!pageUrl) return { success: false, error: '缺少页面 URL' };
       const urlObj = new URL(pageUrl);
+      const origin = (urlObj.origin && urlObj.origin !== 'null') ? urlObj.origin : pageUrl;
       const cookies = await session.defaultSession.cookies.get({ domain: urlObj.hostname });
       const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
       const userAgent = session.defaultSession.getUserAgent();
       return {
         success: true,
-        referer: pageUrl,
+        referer: origin,
         userAgent,
         cookie: cookieStr
       };
@@ -733,9 +746,10 @@ function createWindow() {
       if (targetReferer) {
         try {
           const targetOrigin = clientConfig?.origin || new URL(targetReferer).origin;
+          const cleanReferer = (new URL(targetReferer).origin !== 'null') ? new URL(targetReferer).origin : targetReferer;
           removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
           removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
-          details.requestHeaders['Referer'] = targetReferer;
+          details.requestHeaders['Referer'] = cleanReferer;
           details.requestHeaders['Origin'] = targetOrigin;
         } catch {
           removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');

@@ -65,14 +65,14 @@
         </v-button>
 
         <SnifferDropdown type="video" title="视频嗅探器" tooltip="视频嗅探器" :items="activeTab?.sniffedVideos || []"
-          :page-url="getCurrentPageUrl()" @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
+          :page-url="getCurrentPageOrigin()" @clear="onClearSniffed('video')" @preview="onPreviewSniffedVideo">
           <template #icon>
             <VIcon name="video-sniffer" size="16" />
           </template>
         </SnifferDropdown>
 
         <SnifferDropdown type="audio" title="音频嗅探器" tooltip="音频嗅探器" :items="activeTab?.sniffedAudios || []"
-          :page-url="getCurrentPageUrl()" @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
+          :page-url="getCurrentPageOrigin()" @clear="onClearSniffed('audio')" @preview="onPreviewSniffedAudio">
           <template #icon>
             <VIcon name="audio-sniffer" size="16" />
           </template>
@@ -123,11 +123,11 @@
     </div>
 
     <!-- Audio Player Dialog -->
-    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageUrl()" @close="activeAudioPreview = null"
+    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageOrigin()" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
 
     <!-- Video Player Dialog -->
-    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" :page-url="getCurrentPageUrl()" @close="activeVideoPreview = null"
+    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" :page-url="getCurrentPageOrigin()" @close="activeVideoPreview = null"
       @download="onDownloadVideo" />
 
     <!-- Parse Rule Dialog -->
@@ -145,7 +145,7 @@
 
     <!-- Image Preview Dialogs -->
     <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" :id="img.id" :url="img.url" :urls="img.urls"
-      :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" :page-url="getCurrentPageUrl()" @close="onClosePreview" @focus="onFocusPreview"
+      :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" :page-url="getCurrentPageOrigin()" @close="onClosePreview" @focus="onFocusPreview"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <SaveMediaDialog
@@ -157,7 +157,7 @@
       :type="saveType"
       :name-options="saveNameOptions"
       :url-options="saveUrlOptions"
-      :page-url="getCurrentPageUrl()"
+      :page-url="getCurrentPageOrigin()"
     />
 
     <ParseRuleSelectDialog
@@ -986,6 +986,17 @@ const getCurrentPageUrl = (): string => {
     } catch {}
   }
   return activeTab.value?.url || props.resourceUrl || '';
+};
+
+const getCurrentPageOrigin = (): string => {
+  const url = getCurrentPageUrl();
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return (u.origin && u.origin !== 'null') ? u.origin : url;
+  } catch {
+    return url;
+  }
 };
 
 const onDidNavigate = (event?: any, tabId?: string) => {

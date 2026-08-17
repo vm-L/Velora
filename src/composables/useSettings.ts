@@ -84,6 +84,8 @@ export const state = reactive({
   fileDirectory: '',
   maxConcurrentDownloads: 3,
   maxMemoryBufferMB: 128,
+  enableVideoCompress: false,
+  videoCompressThresholdGB: 1.5,
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
@@ -103,6 +105,9 @@ export const useSettings = () => {
     state.fileDirectory = (await window.electronAPI.getSetting('fileDirectory')) || ''
     state.maxConcurrentDownloads = (await window.electronAPI.getSetting('maxConcurrentDownloads')) || 3
     state.maxMemoryBufferMB = (await window.electronAPI.getSetting('maxMemoryBufferMB')) || 128
+    state.enableVideoCompress = (await window.electronAPI.getSetting('enableVideoCompress')) || false
+    const savedThreshold = await window.electronAPI.getSetting('videoCompressThresholdGB')
+    state.videoCompressThresholdGB = typeof savedThreshold === 'number' ? savedThreshold : 1.5
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -169,6 +174,16 @@ export const useSettings = () => {
   const saveMaxMemoryBufferMB = async (mb: number) => {
     state.maxMemoryBufferMB = mb
     await window.electronAPI.setSetting('maxMemoryBufferMB', mb)
+  }
+
+  const saveEnableVideoCompress = async (enabled: boolean) => {
+    state.enableVideoCompress = enabled
+    await window.electronAPI.setSetting('enableVideoCompress', enabled)
+  }
+
+  const saveVideoCompressThresholdGB = async (gb: number) => {
+    state.videoCompressThresholdGB = gb
+    await window.electronAPI.setSetting('videoCompressThresholdGB', gb)
   }
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
@@ -341,6 +356,8 @@ export const useSettings = () => {
     saveFileDirectory,
     saveMaxConcurrentDownloads,
     saveMaxMemoryBufferMB,
+    saveEnableVideoCompress,
+    saveVideoCompressThresholdGB,
     saveCmsResources, 
     saveExternalSites, 
     saveCustomStyles,

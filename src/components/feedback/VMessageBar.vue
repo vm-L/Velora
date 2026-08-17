@@ -9,48 +9,30 @@
         :style="getStyle(index)"
       >
         <div class="message-icon">
-          <svg v-if="msg.type === 'loading'" class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="2" x2="12" y2="6"></line>
-            <line x1="12" y1="18" x2="12" y2="22"></line>
-            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-            <line x1="2" y1="12" x2="6" y2="12"></line>
-            <line x1="18" y1="12" x2="22" y2="12"></line>
-            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-          </svg>
-          <svg v-else-if="msg.type === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-          </svg>
-          <svg v-else-if="msg.type === 'error'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
-          <svg v-else-if="msg.type === 'warning'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-          </svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
+          <VIcon 
+            :name="msg.type === 'loading' ? 'loading' : msg.type === 'success' ? 'success' : msg.type === 'error' ? 'error' : msg.type === 'warning' ? 'warning' : 'info'" 
+            :size="16" 
+            :class="{ 'spin-icon': msg.type === 'loading' }"
+          />
         </div>
         <div style="display: flex; align-items: center; flex: 1;">
           <span class="message-text">{{ msg.text }}</span>
-          <button v-if="msg.action" class="message-action-btn" @click.stop="msg.action.callback(); removeMessage(msg.id)">
+          <VButton
+            v-if="msg.action"
+            variant="text"
+            class="message-action-btn"
+            @click.stop="msg.action.callback(); removeMessage(msg.id)"
+          >
             {{ msg.action.text }}
-          </button>
+          </VButton>
         </div>
-        <button class="message-close" @click="removeMessage(msg.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <VButton
+          variant="icon"
+          class="message-close-btn"
+          @click="removeMessage(msg.id)"
+        >
+          <VIcon name="close" :size="12" />
+        </VButton>
       </div>
     </TransitionGroup>
   </div>
@@ -59,6 +41,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useMessage } from '../../composables/useMessage'
+import VIcon from '../base/VIcon.vue'
+import VButton from '../base/VButton.vue'
 
 const { messages, removeMessage } = useMessage()
 const isHovered = ref(false)
@@ -160,19 +144,23 @@ const getStyle = (index: number): any => {
 }
 
 .message-action-btn {
-  margin-left: 12px;
-  background: rgba(0,0,0,0.05);
-  border: 1px solid rgba(0,0,0,0.1);
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  margin-left: 10px;
+  background: transparent !important;
+  border: none !important;
+  color: var(--color-accent) !important;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 6px;
+  height: auto;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: opacity 0.2s ease;
   white-space: nowrap;
-}
-.message-action-btn:hover {
-  background: rgba(0,0,0,0.1);
+  box-shadow: none !important;
+
+  &:hover {
+    background: transparent !important;
+    opacity: 0.8;
+  }
 }
 
 .message-icon {
@@ -196,23 +184,27 @@ const getStyle = (index: number): any => {
   to { transform: rotate(360deg); }
 }
 
-.message-close {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
+.message-close-btn {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-tertiary) !important;
   cursor: pointer;
   padding: 4px;
-  margin-left: 8px;
+  margin-left: 6px;
   border-radius: 4px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
-}
+  width: 24px;
+  height: 24px;
+  min-width: unset;
+  transition: color 0.2s ease, opacity 0.2s ease;
+  box-shadow: none !important;
 
-.message-close:hover {
-  background: var(--border-light);
-  color: var(--text-primary);
+  &:hover {
+    background: transparent !important;
+    color: var(--text-primary) !important;
+  }
 }
 
 /* Transitions */

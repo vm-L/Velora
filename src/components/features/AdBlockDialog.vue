@@ -5,19 +5,12 @@
         <!-- Modal Header -->
         <div class="modal-header">
           <div class="header-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
+            <VIcon name="settings" :size="18" style="margin-right: 6px;" />
             <span>广告过滤规则源管理</span>
           </div>
-          <button class="close-btn" @click="close" title="关闭">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" @click="close" title="关闭">
+            <VIcon name="close" :size="14" />
+          </v-button>
         </div>
 
         <!-- Modal Body -->
@@ -91,28 +84,19 @@
                 </label>
 
                 <!-- Update Single Source -->
-                <button class="icon-action-btn" :disabled="syncingIds.includes(source.id)" @click="handleSyncSource(source)" title="更新规则">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'spin-icon': syncingIds.includes(source.id) }">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                  </svg>
-                </button>
+                <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" :disabled="syncingIds.includes(source.id)" @click="handleSyncSource(source)" title="更新规则">
+                  <VIcon name="refresh" :size="14" :class="{ 'spin-icon': syncingIds.includes(source.id) }" />
+                </v-button>
 
                 <!-- Edit Source -->
-                <button class="icon-action-btn" @click="openEditModal(source)" title="编辑">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
+                <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" @click="openEditModal(source)" title="编辑">
+                  <VIcon name="edit" :size="14" />
+                </v-button>
 
                 <!-- Delete Source (Hidden for built-in) -->
-                <button v-if="!source.isBuiltIn" class="icon-action-btn danger-btn" @click="confirmDeleteSource(source)" title="删除规则源">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
+                <v-button v-if="!source.isBuiltIn" variant="danger-soft" size="small" style="padding: 4px 6px; min-width: unset;" @click="confirmDeleteSource(source)" title="删除规则源">
+                  <VIcon name="trash" :size="14" />
+                </v-button>
               </div>
             </div>
           </div>
@@ -151,6 +135,7 @@ import { useSettings, type AdBlockSource } from '../../composables/useSettings';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VIcon from '../base/VIcon.vue';
 
 defineProps<{
   visible: boolean;

@@ -48,7 +48,12 @@ export type IconName =
   | 'pause'
   | 'refresh'
   | 'maximize'
-  | 'minimize';
+  | 'minimize'
+  | 'info'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'loading';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -209,6 +214,45 @@ const iconsMap: Record<string, string> = {
   // 最小化
   'minimize': `
     <line x1="5" y1="12" x2="19" y2="12"></line>
+  `,
+
+  // 提示信息 (Info - 居中信息圆标)
+  'info': `
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="16" x2="12" y2="12"></line>
+    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+  `,
+
+  // 成功 (Success - 对勾圆环)
+  'success': `
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+  `,
+
+  // 警告 (Warning - 三角形感叹号)
+  'warning': `
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+    <line x1="12" y1="9" x2="12" y2="13"></line>
+    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+  `,
+
+  // 错误 (Error - 叉号圆环)
+  'error': `
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="15" y1="9" x2="9" y2="15"></line>
+    <line x1="9" y1="9" x2="15" y2="15"></line>
+  `,
+
+  // 加载中 (Loading - 径向转圈)
+  'loading': `
+    <line x1="12" y1="2" x2="12" y2="6"></line>
+    <line x1="12" y1="18" x2="12" y2="22"></line>
+    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+    <line x1="2" y1="12" x2="6" y2="12"></line>
+    <line x1="18" y1="12" x2="22" y2="12"></line>
+    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+    <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
   `
 };
 

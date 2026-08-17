@@ -2,21 +2,13 @@
   <div v-if="modelValue" class="inspector-dialog" :style="{ top: position.y + 'px', left: position.x + 'px' }">
     <div class="inspector-header" @mousedown="startDrag">
       <div class="header-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"></polyline>
-          <polyline points="8 6 2 12 8 18"></polyline>
-        </svg>
+        <VIcon name="js" :size="14" style="margin-right: 6px;" />
         JS 注入器
       </div>
       <div class="header-actions">
-        <button class="action-btn close-btn" @click="close" title="关闭">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <v-button variant="secondary" size="small" style="padding: 2px 4px; min-width: unset;" @click="close" title="关闭">
+          <VIcon name="close" :size="12" />
+        </v-button>
       </div>
     </div>
 
@@ -75,6 +67,7 @@
 import { ref, computed, watch, nextTick, reactive } from 'vue';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 
 const runAtOptions = [

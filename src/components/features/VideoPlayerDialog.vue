@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { logger } from '../../services/logger';
 
 const props = defineProps<{
@@ -150,7 +150,17 @@ const emit = defineEmits<{
 
 const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
 
-watch(() => [props.url, props.pageUrl], ([u, p]) => {
+const effectiveReferer = computed(() => {
+  if (!props.pageUrl) return '';
+  try {
+    const u = new URL(props.pageUrl);
+    return (u.origin && u.origin !== 'null') ? u.origin : props.pageUrl;
+  } catch {
+    return props.pageUrl;
+  }
+});
+
+watch(() => [props.url, effectiveReferer.value], ([u, p]) => {
   if (p && window.electronAPI && window.electronAPI.createMediaClient) {
     window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
   }
@@ -317,7 +327,7 @@ const loadVideo = async () => {
         headers: {
           'X-Velora-Client-Id': previewClientId,
           'Range': 'bytes=0-512',
-          ...(props.pageUrl ? { 'X-Velora-Referer': props.pageUrl } : {})
+          ...(effectiveReferer.value ? { 'X-Velora-Referer': effectiveReferer.value } : {})
         }
       });
       if (!res.ok && res.status !== 206) return false;
@@ -350,15 +360,15 @@ const loadVideo = async () => {
             initParams.headers = {
               ...(initParams.headers || {}),
               'X-Velora-Client-Id': previewClientId,
-              ...(props.pageUrl ? { 'X-Velora-Referer': props.pageUrl } : {})
+              ...(effectiveReferer.value ? { 'X-Velora-Referer': effectiveReferer.value } : {})
             };
             return new Request(context.url, initParams);
           },
           xhrSetup: (xhr: XMLHttpRequest) => {
             try {
               xhr.setRequestHeader('X-Velora-Client-Id', previewClientId);
-              if (props.pageUrl) {
-                xhr.setRequestHeader('X-Velora-Referer', props.pageUrl);
+              if (effectiveReferer.value) {
+                xhr.setRequestHeader('X-Velora-Referer', effectiveReferer.value);
               }
             } catch {}
           }

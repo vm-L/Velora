@@ -95,7 +95,17 @@ const emit = defineEmits<{
 
 const previewClientId = 'preview_audio_' + Math.random().toString(36).slice(2);
 
-watch(() => [props.url, props.pageUrl], ([u, p]) => {
+const effectiveReferer = computed(() => {
+  if (!props.pageUrl) return '';
+  try {
+    const u = new URL(props.pageUrl);
+    return (u.origin && u.origin !== 'null') ? u.origin : props.pageUrl;
+  } catch {
+    return props.pageUrl;
+  }
+});
+
+watch(() => [props.url, effectiveReferer.value], ([u, p]) => {
   if (p && window.electronAPI && window.electronAPI.createMediaClient) {
     window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
   }

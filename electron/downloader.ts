@@ -37,8 +37,14 @@ export function getHeadersForUrl(
     headers['X-Velora-Client-Id'] = clientId
   }
   if (customReferer) {
-    headers['X-Velora-Referer'] = customReferer
-    headers['Referer'] = customReferer
+    let refOrigin = customReferer
+    try {
+      const u = new URL(customReferer)
+      if (u.origin && u.origin !== 'null') refOrigin = u.origin
+    } catch {}
+    headers['X-Velora-Referer'] = refOrigin
+    headers['Referer'] = refOrigin
+    headers['Origin'] = refOrigin
   }
   if (customCookie) {
     headers['Cookie'] = customCookie
@@ -495,12 +501,10 @@ class Downloader {
         })
       }
 
-      let finalFileSize = totalReceivedBytes
-      try {
-        finalFileSize = fs.statSync(isTargetMp4 ? finalSavePath : workSavePath).size
-      } catch {}
+      const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
+      const finalFileSize = await this.compressVideoIfNeeded(targetVideoFile, id, abortController)
 
-      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片断点续传/下载合并并封装成功。文件最终大小: ${finalFileSize}`)
+      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片下载处理成功。文件最终大小: ${finalFileSize}`)
       this.sendProgress({
         id,
         totalBytes: finalFileSize,
@@ -756,11 +760,13 @@ class Downloader {
           fs.unlinkSync(progressPath)
         }
 
-        logger.info('Downloader', `[DirectDownloader] 单文件 Range 8 线程断点续传完成: ${savePath}`)
+        const finalFileSize = await this.compressVideoIfNeeded(savePath, id, abortController)
+
+        logger.info('Downloader', `[DirectDownloader] 单文件 Range 断点续传/下载完成: ${savePath}，大小: ${finalFileSize}`)
         this.sendProgress({
           id,
-          totalBytes,
-          receivedBytes: totalBytes,
+          totalBytes: finalFileSize,
+          receivedBytes: finalFileSize,
           status: 'completed',
           speed: 0
         })
@@ -898,6 +904,171 @@ class Downloader {
 
   cancelDownload(id: string) {
     this.pauseDownload(id)
+  }
+
+  /**
+   * 自动视频压缩逻辑：
+   * 1. 检查开关与文件类型
+   * 2. 检查文件大小是否 >= 阈值 (默认 1.5GB)
+   * 3. 检查实际视频码率是否 >= 目标基准码率 (以 2 小时达到阈值大小时的码率)
+   * 4. 优先尝试 GPU 硬件加速 (NVENC / QSV / AMF)，若不支持自动回退至 CPU (libx264)
+   */
+  private async compressVideoIfNeeded(filePath: string, taskId: string, abortController: AbortController): Promise<number> {
+    try {
+      const ext = path.extname(filePath).toLowerCase()
+      const videoExts = ['.mp4', '.mkv', '.webm', '.ts', '.avi', '.mov', '.flv']
+      if (!videoExts.includes(ext)) {
+        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+      }
+
+      const isCompressEnabled = (await storeManager.getSetting('enableVideoCompress')) || false
+      if (!isCompressEnabled) {
+        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+      }
+
+      const thresholdGB = (await storeManager.getSetting('videoCompressThresholdGB')) ?? 1.5
+      const thresholdBytes = thresholdGB * 1024 * 1024 * 1024
+
+      if (!fs.existsSync(filePath)) return 0
+      const currentSize = fs.statSync(filePath).size
+
+      // 1. 体积阈值判断
+      if (currentSize < thresholdBytes) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 文件体积 (${(currentSize / 1024 / 1024).toFixed(1)}MB) 小于压缩阈值 (${thresholdGB}GB)，跳过压缩`)
+        return currentSize
+      }
+
+      // 2. 目标基准码率计算 (按 2 小时 = 7200 秒计算)
+      const targetBitrateBps = (thresholdBytes * 8) / 7200
+      const targetBitrateKbps = Math.max(500, Math.round(targetBitrateBps / 1000))
+
+      // 3. 读取视频时长与实际码率
+      const videoInfo = await this.getVideoDurationAndBitrate(filePath)
+      let actualBitrateBps = 0
+      if (videoInfo.bitrate > 0) {
+        actualBitrateBps = videoInfo.bitrate
+      } else if (videoInfo.duration > 0) {
+        actualBitrateBps = (currentSize * 8) / videoInfo.duration
+      }
+
+      if (actualBitrateBps > 0 && actualBitrateBps < targetBitrateBps) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 实际码率 (${Math.round(actualBitrateBps / 1000)} kbps) 小于目标基准码率 (${targetBitrateKbps} kbps)，保持原画质无需压缩`)
+        return currentSize
+      }
+
+      logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 满足压缩条件 (体积 ${(currentSize / 1024 / 1024 / 1024).toFixed(2)}GB >= ${thresholdGB}GB，实际码率 ${Math.round(actualBitrateBps / 1000)}kbps >= ${targetBitrateKbps}kbps)，开始压缩...`)
+      this.sendProgress({ id: taskId, status: 'processing', speed: 0 })
+
+      const dir = path.dirname(filePath)
+      const parsed = path.parse(filePath)
+      const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
+
+      const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
+      let compressSuccess = false
+      let usedEncoder = ''
+
+      for (const encoder of encoders) {
+        if (abortController.signal.aborted) break
+        logger.info('Downloader', `[VideoCompress] 尝试使用编码器 [${encoder}] 压缩...`)
+        const ok = await this.executeFfmpegCompress(filePath, tempCompressedPath, encoder, targetBitrateKbps, abortController)
+        if (ok && fs.existsSync(tempCompressedPath)) {
+          const compSize = fs.statSync(tempCompressedPath).size
+          if (compSize > 0) {
+            compressSuccess = true
+            usedEncoder = encoder
+            break
+          }
+        }
+        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+      }
+
+      if (compressSuccess && fs.existsSync(tempCompressedPath)) {
+        const compressedSize = fs.statSync(tempCompressedPath).size
+        logger.info('Downloader', `[VideoCompress] 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
+        
+        // 原子替换原文件
+        try {
+          fs.unlinkSync(filePath)
+        } catch {}
+        fs.renameSync(tempCompressedPath, filePath)
+        return compressedSize
+      } else {
+        logger.warn('Downloader', `[VideoCompress] 任务 ${taskId} 压缩未成功或已取消，保留原始文件`)
+        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+        return currentSize
+      }
+    } catch (err: any) {
+      logger.error('Downloader', `[VideoCompress] 压缩处理异常: ${err.message}`)
+      return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+    }
+  }
+
+  private async getVideoDurationAndBitrate(filePath: string): Promise<{ duration: number; bitrate: number }> {
+    return new Promise((resolve) => {
+      const child = spawn('ffmpeg', ['-i', filePath])
+      let stderr = ''
+      child.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+      child.on('close', () => {
+        let duration = 0
+        let bitrate = 0
+        const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/)
+        if (durationMatch) {
+          const hours = parseFloat(durationMatch[1])
+          const mins = parseFloat(durationMatch[2])
+          const secs = parseFloat(durationMatch[3])
+          duration = hours * 3600 + mins * 60 + secs
+        }
+        const bitrateMatch = stderr.match(/bitrate:\s*(\d+)\s*kb\/s/i)
+        if (bitrateMatch) {
+          bitrate = parseInt(bitrateMatch[1], 10) * 1000
+        }
+        resolve({ duration, bitrate })
+      })
+      child.on('error', () => {
+        resolve({ duration: 0, bitrate: 0 })
+      })
+    })
+  }
+
+  private async executeFfmpegCompress(
+    inputPath: string,
+    outputPath: string,
+    encoder: string,
+    targetBitrateKbps: number,
+    abortController: AbortController
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const args = [
+        '-y',
+        '-i', inputPath,
+        '-c:v', encoder,
+        '-b:v', `${targetBitrateKbps}k`,
+        '-maxrate', `${Math.round(targetBitrateKbps * 1.5)}k`,
+        '-bufsize', `${Math.round(targetBitrateKbps * 2)}k`,
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath
+      ]
+      if (encoder === 'libx264') {
+        args.splice(args.indexOf(encoder) + 1, 0, '-preset', 'fast')
+      }
+
+      const proc = spawn('ffmpeg', args)
+      proc.on('close', (code) => {
+        resolve(code === 0)
+      })
+      proc.on('error', () => {
+        resolve(false)
+      })
+      const abortHandler = () => {
+        try { proc.kill('SIGKILL') } catch {}
+        resolve(false)
+      }
+      abortController.signal.addEventListener('abort', abortHandler, { once: true })
+    })
   }
 }
 

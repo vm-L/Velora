@@ -9,19 +9,11 @@
             <h3>关闭窗口行为</h3>
             <p>指定点击主窗口右上角关闭按钮时的默认系统行为</p>
           </div>
-          <div class="segmented-control" :class="{ 'state-quit': state.closeBehavior === 'quit' }">
-            <label>
-              <input type="radio" name="close-action" value="tray" :checked="state.closeBehavior === 'tray'"
-                @change="updateBehavior('tray')">
-              <span>隐藏到托盘</span>
-            </label>
-            <label>
-              <input type="radio" name="close-action" value="quit" :checked="state.closeBehavior === 'quit'"
-                @change="updateBehavior('quit')">
-              <span>直接退出</span>
-            </label>
-            <div class="selection-pill"></div>
-          </div>
+          <v-switch
+            :model-value="state.closeBehavior"
+            :options="closeBehaviorOptions"
+            @change="updateBehavior"
+          />
         </div>
 
         <!-- 广告过滤规则 -->
@@ -115,6 +107,61 @@
             <v-input v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
               class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compression Settings -->
+      <div class="settings-section-title">压缩</div>
+      <div class="settings-card">
+        <!-- 下载后压缩视频开关 -->
+        <div class="settings-row">
+          <div class="settings-info">
+            <h3>下载后压缩视频</h3>
+            <p>视频下载完成后，当体积与码率达到阈值时使用 FFmpeg (优先 GPU 硬件加速) 进行智能压缩</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-switch
+              :model-value="state.enableVideoCompress"
+              @change="handleCompressToggle"
+            />
+          </div>
+        </div>
+
+        <!-- 触发压缩的文件大小阈值 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>触发压缩阈值 (GB)</h3>
+            <p>当视频文件体积大于或等于此阈值时触发压缩</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-input
+              type="number"
+              step="0.1"
+              min="0.1"
+              max="50"
+              :value="state.videoCompressThresholdGB"
+              @change="handleThresholdChange"
+              class="inline-input"
+              style="width: 100px; min-width: 100px;"
+            />
+          </div>
+        </div>
+
+        <!-- 目标基准码率 (只读) -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>目标基准码率 (只读)</h3>
+            <p>以 2 小时标准时长计算，视频文件达到阈值大小时的码率</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-input
+              type="text"
+              readonly
+              :model-value="calculatedTargetBitrateText"
+              class="inline-input"
+              style="width: 170px; min-width: 170px; text-align: right; background: var(--bg-hover);"
+            />
           </div>
         </div>
       </div>
@@ -226,7 +273,7 @@
             <h3>资源配置备份 (.json)</h3>
             <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">包含网页列表、域名解析规则、注入脚本与 CMS 资源站配置</p>
           </div>
-          <div class="action-buttons" style="display: flex; gap: 8px; shrink-0;">
+          <div class="action-buttons" style="display: flex; gap: 8px;">
             <v-button variant="secondary" @click="handleImportResources">
               导入
             </v-button>
@@ -420,6 +467,12 @@ import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue'
 import ParseRuleDialog from '../components/features/ParseRuleDialog.vue';
 import AdBlockDialog from '../components/features/AdBlockDialog.vue';
 import VInput from '../components/base/VInput.vue';
+import VSwitch, { type VSwitchOption } from '../components/base/VSwitch.vue';
+
+const closeBehaviorOptions: VSwitchOption[] = [
+  { label: '隐藏到托盘', value: 'tray' },
+  { label: '直接退出', value: 'quit' }
+];
 
 const { 
   state, 
@@ -430,6 +483,8 @@ const {
   saveFileDirectory,
   saveMaxConcurrentDownloads,
   saveMaxMemoryBufferMB,
+  saveEnableVideoCompress,
+  saveVideoCompressThresholdGB,
   saveCmsResources, 
   saveExternalSites, 
   saveCustomStyles,
@@ -441,6 +496,30 @@ const {
 } = useSettings();
 const { confirm } = useConfirm();
 const { showMessage } = useMessage();
+
+const calculatedTargetBitrateText = computed(() => {
+  const gb = typeof state.videoCompressThresholdGB === 'number' ? state.videoCompressThresholdGB : 1.5;
+  // 2 hours = 7200 seconds. 
+  // Formula: (GB * 1024 * 1024 * 1024 * 8 bits) / 7200 s
+  const bps = (gb * 1024 * 1024 * 1024 * 8) / 7200;
+  const kbps = Math.round(bps / 1000);
+  const mbps = (bps / 1000000).toFixed(2);
+  return `${kbps.toLocaleString()} kbps (~${mbps} Mbps)`;
+});
+
+const handleCompressToggle = (val: boolean) => {
+  saveEnableVideoCompress(val);
+  showMessage(val ? '已开启下载后智能视频压缩' : '已关闭下载后视频压缩', 'info');
+};
+
+const handleThresholdChange = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  let val = parseFloat(target.value);
+  if (isNaN(val) || val < 0.1) val = 0.1;
+  else if (val > 50) val = 50;
+  val = Math.round(val * 10) / 10;
+  saveVideoCompressThresholdGB(val);
+};
 
 const pendingImportData = ref<any>(null);
 const importMode = ref<'merge' | 'overwrite'>('merge');

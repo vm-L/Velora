@@ -25,12 +25,6 @@
           </div>
           <div class="metric-value">{{ errorCount }}</div>
         </div>
-        <div class="metric-card" :class="{ active: activeFilter === 'file_removed' }" @click="toggleFilter('file_removed')">
-          <div class="metric-label">
-            <span class="status-dot warning" style="background: #f59e0b;"></span>文件丢失
-          </div>
-          <div class="metric-value">{{ fileRemovedCount }}</div>
-        </div>
       </div>
 
       <div class="operation-panel">
@@ -264,8 +258,6 @@ const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
 
-const fileRemovedCount = computed(() => tasks.value.filter(t => t.status === 'file_removed').length);
-
 const handleAuditDiskFiles = async () => {
   const updated = await auditDiskFiles();
   if (updated > 0) {
@@ -439,7 +431,7 @@ const batchDelete = async () => {
 
 const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving').length);
 const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
-const errorCount = computed(() => tasks.value.filter(t => t.status === 'error').length);
+const errorCount = computed(() => tasks.value.filter(t => t.status === 'error' || t.status === 'file_removed' || t.status === 'file_corrupted').length);
 
 const globalSpeed = computed(() => {
   return tasks.value
@@ -534,6 +526,9 @@ const sortedTasks = computed(() => {
     filtered = filtered.filter(t => {
       if (activeFilter.value === 'downloading') {
         return t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving';
+      }
+      if (activeFilter.value === 'error') {
+        return t.status === 'error' || t.status === 'file_removed' || t.status === 'file_corrupted';
       }
       return t.status === activeFilter.value;
     });

@@ -179,6 +179,14 @@ export const useDownloads = () => {
         }
       }
 
+      let finalReferer = customReferer;
+      if (finalReferer) {
+        try {
+          const u = new URL(finalReferer);
+          if (u.origin && u.origin !== 'null') finalReferer = u.origin;
+        } catch {}
+      }
+
       const id = crypto.randomUUID()
       const task: DownloadTask = {
         id,
@@ -190,7 +198,7 @@ export const useDownloads = () => {
         receivedBytes: 0,
         totalBytes: 0,
         speed: 0,
-        referer: customReferer,
+        referer: finalReferer,
         createdAt: Date.now(),
         updatedAt: Date.now()
       }

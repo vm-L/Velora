@@ -5,18 +5,12 @@
         <!-- Modal Header -->
         <div class="modal-header">
           <div class="header-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
+            <VIcon name="edit" :size="16" style="margin-right: 6px;" />
             <span>编辑任务信息</span>
           </div>
-          <button class="close-btn" @click="close" title="关闭">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" @click="close" title="关闭">
+            <VIcon name="close" :size="14" />
+          </v-button>
         </div>
 
         <!-- Modal Body -->
@@ -84,6 +78,7 @@ import { useDownloads } from '../../composables/useDownloads';
 import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 
 const props = defineProps<{
