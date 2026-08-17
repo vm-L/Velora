@@ -15,6 +15,11 @@
               <p>{{ state.message }}</p>
             </div>
           </div>
+          <div v-if="state.checkboxLabel" class="dialog-checkbox-row">
+            <VCheckbox v-model="state.isChecked">
+              {{ state.checkboxLabel }}
+            </VCheckbox>
+          </div>
           <div class="dialog-actions">
             <v-button variant="secondary" class="btn-cancel" @click="cancel">{{ state.cancelText }}</v-button>
             <v-button :variant="state.type === 'danger' ? 'danger' : (state.type === 'warning' ? 'warning' : 'primary')" class="btn-confirm" @click="proceed">{{ state.confirmText }}</v-button>
@@ -29,6 +34,7 @@
 import { useConfirm } from '../../composables/useConfirm'
 import VButton from '../base/VButton.vue'
 import VIcon from '../base/VIcon.vue'
+import VCheckbox from '../base/VCheckbox.vue'
 
 const { state, proceed, cancel } = useConfirm()
 </script>
@@ -102,6 +108,13 @@ const { state, proceed, cancel } = useConfirm()
   color: var(--text-secondary);
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.dialog-checkbox-row {
+  margin-bottom: 16px;
+  padding-left: 50px;
+  display: flex;
+  align-items: center;
 }
 
 .dialog-actions {

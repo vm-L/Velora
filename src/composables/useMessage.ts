@@ -12,8 +12,11 @@ export interface MessageData {
   text: string
   type: MessageType
   duration: number
+  remainingDuration: number
+  startTime: number
   action?: MessageAction
   timer?: any
+  isPaused?: boolean
 }
 
 export interface MessageOptions {
@@ -35,6 +38,35 @@ export const useMessage = () => {
       }
       messages.value.splice(idx, 1)
     }
+  }
+
+  const pauseTimer = (id?: string) => {
+    messages.value.forEach(msg => {
+      if (!id || msg.id === id) {
+        if (msg.timer && !msg.isPaused) {
+          clearTimeout(msg.timer)
+          msg.timer = null
+          const elapsed = Date.now() - msg.startTime
+          msg.remainingDuration = Math.max(800, msg.remainingDuration - elapsed)
+          msg.isPaused = true
+        }
+      }
+    })
+  }
+
+  const resumeTimer = (id?: string) => {
+    messages.value.forEach(msg => {
+      if (!id || msg.id === id) {
+        if (msg.isPaused && msg.duration > 0) {
+          msg.isPaused = false
+          msg.startTime = Date.now()
+          const delay = Math.max(1000, msg.remainingDuration || msg.duration)
+          msg.timer = setTimeout(() => {
+            removeMessage(msg.id)
+          }, delay)
+        }
+      }
+    })
   }
 
   const showMessage = (
@@ -87,8 +119,11 @@ export const useMessage = () => {
       text: msgText,
       type: msgType,
       duration: msgDuration,
+      remainingDuration: msgDuration,
+      startTime: Date.now(),
       action: msgAction,
-      timer
+      timer,
+      isPaused: false
     }
 
     // 推入消息队列末尾（置顶显示）
@@ -100,6 +135,8 @@ export const useMessage = () => {
   return {
     messages,
     showMessage,
-    removeMessage
+    removeMessage,
+    pauseTimer,
+    resumeTimer
   }
 }

@@ -1,12 +1,19 @@
 <template>
-  <div class="message-container" :class="{ 'is-expanded': isHovered }" :style="containerStyle" @mouseenter="isHovered = true" @mouseleave="isHovered = false">
+  <div 
+    class="message-container" 
+    :class="{ 'is-expanded': isHovered }"
+    @mouseenter="handleMouseEnter" 
+    @mouseleave="handleMouseLeave"
+  >
     <TransitionGroup name="message-list">
       <div 
         v-for="(msg, index) in messages" 
         :key="msg.id" 
         class="message-item" 
-        :class="`message-${msg.type}`"
+        :class="[`message-${msg.type}`, { 'is-front': index === messages.length - 1 }]"
         :style="getStyle(index)"
+        @mouseenter="handleMouseEnter"
+        @mouseleave="handleMouseLeave"
       >
         <div class="message-icon">
           <VIcon 
@@ -15,7 +22,7 @@
             :class="{ 'spin-icon': msg.type === 'loading' }"
           />
         </div>
-        <div style="display: flex; align-items: center; flex: 1;">
+        <div class="message-content">
           <span class="message-text">{{ msg.text }}</span>
           <VButton
             v-if="msg.action"
@@ -39,49 +46,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useMessage } from '../../composables/useMessage'
 import VIcon from '../base/VIcon.vue'
 import VButton from '../base/VButton.vue'
 
-const { messages, removeMessage } = useMessage()
+const { messages, removeMessage, pauseTimer, resumeTimer } = useMessage()
 const isHovered = ref(false)
 
-const containerStyle = computed(() => {
-  if (!isHovered.value) return { transform: 'translate(-50%, 0)' };
-  const count = messages.value.length;
-  if (count <= 1) return { transform: 'translate(-50%, 0)' };
-  const shiftDown = (count - 1) * 60;
-  return {
-    transform: `translate(-50%, ${shiftDown}px)`
-  };
-});
+const handleMouseEnter = () => {
+  isHovered.value = true
+  pauseTimer()
+}
+
+const handleMouseLeave = () => {
+  isHovered.value = false
+  resumeTimer()
+}
 
 const getStyle = (index: number): any => {
-  const total = messages.value.length;
-  // reverseIndex: 0 is the newest (visually in the front)
-  const reverseIndex = total - 1 - index;
+  const total = messages.value.length
+  // reverseIndex: 0 is the newest (visually in the front/top)
+  const reverseIndex = total - 1 - index
   
-  if (isHovered.value) {
-    // Spread out mode
-    return {
-      transform: `translate3d(0, ${reverseIndex * -60}px, 0) scale(1)`,
-      zIndex: 1000 - reverseIndex,
-      opacity: 1, // Show all when hovered
-      pointerEvents: 'auto'
-    }
-  } else {
-    // Stacked mode
-    const isActive = reverseIndex < 3; // Show top 3
-    const yOffset = isActive ? reverseIndex * -14 : -14 * 3;
-    const scale = isActive ? 1 - reverseIndex * 0.05 : 1 - 3 * 0.05;
-    
-    return {
-      transform: `translate3d(0, ${yOffset}px, 0) scale(${scale})`,
-      zIndex: 1000 - reverseIndex,
-      opacity: isActive ? 1 - reverseIndex * 0.15 : 0,
-      pointerEvents: reverseIndex === 0 ? 'auto' : 'none'
-    }
+  const isActive = reverseIndex < 3
+  const yOffset = isActive ? reverseIndex * -12 : -12 * 3
+  const scale = isActive ? 1 - reverseIndex * 0.04 : 1 - 3 * 0.04
+  
+  return {
+    transform: `translate3d(-50%, ${yOffset}px, 0) scale(${scale})`,
+    zIndex: 1000 - reverseIndex,
+    opacity: isActive ? 1 - reverseIndex * 0.15 : 0,
+    pointerEvents: reverseIndex === 0 ? 'auto' : 'none'
   }
 }
 </script>
@@ -94,31 +90,19 @@ const getStyle = (index: number): any => {
   transform: translateX(-50%);
   z-index: 10000;
   pointer-events: none;
-  width: 380px;
-  height: 52px; /* Base height for hover catching */
-  transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1);
-  
-  &.is-expanded {
-    /* Optional: When expanded, make container capture events in gaps */
-  }
-  
-  /* Catch hover seamlessly when expanding upwards */
-  &::before {
-    content: '';
-    position: absolute;
-    top: -400px; left: 0; right: 0; bottom: 10px;
-    pointer-events: none;
-  }
-  &.is-expanded::before {
-    pointer-events: auto;
-  }
+  width: 0;
+  height: 52px;
+  display: flex;
+  justify-content: center;
 }
 
 .message-item {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 100%;
+  left: 50%;
+  width: max-content;
+  min-width: 320px;
+  max-width: 440px;
   height: 52px;
   box-sizing: border-box;
   display: flex;
@@ -131,16 +115,48 @@ const getStyle = (index: number): any => {
   pointer-events: auto;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
+  transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1), max-width 0.3s cubic-bezier(0.2, 1, 0.2, 1), opacity 0.3s ease, padding 0.2s ease;
   transform-origin: bottom center;
+  overflow: hidden;
+
+  .is-expanded & {
+    height: auto;
+    min-height: 52px;
+    max-width: min(88vw, 780px);
+    padding: 14px 16px;
+    align-items: flex-start;
+    overflow: visible;
+  }
+}
+
+.message-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+
+  .is-expanded & {
+    align-items: flex-start;
+    overflow: visible;
+  }
 }
 
 .message-text {
   color: var(--text-primary);
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-all;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
+
+  .is-expanded & {
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 .message-action-btn {
@@ -167,6 +183,11 @@ const getStyle = (index: number): any => {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+
+  .is-expanded & {
+    margin-top: 2px;
+  }
 }
 
 .message-info .message-icon { color: var(--color-accent); }
@@ -200,6 +221,11 @@ const getStyle = (index: number): any => {
   min-width: unset;
   transition: color 0.2s ease, opacity 0.2s ease;
   box-shadow: none !important;
+  flex-shrink: 0;
+
+  .is-expanded & {
+    margin-top: -2px;
+  }
 
   &:hover {
     background: transparent !important;
@@ -214,10 +240,10 @@ const getStyle = (index: number): any => {
 }
 .message-list-enter-from {
   opacity: 0;
-  transform: translate3d(0, -20px, 0) scale(0.9) !important;
+  transform: translate3d(-50%, -20px, 0) scale(0.9) !important;
 }
 .message-list-leave-to {
   opacity: 0;
-  transform: translate3d(0, -10px, 0) scale(0.95) !important;
+  transform: translate3d(-50%, -10px, 0) scale(0.95) !important;
 }
 </style>

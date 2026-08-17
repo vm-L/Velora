@@ -15,7 +15,7 @@
     <!-- 加载中或错误状态 -->
     <div v-if="detailLoading" class="loader-container">
       <div class="spinner"></div>
-      <p>正在获取视频详情及播放源...</p>
+      <p>正在获取视频详情及播放源</p>
     </div>
     
     <div v-else-if="!videoDetail" class="error-container">
@@ -46,7 +46,7 @@
             
             <div v-if="!isNativeVideo && !sniffedMediaUrl" class="sniffing-overlay">
               <div class="loading-spinner"></div>
-              <p>正在后台嗅探真实视频流...</p>
+              <p>正在后台嗅探真实视频流</p>
             </div>
             
             <webview 

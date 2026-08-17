@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startDownload: (cmd: any) => ipcRenderer.send('start-download', cmd),
   pauseDownload: (id: string) => ipcRenderer.send('pause-download', id),
   cancelDownload: (id: string) => ipcRenderer.send('cancel-download', id),
+  getVideoMediaInfo: (filePath: string) => ipcRenderer.invoke('get-video-media-info', filePath),
+  compressVideoTask: (taskId: string, filePath: string, targetBitrateKbps: number) => ipcRenderer.invoke('compress-video-task', taskId, filePath, targetBitrateKbps),
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
   moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('move-file', oldPath, newPath),

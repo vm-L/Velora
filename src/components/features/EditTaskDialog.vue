@@ -17,13 +17,13 @@
         <div class="modal-body">
           <div class="form-group">
             <label>任务名称</label>
-            <v-input v-model="taskName" type="text" placeholder="输入任务名称..." />
+            <v-input v-model="taskName" type="text" placeholder="输入任务名称" />
           </div>
 
           <div class="form-group" style="margin-top: 14px;">
             <label>任务链接</label>
             <div class="url-input-row">
-              <v-input :model-value="taskUrl" type="text" readonly placeholder="任务链接..." class="flex-1" />
+              <v-input :model-value="taskUrl" type="text" readonly placeholder="任务链接" class="flex-1" />
               <v-button variant="secondary" size="small" @click="handleCopyUrl">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -39,7 +39,7 @@
             <div class="dir-input-row">
               <VInputSelect
                 v-model="saveDirectory"
-                placeholder="选择或输入新文件目录..."
+                placeholder="选择或输入新文件目录"
                 :options="dirTreeOptions"
                 class="flex-1"
               />
@@ -52,7 +52,7 @@
         <div class="modal-footer">
           <v-button variant="secondary" size="small" @click="close" :disabled="isSaving">取消</v-button>
           <v-button variant="primary" size="small" @click="saveEdit" :disabled="isSaving">
-            {{ isSaving ? '保存中...' : '保存修改' }}
+            {{ isSaving ? '保存中' : '保存修改' }}
           </v-button>
         </div>
       </div>

@@ -6,12 +6,12 @@
           <div class="metric-label">全部任务</div>
           <div class="metric-value">{{ tasks.length }}</div>
         </div>
-        <div class="metric-card" :class="{ active: activeFilter === 'downloading' }"
-          @click="toggleFilter('downloading')">
+        <div class="metric-card" :class="{ active: activeFilter === 'processing' }"
+          @click="toggleFilter('processing')">
           <div class="metric-label">
-            <span class="status-dot downloading"></span>下载中
+            <span class="status-dot processing"></span>进行中
           </div>
-          <div class="metric-value">{{ downloadingCount }}</div>
+          <div class="metric-value">{{ inProgressCount }}</div>
         </div>
         <div class="metric-card" :class="{ active: activeFilter === 'completed' }" @click="toggleFilter('completed')">
           <div class="metric-label">
@@ -46,6 +46,11 @@
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
               继续
+            </v-button>
+            <v-button variant="secondary" :disabled="selectedCompressibleTasks.length === 0" @click="openBatchCompressDialog"
+              title="压缩所选">
+              <VIcon name="compress" :size="14" />
+              压缩
             </v-button>
             <v-button variant="danger-soft" :disabled="selectedTasks.length === 0" @click="batchDelete"
               title="删除所选">
@@ -117,8 +122,8 @@
             <div class="task-header">
               <div class="task-name" :title="task.name" :class="{ 'file-removed': task.status === 'file_removed' }">{{ task.name }}</div>
               <div class="task-actions">
-                <!-- 正在下载/处理/等待：暂停 -->
-                <VButton v-if="['downloading', 'processing', 'resolving', 'waiting'].includes(task.status)" variant="icon-secondary" title="暂停"
+                <!-- 正在下载/压缩/转码/处理/等待：暂停 -->
+                <VButton v-if="['downloading', 'compressing', 'converting', 'processing', 'resolving', 'waiting'].includes(task.status)" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="6" y="4" width="4" height="16"></rect>
@@ -159,13 +164,16 @@
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
                 </VButton>
-                <VButton variant="icon-danger" title="删除记录与文件" @click.stop="confirmDeleteFileAndRecord(task)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
+                <!-- 压缩视频按钮（仅对已完成的视频任务显示） -->
+                <VButton
+                  v-if="task.status === 'completed' && isVideoTask(task)"
+                  variant="icon-secondary"
+                  title="压缩视频"
+                  @click.stop="openCompressDialog(task)"
+                >
+                  <VIcon name="compress" :size="14" />
                 </VButton>
-                <VButton variant="icon-danger" title="删除记录" @click.stop="confirmDeleteRecordOnly(task)">
+                <VButton variant="icon-danger" title="删除记录" @click.stop="confirmDeleteTask(task)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -190,13 +198,21 @@
                 <span class="meta-divider">•</span>
                 <span class="segments-text">{{ task.downloadedSegments || 0 }}/{{ task.totalSegments }} 分片</span>
               </template>
-              <template v-if="(task.status === 'downloading' || task.status === 'processing' || task.status === 'resolving')">
+              <template v-if="['downloading', 'compressing', 'converting', 'processing', 'resolving'].includes(task.status)">
                 <span class="meta-divider">•</span>
-                <span v-if="task.status === 'resolving'">解析中...</span>
+                <span v-if="task.status === 'resolving'">解析中</span>
                 <span v-else-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
-                <span v-else-if="task.status === 'processing'">正在处理...</span>
-                <span v-if="task.totalBytes > 0" class="meta-divider">•</span>
-                <span v-if="task.totalBytes > 0" class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
+                <span v-else-if="task.status === 'converting'">格式转换中</span>
+                <span v-else-if="task.status === 'compressing'">{{ task.speedText ? `压缩中 (${task.speedText})` : '正在压缩' }}</span>
+                <span v-else-if="task.status === 'processing'">处理中</span>
+                <template v-if="task.status === 'compressing' && task.etaSeconds !== undefined">
+                  <span class="meta-divider">•</span>
+                  <span class="eta-text">{{ formatSecondsETA(task.etaSeconds) }}</span>
+                </template>
+                <template v-else-if="task.status === 'downloading' && task.totalBytes > 0">
+                  <span class="meta-divider">•</span>
+                  <span class="eta-text">{{ formatETA(task.totalBytes, task.receivedBytes, task.speed) }}</span>
+                </template>
               </template>
               <template v-if="task.savePath">
                 <span class="meta-divider">•</span>
@@ -228,6 +244,16 @@
       v-model:visible="editTaskDialogVisible"
       :task="editingTask"
     />
+    <CompressVideoDialog
+      v-model:visible="isCompressDialogVisible"
+      :task="compressingTask"
+      @confirm="handleConfirmCompress"
+    />
+    <BatchCompressVideoDialog
+      v-model:visible="isBatchCompressDialogVisible"
+      :tasks="selectedCompressibleTasks"
+      @confirm="handleConfirmBatchCompress"
+    />
   </div>
 </template>
 
@@ -237,17 +263,22 @@ import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
 import VButton from '../components/base/VButton.vue';
+import VIcon from '../components/base/VIcon.vue';
 import VCheckbox from '../components/base/VCheckbox.vue';
 import ImagePreviewDialog from '../components/features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../components/features/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../components/features/VideoPlayerDialog.vue';
 import SaveMediaDialog from '../components/features/SaveMediaDialog.vue';
 import EditTaskDialog from '../components/features/EditTaskDialog.vue';
+import CompressVideoDialog from '../components/features/CompressVideoDialog.vue';
+import BatchCompressVideoDialog from '../components/features/BatchCompressVideoDialog.vue';
+import { useNotification } from '../composables/useNotification';
 import { useSettings } from '../composables/useSettings';
 import { logger } from '../services/logger';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
+const { showNotification } = useNotification();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
 
@@ -263,6 +294,93 @@ const editingTask = ref<any>(null);
 const openEditTask = (task: any) => {
   editingTask.value = task;
   editTaskDialogVisible.value = true;
+};
+
+const isCompressDialogVisible = ref(false);
+const compressingTask = ref<any>(null);
+
+const openCompressDialog = (task: any) => {
+  compressingTask.value = task;
+  isCompressDialogVisible.value = true;
+};
+
+const isBatchCompressDialogVisible = ref(false);
+
+const selectedCompressibleTasks = computed(() => {
+  return tasks.value.filter(t => selectedTasks.value.includes(t.id) && t.status === 'completed' && isVideoTask(t));
+});
+
+const openBatchCompressDialog = () => {
+  if (selectedCompressibleTasks.value.length === 0) return;
+  isBatchCompressDialogVisible.value = true;
+};
+
+const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbps }: { tasks: any[], targetBitrateKbps: number }) => {
+  if (targetTasks.length === 0 || !window.electronAPI) return;
+
+  const count = targetTasks.length;
+  selectedTasks.value = [];
+  showMessage(`已将 ${count} 个视频加入压缩处理队列`, 'info');
+
+  for (const t of targetTasks) {
+    t.speed = 0;
+    delete t.speedText;
+    delete t.etaSeconds;
+    // 后台触发，downloader.ts 单并发压缩队列会自动管理排队与运行
+    window.electronAPI.compressVideoTask(t.id, t.savePath, targetBitrateKbps).catch((err: any) => {
+      logger.error('Home', `[BatchCompress] 任务 ${t.id} 压缩触发异常: ${err?.message}`);
+    });
+  }
+};
+
+const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any, targetBitrateKbps: number }) => {
+  if (!task || !window.electronAPI) return;
+  task.status = 'compressing';
+  task.progress = 0;
+  task.speed = 0;
+  delete task.speedText;
+  delete task.etaSeconds;
+  await updateTaskDb(task);
+  showMessage(`已开始压缩视频 "${task.name}"`, 'info');
+
+  try {
+    const res = await window.electronAPI.compressVideoTask(task.id, task.savePath, targetBitrateKbps);
+    if (res && res.success && res.newSize) {
+      task.status = 'completed';
+      task.progress = 100;
+      task.receivedBytes = res.newSize;
+      task.totalBytes = res.newSize;
+      delete task.speedText;
+      delete task.etaSeconds;
+      await updateTaskDb(task);
+    } else if (res && !res.success) {
+      task.status = 'completed';
+      delete task.speedText;
+      delete task.etaSeconds;
+      await updateTaskDb(task);
+      if (res.error && res.error !== '压缩已取消') {
+        showNotification({
+          type: 'error',
+          title: '视频压缩失败',
+          message: task.name,
+          detail: res.error,
+          sourceRoute: '/'
+        });
+      }
+    }
+  } catch (err: any) {
+    task.status = 'completed';
+    delete task.speedText;
+    delete task.etaSeconds;
+    await updateTaskDb(task);
+    showNotification({
+      type: 'error',
+      title: '视频压缩失败',
+      message: task.name,
+      detail: err.message || '压缩发生未知异常',
+      sourceRoute: '/'
+    });
+  }
 };
 const saveTargetUrl = ref('');
 const saveDefaultName = ref('');
@@ -301,6 +419,8 @@ onUnmounted(() => {
 
 const getStatusWeight = (status: string) => {
   switch (status) {
+    case 'compressing': return 7;
+    case 'converting': return 6;
     case 'processing': return 6;
     case 'downloading': return 5;
     case 'resolving': return 4;
@@ -372,7 +492,7 @@ const enterSelection = (id: string) => {
 const batchPause = () => {
   if (selectedTasks.value.length === 0) return;
 
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && (t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving'));
+  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['downloading', 'compressing', 'converting', 'processing', 'waiting', 'resolving'].includes(t.status));
 
   eligibleTasks.forEach(t => pauseTask(t.id));
 
@@ -396,26 +516,33 @@ const batchResume = () => {
 const batchDelete = async () => {
   if (selectedTasks.value.length === 0) return;
 
-  const confirmed = await confirm({
+  const count = selectedTasks.value.length;
+  const { confirmed, checked } = await confirm({
     title: '批量删除',
-    message: `确定要删除选中的 ${selectedTasks.value.length} 个任务及对应的本地文件吗？`,
+    message: `确定要删除选中的 ${count} 个任务记录吗？`,
     confirmText: '删除',
     cancelText: '取消',
-    type: 'danger'
+    type: 'danger',
+    checkboxLabel: '是否同时删除文件',
+    defaultChecked: true
   });
 
   if (confirmed) {
     for (const id of selectedTasks.value) {
-      deleteTask(id, true);
+      await deleteTask(id, checked);
     }
-    showMessage(`已删除 ${selectedTasks.value.length} 个任务和文件`, 'success');
+    if (checked) {
+      showMessage(`已删除选中的 ${count} 个任务及对应文件`, 'success');
+    } else {
+      showMessage(`已删除选中的 ${count} 个任务记录`, 'success');
+    }
     selectedTasks.value = [];
   }
 };
 
-const downloadingCount = computed(() => tasks.value.filter(t => t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving').length);
+const inProgressCount = computed(() => tasks.value.filter(t => ['resolving', 'downloading', 'converting', 'compressing', 'processing', 'waiting', 'paused'].includes(t.status)).length);
 const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
-const errorCount = computed(() => tasks.value.filter(t => t.status === 'error' || t.status === 'file_removed' || t.status === 'file_corrupted').length);
+const errorCount = computed(() => tasks.value.filter(t => ['error', 'file_removed', 'file_corrupted'].includes(t.status)).length);
 
 const globalSpeed = computed(() => {
   return tasks.value
@@ -508,11 +635,11 @@ const sortedTasks = computed(() => {
   let filtered = tasks.value;
   if (activeFilter.value) {
     filtered = filtered.filter(t => {
-      if (activeFilter.value === 'downloading') {
-        return t.status === 'downloading' || t.status === 'processing' || t.status === 'waiting' || t.status === 'resolving';
+      if (activeFilter.value === 'processing' || activeFilter.value === 'downloading') {
+        return ['resolving', 'downloading', 'converting', 'compressing', 'processing', 'waiting', 'paused'].includes(t.status);
       }
       if (activeFilter.value === 'error') {
-        return t.status === 'error' || t.status === 'file_removed' || t.status === 'file_corrupted';
+        return ['error', 'file_removed', 'file_corrupted'].includes(t.status);
       }
       return t.status === activeFilter.value;
     });
@@ -529,6 +656,8 @@ const getStatusText = (status: string) => {
   switch (status) {
     case 'resolving': return '解析中';
     case 'downloading': return '下载中';
+    case 'converting': return '格式转换中';
+    case 'compressing': return '压缩中';
     case 'processing': return '处理中';
     case 'waiting': return '排队中';
     case 'paused': return '已暂停';
@@ -554,20 +683,25 @@ const getDirectory = (savePath: string) => {
   return lastIndex === -1 ? savePath : savePath.substring(0, lastIndex);
 };
 
+const formatSecondsETA = (seconds: number) => {
+  if (seconds <= 0) return '即将完成';
+  if (seconds < 60) return `${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remSec = seconds % 60;
+  if (minutes < 60) return remSec > 0 ? `${minutes}分${remSec}秒` : `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const remMin = minutes % 60;
+  return `${hours}小时${remMin}分`;
+};
+
 const formatETA = (total: number, received: number, speed: number) => {
   if (speed === 0 && received > 0) return 'N/A';
-  if (!speed || !total) return '计算中...';
+  if (!speed || !total) return '计算中';
   const remaining = total - received;
   if (remaining <= 0) return '即将完成';
 
   const seconds = Math.floor(remaining / speed);
-  if (seconds < 60) return `${seconds}秒`;
-  const minutes = Math.floor(seconds / 60);
-  const remSec = seconds % 60;
-  if (minutes < 60) return `${minutes}分${remSec}秒`;
-  const hours = Math.floor(minutes / 60);
-  const remMin = minutes % 60;
-  return `${hours}小时${remMin}分`;
+  return formatSecondsETA(seconds);
 };
 
 
@@ -582,7 +716,7 @@ const openDirectory = async (task: any) => {
   const dir = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
 
   // 正在下载、处理、等待或暂停的任务，最终文件尚未落地，直接打开所在目录即可
-  const isUnfinished = ['downloading', 'processing', 'resolving', 'waiting', 'paused'].includes(task.status);
+  const isUnfinished = ['downloading', 'compressing', 'converting', 'processing', 'resolving', 'waiting', 'paused'].includes(task.status);
 
   if (isUnfinished) {
     if (window.electronAPI) {
@@ -632,45 +766,30 @@ const openDirectory = async (task: any) => {
   }
 };
 
-const confirmDeleteFileAndRecord = async (task: any) => {
+const confirmDeleteTask = async (task: any) => {
   let fileExists = false;
-  if (window.electronAPI) {
+  if (task.savePath && window.electronAPI && window.electronAPI.fileExists) {
     fileExists = await window.electronAPI.fileExists(task.savePath);
   }
 
-  const isUnfinished = task.status !== 'completed';
-  const message = isUnfinished
-    ? (fileExists ? `确定要取消并删除未完成的任务 "${task.name}" 及其已下载的临时文件吗？` : `确定要删除任务记录 "${task.name}" 吗？`)
-    : (fileExists ? `确定删除任务记录 "${task.name}" 及本地文件吗？` : `确定要删除任务记录 "${task.name}" 吗？（文件已移除）`);
-
-  const confirmed = await confirm({
-    title: isUnfinished ? '删除未完成任务' : '删除记录与文件',
-    message,
+  const { confirmed, checked } = await confirm({
+    title: '删除任务',
+    message: `确定要删除任务 "${task.name}" 的记录吗？`,
     confirmText: '删除',
     cancelText: '取消',
-    type: 'danger'
+    type: 'danger',
+    checkboxLabel: '是否同时删除文件',
+    defaultChecked: true
   });
 
   if (confirmed) {
-    await deleteTask(task.id, fileExists || isUnfinished);
-    showMessage(fileExists || isUnfinished ? (isUnfinished ? '已删除任务与已下载的临时文件' : '已删除任务记录与文件') : '已删除任务记录', 'success');
-  }
-};
-
-const confirmDeleteRecordOnly = async (task: any) => {
-  const isUnfinished = task.status !== 'completed';
-  const confirmed = await confirm({
-    title: '删除记录',
-    message: isUnfinished
-      ? `确定删除未完成的任务记录 "${task.name}" 吗？（已下载的临时文件将被同步清除）`
-      : `确定仅删除任务记录 "${task.name}" 吗？（本地文件将保留）`,
-    confirmText: '删除记录',
-    cancelText: '取消'
-  });
-
-  if (confirmed) {
-    await deleteTask(task.id, isUnfinished);
-    showMessage(isUnfinished ? '已删除未完成任务与临时文件' : '已删除任务记录', 'success');
+    const shouldDeleteFile = checked && fileExists;
+    await deleteTask(task.id, shouldDeleteFile);
+    if (shouldDeleteFile) {
+      showMessage('已删除任务记录及本地文件', 'success');
+    } else {
+      showMessage('已删除任务记录', 'success');
+    }
   }
 };
 </script>
@@ -1059,8 +1178,9 @@ const confirmDeleteRecordOnly = async (task: any) => {
   height: 100%;
   border-radius: 3px;
   transition: width 0.3s ease;
+  background: var(--color-accent);
 
-  &.downloading, &.processing, &.resolving, &.waiting {
+  &.downloading, &.compressing, &.converting, &.processing, &.resolving, &.waiting {
     background: var(--color-accent);
   }
 

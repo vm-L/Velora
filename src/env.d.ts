@@ -32,6 +32,8 @@ interface Window {
     startDownload: (cmd: any) => void
     pauseDownload: (id: string) => void
     cancelDownload: (id: string) => void
+    getVideoMediaInfo: (filePath: string) => Promise<{ duration: number; bitrate: number; size: number }>
+    compressVideoTask: (taskId: string, filePath: string, targetBitrateKbps: number) => Promise<{ success: boolean; newSize?: number; error?: string }>
     deleteFile: (filePath: string) => Promise<boolean>
     fileExists: (filePath: string) => Promise<boolean>
     moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>

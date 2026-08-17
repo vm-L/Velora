@@ -85,7 +85,8 @@ export const state = reactive({
   maxConcurrentDownloads: 3,
   maxMemoryBufferMB: 128,
   enableVideoCompress: false,
-  videoCompressThresholdGB: 1.5,
+  videoCompressTargetGB: 1.5,
+  videoCompressMinBitrateKbps: 1500,
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
@@ -106,8 +107,10 @@ export const useSettings = () => {
     state.maxConcurrentDownloads = (await window.electronAPI.getSetting('maxConcurrentDownloads')) || 3
     state.maxMemoryBufferMB = (await window.electronAPI.getSetting('maxMemoryBufferMB')) || 128
     state.enableVideoCompress = (await window.electronAPI.getSetting('enableVideoCompress')) || false
-    const savedThreshold = await window.electronAPI.getSetting('videoCompressThresholdGB')
-    state.videoCompressThresholdGB = typeof savedThreshold === 'number' ? savedThreshold : 1.5
+    const savedTarget = (await window.electronAPI.getSetting('videoCompressTargetGB')) ?? (await window.electronAPI.getSetting('videoCompressThresholdGB'))
+    state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
+    const savedMinBitrate = await window.electronAPI.getSetting('videoCompressMinBitrateKbps')
+    state.videoCompressMinBitrateKbps = typeof savedMinBitrate === 'number' ? savedMinBitrate : 1500
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -181,9 +184,14 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('enableVideoCompress', enabled)
   }
 
-  const saveVideoCompressThresholdGB = async (gb: number) => {
-    state.videoCompressThresholdGB = gb
-    await window.electronAPI.setSetting('videoCompressThresholdGB', gb)
+  const saveVideoCompressTargetGB = async (gb: number) => {
+    state.videoCompressTargetGB = gb
+    await window.electronAPI.setSetting('videoCompressTargetGB', gb)
+  }
+
+  const saveVideoCompressMinBitrateKbps = async (kbps: number) => {
+    state.videoCompressMinBitrateKbps = kbps
+    await window.electronAPI.setSetting('videoCompressMinBitrateKbps', kbps)
   }
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
@@ -357,7 +365,8 @@ export const useSettings = () => {
     saveMaxConcurrentDownloads,
     saveMaxMemoryBufferMB,
     saveEnableVideoCompress,
-    saveVideoCompressThresholdGB,
+    saveVideoCompressTargetGB,
+    saveVideoCompressMinBitrateKbps,
     saveCmsResources, 
     saveExternalSites, 
     saveCustomStyles,

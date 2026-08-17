@@ -120,7 +120,7 @@
             <div class="save-location-group">
               <label>下载位置</label>
               <div class="location-input-row">
-                <v-input v-model="saveDirectory" type="text" placeholder="选择或输入下载目录..." />
+                <v-input v-model="saveDirectory" type="text" placeholder="选择或输入下载目录" />
                 <v-button variant="secondary" class="select-dir-btn" @click="selectSaveDirectory">浏览</v-button>
               </div>
             </div>
@@ -147,7 +147,7 @@
           <div class="save-footer">
             <v-button variant="secondary" class="cancel-btn" @click="closeSaveOverlay">取消</v-button>
             <v-button variant="primary" class="confirm-btn" :disabled="isSaving" @click="confirmSave">
-              {{ isSaving ? '下载中...' : '确认下载' }}
+              {{ isSaving ? '下载中' : '确认下载' }}
             </v-button>
           </div>
         </div>

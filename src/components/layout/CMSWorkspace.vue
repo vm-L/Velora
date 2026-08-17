@@ -25,7 +25,7 @@
         <div class="search-input-wrapper">
           <v-input 
             v-model="searchKeyword" 
-            placeholder="搜索视频名称..." 
+            placeholder="搜索视频名称" 
             class="search-input"
             @enter="handleSearch"
           />

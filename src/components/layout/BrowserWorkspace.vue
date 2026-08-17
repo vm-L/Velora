@@ -37,7 +37,7 @@
           v-model="addressInputUrl" 
           @keyup.enter="handleAddressBarEnter"
           @focus="handleAddressBarFocus"
-          placeholder="输入网址..." 
+          placeholder="输入网址" 
         />
       </div>
       <div class="func-spacer"></div>
@@ -525,7 +525,7 @@ const triggerSilentParse = async () => {
 
   showMessage({
     id: toastId,
-    text: `正在解析${labelText}...`,
+    text: `正在解析${labelText}`,
     type: 'loading',
     duration: 0
   });
@@ -634,7 +634,7 @@ const triggerSilentParse = async () => {
       ruleSelectModalVisible.value = true;
       showMessage({
         id: toastId,
-        text: '页面匹配到多个解析规则，请在弹窗中选择...',
+        text: '页面匹配到多个解析规则，请在弹窗中选择',
         type: 'info',
         duration: 2000
       });
@@ -656,7 +656,7 @@ const onRuleSelected = async (selectedDomain: string) => {
     const { targetUrl, htmlText, toastId, evaluator } = pendingParseContext.value;
     showMessage({
       id: toastId,
-      text: '正在执行选定的解析规则...',
+      text: '正在执行选定的解析规则',
       type: 'loading',
       duration: 0
     });

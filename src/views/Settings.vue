@@ -24,7 +24,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
             <v-button variant="secondary" :disabled="isUpdatingAllRules" @click="handleUpdateAllRules">
-              {{ isUpdatingAllRules ? '更新中...' : '更新' }}
+              {{ isUpdatingAllRules ? '更新中' : '更新' }}
             </v-button>
             <v-button variant="secondary" @click="showAdBlockModal = true">
               编辑
@@ -66,7 +66,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
+              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</v-button>
           </div>
         </div>
@@ -79,7 +79,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
+              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</v-button>
           </div>
         </div>
@@ -92,7 +92,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
+              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</v-button>
           </div>
         </div>
@@ -105,7 +105,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录..." style="flex: 1; max-width: 300px; margin-right: 8px;" />
+              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
           </div>
         </div>
@@ -118,7 +118,7 @@
         <div class="settings-row">
           <div class="settings-info">
             <h3>下载后压缩视频</h3>
-            <p>视频下载完成后，当体积与码率达到阈值时使用 FFmpeg (优先 GPU 硬件加速) 进行智能压缩</p>
+            <p>当体积与码率满足条件时自动使用 FFmpeg 进行压缩</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-switch
@@ -128,11 +128,11 @@
           </div>
         </div>
 
-        <!-- 触发压缩的文件大小阈值 -->
+        <!-- 目标文件大小 -->
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
-            <h3>触发压缩阈值 (GB)</h3>
-            <p>当视频文件体积大于或等于此阈值时触发压缩</p>
+            <h3>目标文件大小 (GB)</h3>
+            <p>期望压缩后的目标文件大小</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input
@@ -140,27 +140,30 @@
               step="0.1"
               min="0.1"
               max="50"
-              :value="state.videoCompressThresholdGB"
-              @change="handleThresholdChange"
+              :value="state.videoCompressTargetGB"
+              @change="handleTargetGBChange"
               class="inline-input"
               style="width: 100px; min-width: 100px;"
             />
           </div>
         </div>
 
-        <!-- 目标基准码率 (只读) -->
+        <!-- 最小码率 -->
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
-            <h3>目标基准码率 (只读)</h3>
-            <p>以 2 小时标准时长计算，视频文件达到阈值大小时的码率</p>
+            <h3>最小码率 (kbps)</h3>
+            <p>当原视频码率或计算出的压缩码率低于此值时不执行压缩</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-input
-              type="text"
-              readonly
-              :model-value="calculatedTargetBitrateText"
+              type="number"
+              step="100"
+              min="100"
+              max="50000"
+              :value="state.videoCompressMinBitrateKbps"
+              @change="handleMinBitrateChange"
               class="inline-input"
-              style="width: 170px; min-width: 170px; text-align: right; background: var(--bg-hover);"
+              style="width: 100px; min-width: 100px;"
             />
           </div>
         </div>
@@ -484,7 +487,8 @@ const {
   saveMaxConcurrentDownloads,
   saveMaxMemoryBufferMB,
   saveEnableVideoCompress,
-  saveVideoCompressThresholdGB,
+  saveVideoCompressTargetGB,
+  saveVideoCompressMinBitrateKbps,
   saveCmsResources, 
   saveExternalSites, 
   saveCustomStyles,
@@ -497,28 +501,26 @@ const {
 const { confirm } = useConfirm();
 const { showMessage } = useMessage();
 
-const calculatedTargetBitrateText = computed(() => {
-  const gb = typeof state.videoCompressThresholdGB === 'number' ? state.videoCompressThresholdGB : 1.5;
-  // 2 hours = 7200 seconds. 
-  // Formula: (GB * 1024 * 1024 * 1024 * 8 bits) / 7200 s
-  const bps = (gb * 1024 * 1024 * 1024 * 8) / 7200;
-  const kbps = Math.round(bps / 1000);
-  const mbps = (bps / 1000000).toFixed(2);
-  return `${kbps.toLocaleString()} kbps (~${mbps} Mbps)`;
-});
-
 const handleCompressToggle = (val: boolean) => {
   saveEnableVideoCompress(val);
   showMessage(val ? '已开启下载后智能视频压缩' : '已关闭下载后视频压缩', 'info');
 };
 
-const handleThresholdChange = (e: Event) => {
+const handleTargetGBChange = (e: Event) => {
   const target = e.target as HTMLInputElement;
   let val = parseFloat(target.value);
   if (isNaN(val) || val < 0.1) val = 0.1;
   else if (val > 50) val = 50;
   val = Math.round(val * 10) / 10;
-  saveVideoCompressThresholdGB(val);
+  saveVideoCompressTargetGB(val);
+};
+
+const handleMinBitrateChange = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  let val = parseInt(target.value, 10);
+  if (isNaN(val) || val < 100) val = 100;
+  else if (val > 50000) val = 50000;
+  saveVideoCompressMinBitrateKbps(val);
 };
 
 const pendingImportData = ref<any>(null);
@@ -587,7 +589,7 @@ const totalActiveRulesCount = computed(() => {
 const handleUpdateAllRules = async () => {
   if (isUpdatingAllRules.value) return;
   isUpdatingAllRules.value = true;
-  showMessage('正在同步更新所有启用的广告过滤规则...', 'info');
+  showMessage('正在同步更新所有启用的广告过滤规则', 'info');
 
   try {
     await syncAllAdBlockSources();

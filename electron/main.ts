@@ -451,6 +451,14 @@ function createWindow() {
     downloader.cancelDownload(id)
   })
 
+  ipcMain.handle('get-video-media-info', async (_, filePath: string) => {
+    return await downloader.getVideoMediaInfo(filePath)
+  })
+
+  ipcMain.handle('compress-video-task', async (_, taskId: string, filePath: string, targetBitrateKbps: number) => {
+    return await downloader.compressVideoTask(taskId, filePath, targetBitrateKbps)
+  })
+
   ipcMain.handle('delete-file', async (_, filePath: string) => {
     if (!filePath) return false;
     const targets = [

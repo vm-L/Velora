@@ -7,6 +7,7 @@
     :readonly="readonly"
     class="v-input"
     @input="onInput"
+    @change="onChange"
     @keyup.enter="$emit('enter', $event)"
   />
 </template>
@@ -35,11 +36,17 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'enter']);
+const emit = defineEmits(['update:modelValue', 'input', 'change', 'enter']);
 
 const onInput = (e: Event) => {
   const target = e.target as HTMLInputElement;
   emit('update:modelValue', target.value);
+  emit('input', target.value);
+};
+
+const onChange = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  emit('change', target.value);
 };
 </script>
 

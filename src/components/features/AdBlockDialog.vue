@@ -25,7 +25,7 @@
                   <polyline points="23 4 23 10 17 10"></polyline>
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                 </svg>
-                {{ isSyncingAll ? '更新中...' : '更新全部' }}
+                {{ isSyncingAll ? '更新中' : '更新全部' }}
               </v-button>
               <v-button variant="primary" size="small" @click="openAddModal">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -192,7 +192,7 @@ const toggleSourceEnable = async (source: AdBlockSource) => {
 const handleSyncSource = async (source: AdBlockSource) => {
   if (syncingIds.value.includes(source.id)) return;
   syncingIds.value.push(source.id);
-  showMessage(`正在同步 ${source.name}...`, 'info');
+  showMessage(`正在同步 ${source.name}`, 'info');
 
   const res = await syncAdBlockSourceItem(source.id);
   syncingIds.value = syncingIds.value.filter(id => id !== source.id);
@@ -207,7 +207,7 @@ const handleSyncSource = async (source: AdBlockSource) => {
 const handleSyncAll = async () => {
   if (isSyncingAll.value) return;
   isSyncingAll.value = true;
-  showMessage('正在同步所有已启用的过滤规则源...', 'info');
+  showMessage('正在同步所有已启用的过滤规则源', 'info');
 
   try {
     const count = await syncAllAdBlockSources();

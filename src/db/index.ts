@@ -5,7 +5,7 @@ export interface DownloadTask {
   url: string;
   name: string;
   savePath: string; // Full path where the file is saved
-  status: 'resolving' | 'downloading' | 'processing' | 'paused' | 'completed' | 'error' | 'waiting' | 'file_removed' | 'file_corrupted';
+  status: 'resolving' | 'downloading' | 'converting' | 'compressing' | 'processing' | 'paused' | 'completed' | 'error' | 'waiting' | 'file_removed' | 'file_corrupted';
   progress: number; // 0-100
   receivedBytes: number;
   totalBytes: number;
@@ -14,6 +14,8 @@ export interface DownloadTask {
   totalSegments?: number;
   referer?: string;
   errorMsg?: string;
+  speedText?: string;
+  etaSeconds?: number;
   createdAt: number;
   updatedAt: number;
 }

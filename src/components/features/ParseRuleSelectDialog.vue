@@ -20,7 +20,7 @@
               v-model="selectedDomain"
               :options="ruleOptions"
               :allow-input="false"
-              placeholder="选择规则..."
+              placeholder="选择规则"
               class="w-full"
             />
           </div>

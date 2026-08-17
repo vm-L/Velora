@@ -12,7 +12,7 @@
             <div class="location-input-row">
               <VInputSelect
                 v-model="fileName"
-                placeholder="输入或选择文件名称..."
+                placeholder="输入或选择文件名称"
                 :options="computedNameOptions"
                 class="flex-1"
               />
@@ -25,7 +25,7 @@
             <div class="location-input-row">
               <VInputSelect
                 v-model="fileUrl"
-                placeholder="输入或选择文件地址..."
+                placeholder="输入或选择文件地址"
                 :options="computedUrlOptions"
                 class="flex-1"
               />
@@ -38,7 +38,7 @@
             <div class="location-input-row">
               <VInputSelect
                 v-model="saveDirectory"
-                placeholder="选择或输入下载目录..."
+                placeholder="选择或输入下载目录"
                 :options="dirTreeOptions"
                 class="flex-1"
               />
@@ -49,7 +49,7 @@
         <div class="save-footer">
           <v-button variant="secondary" class="cancel-btn" @click="close" :disabled="isSaving">取消</v-button>
           <v-button variant="primary" class="confirm-btn" @click="confirmSave" :disabled="isSaving">
-            {{ isSaving ? '下载中...' : '确认下载' }}
+            {{ isSaving ? '下载中' : '确认下载' }}
           </v-button>
         </div>
       </div>

@@ -49,6 +49,7 @@ export type IconName =
   | 'refresh'
   | 'maximize'
   | 'minimize'
+  | 'compress'
   | 'info'
   | 'success'
   | 'warning'
@@ -214,6 +215,18 @@ const iconsMap: Record<string, string> = {
   // 最小化
   'minimize': `
     <line x1="5" y1="12" x2="19" y2="12"></line>
+  `,
+
+  // 压缩 (左右对向挤压箭头 + 中间电影胶卷: → [ 🎬 ] ←)
+  'compress': `
+    <line x1="1.5" y1="12" x2="5.5" y2="12"></line>
+    <polyline points="3.5 10 5.5 12 3.5 14"></polyline>
+    <line x1="22.5" y1="12" x2="18.5" y2="12"></line>
+    <polyline points="20.5 10 18.5 12 20.5 14"></polyline>
+    <rect x="7.5" y="4" width="9" height="16" rx="1.5"></rect>
+    <line x1="7.5" y1="8" x2="16.5" y2="8"></line>
+    <line x1="7.5" y1="16" x2="16.5" y2="16"></line>
+    <polygon points="10.5 10 14 12 10.5 14" fill="currentColor"></polygon>
   `,
 
   // 提示信息 (Info - 居中信息圆标)

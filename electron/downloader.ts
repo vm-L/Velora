@@ -157,9 +157,135 @@ function resolveUrl(baseUrl: string, relativeOrAbsolute: string): string {
   }
 }
 
+/**
+ * 安全原子文件替换 (带备份与占用重试机制)
+ * 1. 验证临时文件有效性
+ * 2. 将目标原文件安全重命名为临时备份 .orig_bak_timestamp
+ * 3. 将新临时文件重命名为目标文件（支持多次重试及跨卷/锁定时 copy+unlink 兜底）
+ * 4. 成功后删除备份；若失败则立即从备份还原原文件，绝不丢失任何一方
+ */
+async function safeAtomicReplace(sourceTempPath: string, targetFinalPath: string): Promise<boolean> {
+  if (!fs.existsSync(sourceTempPath)) {
+    logger.error('Downloader', `[SafeReplace] 临时文件不存在: ${sourceTempPath}`)
+    return false
+  }
+  const sourceSize = fs.statSync(sourceTempPath).size
+  if (sourceSize <= 0) {
+    logger.error('Downloader', `[SafeReplace] 临时文件为空: ${sourceTempPath}`)
+    return false
+  }
+
+  const dir = path.dirname(targetFinalPath)
+  const parsed = path.parse(targetFinalPath)
+  const backupPath = path.join(dir, `${parsed.name}.orig_bak_${Date.now()}${parsed.ext}`)
+
+  const retryOperation = async (op: () => void, maxAttempts = 8, baseDelay = 150): Promise<boolean> => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        op()
+        return true
+      } catch (err: any) {
+        if (attempt === maxAttempts) {
+          logger.warn('Downloader', `[SafeReplace] 操作失败 (${attempt}/${maxAttempts}): ${err.message}`)
+          return false
+        }
+        await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(1.3, attempt - 1)))
+      }
+    }
+    return false
+  }
+
+  let hasBackup = false
+  if (fs.existsSync(targetFinalPath)) {
+    // 步骤 1: 将原文件移至备份
+    const backupOk = await retryOperation(() => {
+      if (fs.existsSync(backupPath)) {
+        try { fs.unlinkSync(backupPath) } catch {}
+      }
+      fs.renameSync(targetFinalPath, backupPath)
+    })
+
+    if (!backupOk) {
+      logger.error('Downloader', `[SafeReplace] 无法备份原文件，原文件可能正被其他程序或播放器占用锁定: ${targetFinalPath}`)
+      return false
+    }
+    hasBackup = true
+  }
+
+  // 步骤 2: 将新临时文件移入目标路径
+  const replaceOk = await retryOperation(() => {
+    if (fs.existsSync(targetFinalPath)) {
+      try { fs.unlinkSync(targetFinalPath) } catch {}
+    }
+    fs.renameSync(sourceTempPath, targetFinalPath)
+  })
+
+  if (replaceOk) {
+    // 步骤 3: 替换成功，删除备份文件
+    if (hasBackup && fs.existsSync(backupPath)) {
+      await retryOperation(() => {
+        fs.unlinkSync(backupPath)
+      })
+    }
+    logger.info('Downloader', `[SafeReplace] 文件安全替换成功: ${targetFinalPath}`)
+    return true
+  } else {
+    // 步骤 4: 替换失败，尝试 copy 兜底
+    let copyFallbackOk = false
+    try {
+      logger.warn('Downloader', `[SafeReplace] 重命名失败，尝试 copyFileSync 兜底写入: ${targetFinalPath}`)
+      fs.copyFileSync(sourceTempPath, targetFinalPath)
+      try { fs.unlinkSync(sourceTempPath) } catch {}
+      copyFallbackOk = true
+    } catch (copyErr: any) {
+      logger.error('Downloader', `[SafeReplace] copyFileSync 兜底写入失败: ${copyErr.message}`)
+      copyFallbackOk = false
+    }
+
+    if (copyFallbackOk) {
+      if (hasBackup && fs.existsSync(backupPath)) {
+        try { fs.unlinkSync(backupPath) } catch {}
+      }
+      return true
+    }
+
+    // 步骤 5: 无法替换，从备份紧急还原原始文件
+    logger.error('Downloader', `[SafeReplace] 临时文件写入目标失败，正在从备份还原原文件: ${targetFinalPath}`)
+    if (hasBackup && fs.existsSync(backupPath)) {
+      const restoreOk = await retryOperation(() => {
+        if (fs.existsSync(targetFinalPath)) {
+          try { fs.unlinkSync(targetFinalPath) } catch {}
+        }
+        fs.renameSync(backupPath, targetFinalPath)
+      })
+      if (!restoreOk) {
+        // 如果 rename 还原失败，用 copy 强制还原
+        try {
+          fs.copyFileSync(backupPath, targetFinalPath)
+          try { fs.unlinkSync(backupPath) } catch {}
+        } catch (resErr: any) {
+          logger.error('Downloader', `[SafeReplace] 严重错误：无法自动还原备份文件 ${backupPath}: ${resErr.message}`)
+        }
+      }
+    }
+    return false
+  }
+}
+
+interface CompressQueueItem {
+  taskId: string
+  filePath: string
+  targetBitrateKbps: number
+  resolve: (res: { success: boolean; newSize?: number; error?: string; skipped?: boolean }) => void
+  reject: (err: any) => void
+}
+
 class Downloader {
-  private activeDownloads: Map<string, { abortController: AbortController }> = new Map()
+  private activeDownloads: Map<string, { abortController: AbortController, tempPaths?: string[] }> = new Map()
   private pendingQueue: DownloadCommand[] = []
+  private isCompressingActive = false
+  private compressQueue: CompressQueueItem[] = []
+  private activeCompressTaskId: string | null = null
   private mainWindow: any = null
 
   setWindow(window: any) {
@@ -300,32 +426,27 @@ class Downloader {
       try {
         const stat = fs.statSync(workSavePath)
         existingBytes = stat.size
-        if (existingBytes > 0) {
-          if (cmd.downloadedSegments !== undefined && cmd.downloadedSegments > 0) {
-            skipSegments = cmd.downloadedSegments;
-            fileFlags = 'a';
-            logger.info('Downloader', `[M3U8Downloader] 触发断点续传(精准): 跳过前 ${skipSegments}/${segments.length} 个分片`);
+        if (existingBytes > 0 && cmd.downloadedSegments !== undefined && cmd.downloadedSegments > 0) {
+          if (cmd.downloadedSegments < segments.length) {
+            skipSegments = cmd.downloadedSegments
+            fileFlags = 'a'
+            logger.info('Downloader', `[M3U8Downloader] 触发精准断点续传: 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
           } else {
-            const testRes = await net.fetch(segments[0].url, { headers, signal: abortController.signal as any })
-            if (testRes.ok) {
-              let buf = Buffer.from(await testRes.arrayBuffer())
-              if (segments[0].key && segments[0].key.method === 'AES-128') {
-                try {
-                   // dummy decrypt to get size
-                } catch(e) {}
-              }
-              const avgSize = Math.max(1024, buf.byteLength)
-              skipSegments = Math.min(segments.length - 1, Math.floor(existingBytes / avgSize))
-              if (skipSegments > 0) {
-                fileFlags = 'a'
-                existingBytes = skipSegments * avgSize
-                logger.info('Downloader', `[M3U8Downloader] 触发断点续传(估算): 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
-              }
-            }
+            // 已记录分片异常或已达总数但未完成封装，从头下载
+            skipSegments = 0
+            existingBytes = 0
+            fileFlags = 'w'
           }
+        } else {
+          skipSegments = 0
+          existingBytes = 0
+          fileFlags = 'w'
         }
       } catch (e: any) {
         logger.info('Downloader', `[M3U8Downloader] 检查续传状态失败: ${e.message}`)
+        skipSegments = 0
+        existingBytes = 0
+        fileFlags = 'w'
       }
     }
 
@@ -334,7 +455,6 @@ class Downloader {
     const bufferMap = new Map<number, Buffer>()
     let currentBufferedBytes = 0
     let nextFlushIndex = skipSegments
-    let downloadedCount = skipSegments
     let totalReceivedBytes = existingBytes
 
     let lastReportTime = Date.now()
@@ -406,7 +526,6 @@ class Downloader {
 
             bufferMap.set(seg.index, buf)
             currentBufferedBytes += buf.length
-            downloadedCount++
             totalReceivedBytes += buf.length
 
             if (currentBufferedBytes >= maxMemoryBytes) {
@@ -414,13 +533,13 @@ class Downloader {
             }
 
             const now = Date.now()
-            if (now - lastReportTime > 400 || downloadedCount === segments.length) {
+            if (now - lastReportTime > 400 || nextFlushIndex === segments.length) {
               const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
               this.sendProgress({
                 id,
                 totalBytes: 0,
                 receivedBytes: totalReceivedBytes,
-                downloadedSegments: downloadedCount,
+                downloadedSegments: nextFlushIndex,
                 totalSegments: segments.length,
                 speed,
                 status: 'downloading'
@@ -456,7 +575,7 @@ class Downloader {
 
       if (isTargetMp4) {
         logger.info('Downloader', `[M3U8Downloader] 准备将 TS 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
-        this.sendProgress({ id, totalBytes: totalReceivedBytes, receivedBytes: totalReceivedBytes, status: 'processing', speed: 0 })
+        this.sendProgress({ id, totalBytes: totalReceivedBytes, receivedBytes: totalReceivedBytes, status: 'converting', speed: 0 })
         
         await new Promise<void>((resolve, reject) => {
           const ffmpegBin = 'ffmpeg'
@@ -492,11 +611,23 @@ class Downloader {
         status: 'completed',
         speed: 0
       })
-    } catch (err) {
+    } catch (err: any) {
       try {
-        flushMemoryToDisk(true)
+        flushMemoryToDisk(false)
         fs.closeSync(fd)
       } catch {}
+      if (err.name === 'AbortError') {
+        const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : totalReceivedBytes
+        this.sendProgress({
+          id,
+          totalBytes: 0,
+          receivedBytes: savedBytes,
+          downloadedSegments: nextFlushIndex,
+          totalSegments: segments.length,
+          speed: 0,
+          status: 'paused'
+        })
+      }
       throw err
     }
   }
@@ -873,9 +1004,30 @@ class Downloader {
       return
     }
 
+    const compressQueueIndex = this.compressQueue.findIndex(c => c.taskId === id)
+    if (compressQueueIndex !== -1) {
+      const removed = this.compressQueue.splice(compressQueueIndex, 1)[0]
+      this.sendProgress({ id, status: 'completed' })
+      removed.resolve({ success: false, error: '压缩排队已取消' })
+      logger.info('Downloader', `[CompressQueue] 任务 ${id} 已从压缩排队队列中移除`)
+      return
+    }
+
     if (this.activeDownloads.has(id)) {
       const entry = this.activeDownloads.get(id)!
       entry.abortController.abort()
+      if (entry.tempPaths) {
+        for (const p of entry.tempPaths) {
+          try {
+            if (fs.existsSync(p)) {
+              fs.unlinkSync(p)
+              logger.info('Downloader', `[Cleanup] 暂停/取消已清理临时文件: ${p}`)
+            }
+          } catch (e: any) {
+            logger.warn('Downloader', `[Cleanup] 清理临时文件失败: ${e.message}`)
+          }
+        }
+      }
       this.activeDownloads.delete(id)
     }
   }
@@ -884,14 +1036,197 @@ class Downloader {
     this.pauseDownload(id)
   }
 
-  /**
-   * 自动视频压缩逻辑：
-   * 1. 检查开关与文件类型
-   * 2. 检查文件大小是否 >= 阈值 (默认 1.5GB)
-   * 3. 检查实际视频码率是否 >= 目标基准码率 (以 2 小时达到阈值大小时的码率)
-   * 4. 优先尝试 GPU 硬件加速 (NVENC / QSV / AMF)，若不支持自动回退至 CPU (libx264)
-   */
+  async getVideoMediaInfo(filePath: string): Promise<{ duration: number; bitrate: number; size: number }> {
+    if (!fs.existsSync(filePath)) {
+      return { duration: 0, bitrate: 0, size: 0 }
+    }
+    const size = fs.statSync(filePath).size
+    const info = await this.getVideoDurationAndBitrate(filePath)
+    let bitrate = info.bitrate
+    if (bitrate <= 0 && info.duration > 0) {
+      bitrate = Math.round((size * 8) / info.duration)
+    }
+    return { duration: info.duration, bitrate, size }
+  }
+
+  async compressVideoTask(taskId: string, filePath: string, targetBitrateKbps: number): Promise<{ success: boolean; newSize?: number; error?: string; skipped?: boolean }> {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: '文件不存在' }
+    }
+    const currentSize = fs.statSync(filePath).size
+    if (currentSize <= 0) {
+      return { success: false, error: '文件为空' }
+    }
+
+    const info = await this.getVideoMediaInfo(filePath)
+    const actualBitrateKbps = info.bitrate > 0 ? Math.round(info.bitrate / 1000) : 0
+    if (actualBitrateKbps > 0 && targetBitrateKbps >= actualBitrateKbps) {
+      logger.info('Downloader', `[ManualCompress] 任务 ${taskId} 原始码率 (${actualBitrateKbps} kbps) 小于等于目标码率 (${targetBitrateKbps} kbps)，自动跳过`)
+      return { success: false, skipped: true, error: '码率未超过目标码率，无需压缩' }
+    }
+
+    return new Promise<{ success: boolean; newSize?: number; error?: string; skipped?: boolean }>((resolve, reject) => {
+      const item: CompressQueueItem = {
+        taskId,
+        filePath,
+        targetBitrateKbps,
+        resolve,
+        reject
+      }
+
+      if (this.isCompressingActive) {
+        logger.info('Downloader', `[CompressQueue] 当前已有压缩任务进行中，任务 ${taskId} 进入排队 (队列位置: ${this.compressQueue.length + 1})`)
+        this.sendProgress({ id: taskId, status: 'waiting', progress: 0, speed: 0 })
+        this.compressQueue.push(item)
+      } else {
+        this.isCompressingActive = true
+        this.activeCompressTaskId = taskId
+        this.executeCompressQueueItem(item)
+      }
+    })
+  }
+
+  private async executeCompressQueueItem(item: CompressQueueItem) {
+    const { taskId, filePath, targetBitrateKbps, resolve } = item
+    this.activeCompressTaskId = taskId
+
+    const dir = path.dirname(filePath)
+    const parsed = path.parse(filePath)
+    const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
+
+    const abortController = new AbortController()
+    this.activeDownloads.set(taskId, { abortController, tempPaths: [tempCompressedPath] })
+
+    try {
+      const currentSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+      const info = await this.getVideoDurationAndBitrate(filePath)
+
+      this.sendProgress({ id: taskId, status: 'compressing', progress: 0, speed: 0 })
+
+      const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
+      let compressSuccess = false
+      let usedEncoder = ''
+      let lastCompressError = ''
+
+      for (const encoder of encoders) {
+        if (abortController.signal.aborted) break
+        logger.info('Downloader', `[ManualCompress] 任务 ${taskId} 尝试使用编码器 [${encoder}] 压缩 (${targetBitrateKbps} kbps)`)
+        const result = await this.executeFfmpegCompress(
+          filePath,
+          tempCompressedPath,
+          encoder,
+          targetBitrateKbps,
+          info.duration,
+          currentSize,
+          taskId,
+          abortController
+        )
+        if (result.success && fs.existsSync(tempCompressedPath)) {
+          const compSize = fs.statSync(tempCompressedPath).size
+          if (compSize > 0) {
+            compressSuccess = true
+            usedEncoder = encoder
+            break
+          }
+        }
+        if (result.error) {
+          lastCompressError = result.error
+        }
+        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+      }
+
+      if (compressSuccess && fs.existsSync(tempCompressedPath)) {
+        const compressedSize = fs.statSync(tempCompressedPath).size
+        logger.info('Downloader', `[ManualCompress] 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
+        
+        const replaced = await safeAtomicReplace(tempCompressedPath, filePath)
+        if (replaced) {
+          this.sendProgress({
+            id: taskId,
+            status: 'completed',
+            progress: 100,
+            receivedBytes: compressedSize,
+            totalBytes: compressedSize,
+            speed: 0
+          })
+
+          resolve({ success: true, newSize: compressedSize })
+        } else {
+          logger.error('Downloader', `[ManualCompress] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
+          this.sendProgress({
+            id: taskId,
+            status: 'completed',
+            progress: 100,
+            receivedBytes: currentSize,
+            totalBytes: currentSize,
+            speed: 0
+          })
+          resolve({ success: false, error: '文件替换失败（文件可能被其他程序占用），原视频已安全保留' })
+        }
+      } else {
+        logger.warn('Downloader', `[ManualCompress] 任务 ${taskId} 压缩未成功或已取消，保留原始文件`)
+        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+        
+        this.sendProgress({
+          id: taskId,
+          status: 'completed',
+          progress: 100,
+          receivedBytes: currentSize,
+          totalBytes: currentSize,
+          speed: 0
+        })
+
+        resolve({ success: false, error: abortController.signal.aborted ? '压缩已取消' : (lastCompressError || '压缩未能完成') })
+      }
+    } catch (err: any) {
+      logger.error('Downloader', `[ManualCompress] 任务 ${taskId} 异常: ${err.message}`)
+      try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+      this.sendProgress({
+        id: taskId,
+        status: 'completed',
+        progress: 100,
+        receivedBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
+        totalBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
+        speed: 0
+      })
+      resolve({ success: false, error: err.message })
+    } finally {
+      this.activeDownloads.delete(taskId)
+      this.activeCompressTaskId = null
+      try {
+        if (fs.existsSync(tempCompressedPath)) {
+          fs.unlinkSync(tempCompressedPath)
+        }
+      } catch {}
+
+      this.processNextCompressQueue()
+    }
+  }
+
+  private processNextCompressQueue() {
+    if (this.compressQueue.length > 0) {
+      const nextItem = this.compressQueue.shift()!
+      logger.info('Downloader', `[CompressQueue] 启动队列下一个压缩任务: ${nextItem.taskId}`)
+      this.isCompressingActive = true
+      this.activeCompressTaskId = nextItem.taskId
+      this.executeCompressQueueItem(nextItem)
+    } else {
+      this.isCompressingActive = false
+      this.activeCompressTaskId = null
+    }
+  }
+
   private async compressVideoIfNeeded(filePath: string, taskId: string, abortController: AbortController): Promise<number> {
+    const dir = path.dirname(filePath)
+    const parsed = path.parse(filePath)
+    const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
+
+    if (this.activeDownloads.has(taskId)) {
+      const entry = this.activeDownloads.get(taskId)!
+      if (!entry.tempPaths) entry.tempPaths = []
+      entry.tempPaths.push(tempCompressedPath)
+    }
+
     try {
       const ext = path.extname(filePath).toLowerCase()
       const videoExts = ['.mp4', '.mkv', '.webm', '.ts', '.avi', '.mov', '.flv']
@@ -904,23 +1239,23 @@ class Downloader {
         return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
       }
 
-      const thresholdGB = (await storeManager.getSetting('videoCompressThresholdGB')) ?? 1.5
-      const thresholdBytes = thresholdGB * 1024 * 1024 * 1024
+      const targetGB = (await storeManager.getSetting('videoCompressTargetGB')) ?? (await storeManager.getSetting('videoCompressThresholdGB')) ?? 1.5
+      const targetSizeBytes = targetGB * 1024 * 1024 * 1024
+      const triggerSizeBytes = targetSizeBytes * 1.5
+
+      const minBitrateKbps = (await storeManager.getSetting('videoCompressMinBitrateKbps')) ?? 1500
+      const minBitrateBps = minBitrateKbps * 1000
 
       if (!fs.existsSync(filePath)) return 0
       const currentSize = fs.statSync(filePath).size
 
-      // 1. 体积阈值判断
-      if (currentSize < thresholdBytes) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 文件体积 (${(currentSize / 1024 / 1024).toFixed(1)}MB) 小于压缩阈值 (${thresholdGB}GB)，跳过压缩`)
+      // 1. 体积触发条件：下载的视频文件大小 ≥ 目标文件大小的 1.5 倍
+      if (currentSize < triggerSizeBytes) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 文件体积 (${(currentSize / 1024 / 1024).toFixed(1)}MB) 未达到触发条件 (目标大小 ${targetGB}GB 的 1.5倍即 ${(triggerSizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB)，跳过压缩`)
         return currentSize
       }
 
-      // 2. 目标基准码率计算 (按 2 小时 = 7200 秒计算)
-      const targetBitrateBps = (thresholdBytes * 8) / 7200
-      const targetBitrateKbps = Math.max(500, Math.round(targetBitrateBps / 1000))
-
-      // 3. 读取视频时长与实际码率
+      // 2. 读取视频时长与实际码率
       const videoInfo = await this.getVideoDurationAndBitrate(filePath)
       let actualBitrateBps = 0
       if (videoInfo.bitrate > 0) {
@@ -928,34 +1263,66 @@ class Downloader {
       } else if (videoInfo.duration > 0) {
         actualBitrateBps = (currentSize * 8) / videoInfo.duration
       }
+      const actualBitrateKbps = Math.round(actualBitrateBps / 1000)
 
-      if (actualBitrateBps > 0 && actualBitrateBps < targetBitrateBps) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 实际码率 (${Math.round(actualBitrateBps / 1000)} kbps) 小于目标基准码率 (${targetBitrateKbps} kbps)，保持原画质无需压缩`)
+      // 3. 文件码率需大于最小码率
+      if (actualBitrateBps > 0 && actualBitrateBps <= minBitrateBps) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 实际码率 (${actualBitrateKbps} kbps) 未大于设置的最小码率 (${minBitrateKbps} kbps)，保持原画质无需压缩`)
         return currentSize
       }
 
-      logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 满足压缩条件 (体积 ${(currentSize / 1024 / 1024 / 1024).toFixed(2)}GB >= ${thresholdGB}GB，实际码率 ${Math.round(actualBitrateBps / 1000)}kbps >= ${targetBitrateKbps}kbps)，开始压缩...`)
-      this.sendProgress({ id: taskId, status: 'processing', speed: 0 })
+      // 4. 读取视频时长，计算目标压缩大小所需的码率
+      if (!videoInfo.duration || videoInfo.duration <= 0) {
+        logger.warn('Downloader', `[VideoCompress] 任务 ${taskId} 无法获取有效视频时长，跳过压缩`)
+        return currentSize
+      }
 
-      const dir = path.dirname(filePath)
-      const parsed = path.parse(filePath)
-      const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
+      const calculatedTargetBps = (targetSizeBytes * 8) / videoInfo.duration
+      let targetBitrateKbps = Math.round(calculatedTargetBps / 1000)
+
+      // 当计算得到的压缩码率小于设置的最小码率时，使用最小码率
+      if (targetBitrateKbps < minBitrateKbps) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 计算出的目标码率 (${targetBitrateKbps} kbps) 小于设置的最小码率 (${minBitrateKbps} kbps)，保底使用最小码率 (${minBitrateKbps} kbps)`)
+        targetBitrateKbps = minBitrateKbps
+      }
+
+      // 5. 限制：仅当目标码率小于等于原始码率时可以进行压缩
+      if (actualBitrateKbps > 0 && targetBitrateKbps > actualBitrateKbps) {
+        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 目标码率 (${targetBitrateKbps} kbps) 大于原始码率 (${actualBitrateKbps} kbps)，无需压缩`)
+        return currentSize
+      }
+
+      logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 满足压缩条件 (体积 ${(currentSize / 1024 / 1024).toFixed(2)}GB >= ${(triggerSizeBytes / 1024 / 1024).toFixed(2)}GB, 实际码率 ${actualBitrateKbps}kbps > ${minBitrateKbps}kbps, 目标码率 ${targetBitrateKbps}kbps <= ${actualBitrateKbps}kbps)，开始压缩`)
+      this.sendProgress({ id: taskId, status: 'compressing', progress: 0, speed: 0 })
 
       const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
       let compressSuccess = false
       let usedEncoder = ''
+      let lastCompressError = ''
 
       for (const encoder of encoders) {
         if (abortController.signal.aborted) break
-        logger.info('Downloader', `[VideoCompress] 尝试使用编码器 [${encoder}] 压缩...`)
-        const ok = await this.executeFfmpegCompress(filePath, tempCompressedPath, encoder, targetBitrateKbps, abortController)
-        if (ok && fs.existsSync(tempCompressedPath)) {
+        logger.info('Downloader', `[VideoCompress] 尝试使用编码器 [${encoder}] 压缩`)
+        const result = await this.executeFfmpegCompress(
+          filePath,
+          tempCompressedPath,
+          encoder,
+          targetBitrateKbps,
+          videoInfo.duration,
+          currentSize,
+          taskId,
+          abortController
+        )
+        if (result.success && fs.existsSync(tempCompressedPath)) {
           const compSize = fs.statSync(tempCompressedPath).size
           if (compSize > 0) {
             compressSuccess = true
             usedEncoder = encoder
             break
           }
+        }
+        if (result.error) {
+          lastCompressError = result.error
         }
         try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
       }
@@ -964,12 +1331,14 @@ class Downloader {
         const compressedSize = fs.statSync(tempCompressedPath).size
         logger.info('Downloader', `[VideoCompress] 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
         
-        // 原子替换原文件
-        try {
-          fs.unlinkSync(filePath)
-        } catch {}
-        fs.renameSync(tempCompressedPath, filePath)
-        return compressedSize
+        // 安全原子替换原文件
+        const replaced = await safeAtomicReplace(tempCompressedPath, filePath)
+        if (replaced) {
+          return compressedSize
+        } else {
+          logger.error('Downloader', `[VideoCompress] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
+          return currentSize
+        }
       } else {
         logger.warn('Downloader', `[VideoCompress] 任务 ${taskId} 压缩未成功或已取消，保留原始文件`)
         try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
@@ -978,6 +1347,12 @@ class Downloader {
     } catch (err: any) {
       logger.error('Downloader', `[VideoCompress] 压缩处理异常: ${err.message}`)
       return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+    } finally {
+      try {
+        if (fs.existsSync(tempCompressedPath)) {
+          fs.unlinkSync(tempCompressedPath)
+        }
+      } catch {}
     }
   }
 
@@ -1015,11 +1390,15 @@ class Downloader {
     outputPath: string,
     encoder: string,
     targetBitrateKbps: number,
+    totalDuration: number,
+    currentSize: number,
+    taskId: string,
     abortController: AbortController
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       const args = [
         '-y',
+        '-progress', 'pipe:1',
         '-i', inputPath,
         '-c:v', encoder,
         '-b:v', `${targetBitrateKbps}k`,
@@ -1035,15 +1414,116 @@ class Downloader {
       }
 
       const proc = spawn('ffmpeg', args)
+      const startTime = Date.now()
+      let lastProgressTime = 0
+      let stdoutBuffer = ''
+      let stderrBuffer = ''
+
+      proc.stderr.on('data', (chunk) => {
+        stderrBuffer += chunk.toString()
+        if (stderrBuffer.length > 5000) {
+          stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 5000)
+        }
+      })
+
+      proc.stdout.on('data', (chunk) => {
+        stdoutBuffer += chunk.toString()
+        const lines = stdoutBuffer.split('\n')
+        stdoutBuffer = lines.pop() || ''
+
+        let outTimeUs: number | null = null
+        let speedStr: string | null = null
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith('out_time_us=')) {
+            const val = parseInt(trimmed.substring(12), 10)
+            if (!isNaN(val)) outTimeUs = val
+          } else if (trimmed.startsWith('out_time=')) {
+            const timeParts = trimmed.substring(9).split(':')
+            if (timeParts.length === 3) {
+              const h = parseFloat(timeParts[0]) || 0
+              const m = parseFloat(timeParts[1]) || 0
+              const s = parseFloat(timeParts[2]) || 0
+              if (outTimeUs === null) {
+                outTimeUs = Math.round((h * 3600 + m * 60 + s) * 1000000)
+              }
+            }
+          } else if (trimmed.startsWith('speed=')) {
+            const rawSpeed = trimmed.substring(6).trim().replace('x', '')
+            if (rawSpeed && rawSpeed !== 'N/A') {
+              speedStr = rawSpeed
+            }
+          }
+        }
+
+        const now = Date.now()
+        if (now - lastProgressTime >= 200 && outTimeUs !== null && totalDuration > 0) {
+          lastProgressTime = now
+          const currentTimeSec = outTimeUs / 1000000
+          const progressPercent = Math.min(99, Math.max(0, Math.round((currentTimeSec / totalDuration) * 100)))
+
+          let speedMultiplier = speedStr ? parseFloat(speedStr) : 0
+          if (isNaN(speedMultiplier) || speedMultiplier <= 0) {
+            const elapsedWallSec = (now - startTime) / 1000
+            if (elapsedWallSec > 0.5 && currentTimeSec > 0) {
+              speedMultiplier = currentTimeSec / elapsedWallSec
+            }
+          }
+
+          let remainingSeconds: number | undefined
+          if (speedMultiplier > 0) {
+            remainingSeconds = Math.max(0, Math.round((totalDuration - currentTimeSec) / speedMultiplier))
+          }
+
+          const speedFormatted = speedMultiplier > 0 ? `${speedMultiplier.toFixed(1)}x` : ''
+
+          this.sendProgress({
+            id: taskId,
+            status: 'compressing',
+            progress: progressPercent,
+            receivedBytes: Math.round((currentSize * progressPercent) / 100),
+            totalBytes: currentSize,
+            speedText: speedFormatted,
+            etaSeconds: remainingSeconds,
+            speed: 0
+          })
+        }
+      })
+
       proc.on('close', (code) => {
-        resolve(code === 0)
+        if (code !== 0) {
+          try {
+            if (fs.existsSync(outputPath)) {
+              fs.unlinkSync(outputPath)
+            }
+          } catch {}
+          const errorLines = stderrBuffer.trim().split('\n').filter(l => l.trim().length > 0)
+          const lastError = errorLines.slice(-3).join('\n') || `FFmpeg 退出码: ${code}`
+          resolve({ success: false, error: lastError })
+        } else {
+          resolve({ success: true })
+        }
       })
-      proc.on('error', () => {
-        resolve(false)
+
+      proc.on('error', (err) => {
+        logger.error('Downloader', `[VideoCompress] FFmpeg 启动失败: ${err.message}`)
+        try {
+          if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath)
+          }
+        } catch {}
+        resolve({ success: false, error: `FFmpeg 启动失败: ${err.message}` })
       })
+
       const abortHandler = () => {
         try { proc.kill('SIGKILL') } catch {}
-        resolve(false)
+        try {
+          if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath)
+          }
+        } catch {}
+        resolve({ success: false, error: '压缩已取消' })
       }
       abortController.signal.addEventListener('abort', abortHandler, { once: true })
     })

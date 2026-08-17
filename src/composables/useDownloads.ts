@@ -14,11 +14,25 @@ export const useDownloads = () => {
       const allTasks = await db.downloads.toArray()
       logger.info('Downloads', `[Renderer] loadTasks: Found ${allTasks.length} tasks in Dexie database.`)
       
-      // Auto-pause active downloading tasks & check file existence on startup
+      // Auto-pause active downloading tasks & restore interrupted processing tasks
       for (const t of allTasks) {
-        if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
+        if (t.status === 'compressing' || t.status === 'processing') {
+          t.status = 'completed'
+          t.progress = 100
+          t.speed = 0
+          delete t.speedText
+          delete t.etaSeconds
+          await db.downloads.put(t)
+          if (t.savePath && window.electronAPI && window.electronAPI.deleteFile) {
+            const lastDot = t.savePath.lastIndexOf('.')
+            const tempPath = lastDot !== -1 ? `${t.savePath.substring(0, lastDot)}.compress_tmp.mp4` : `${t.savePath}.compress_tmp.mp4`
+            window.electronAPI.deleteFile(tempPath).catch(() => {})
+          }
+        } else if (t.status === 'downloading' || t.status === 'resolving' || t.status === 'converting') {
           t.status = 'paused'
           t.speed = 0
+          delete t.speedText
+          delete t.etaSeconds
           await db.downloads.put(t)
         } else if (t.savePath && window.electronAPI && window.electronAPI.fileExists) {
           try {
@@ -45,7 +59,7 @@ export const useDownloads = () => {
       logger.info('Downloads', `[Renderer] loadTasks finished. tasks.value loaded. size: ${tasks.value.length}`)
       initListeners()
     } catch (err: any) {
-      logger.error('Downloads', `[Renderer] ERROR in loadTasks: ${err.message}`)
+      logger.error('Downloads', `[Renderer] loadTasks failed: ${err.message}`)
     }
   }
 
@@ -76,11 +90,10 @@ export const useDownloads = () => {
 
     if (window.electronAPI && window.electronAPI.onDownloadProgress) {
       window.electronAPI.onDownloadProgress(async (data: any) => {
-        logger.info('Downloads', `[Renderer] Received IPC progress message. ID: ${data.id}, status: ${data.status}, receivedBytes: ${data.receivedBytes}, totalBytes: ${data.totalBytes}`)
+        logger.info('Downloads', `[Renderer] onDownloadProgress received for task ID: ${data.id}, status: ${data.status}`)
         
         const index = tasks.value.findIndex(t => t.id === data.id)
-        logger.info('Downloads', `[Renderer] tasks.value search index: ${index}. current tasks list size: ${tasks.value.length}`)
-
+        
         if (index !== -1) {
           const t = tasks.value[index]
           const prevStatus = t.status
@@ -93,19 +106,32 @@ export const useDownloads = () => {
           }
           if (data.totalBytes !== undefined) t.totalBytes = data.totalBytes
           if (data.receivedBytes !== undefined) t.receivedBytes = data.receivedBytes
-          // if (data.speed !== undefined) t.speed = data.speed (Frontend calculation instead)
           if (data.downloadedSegments !== undefined) t.downloadedSegments = data.downloadedSegments
           if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
+          if (data.speedText !== undefined) {
+            t.speedText = data.speedText
+          } else if (t.status !== 'compressing' && t.status !== 'processing') {
+            delete t.speedText
+          }
+          if (data.etaSeconds !== undefined) {
+            t.etaSeconds = data.etaSeconds
+          } else if (t.status !== 'compressing' && t.status !== 'processing') {
+            delete t.etaSeconds
+          }
           if (data.errorMsg) {
             t.errorMsg = data.errorMsg
           } else if (t.status !== 'error') {
             delete t.errorMsg
           }
 
-          if (t.totalSegments && t.totalSegments > 0) {
+          if (data.progress !== undefined && (t.status === 'compressing' || t.status === 'converting' || t.status === 'processing')) {
+            t.progress = data.progress
+          } else if (t.totalSegments && t.totalSegments > 0) {
             t.progress = Math.min(100, Math.round((t.downloadedSegments! / t.totalSegments!) * 100))
           } else if (t.totalBytes > 0) {
             t.progress = Math.min(100, Math.round((t.receivedBytes / t.totalBytes) * 100))
+          } else if (data.progress !== undefined) {
+            t.progress = data.progress
           }
 
           t.updatedAt = Date.now()
@@ -113,22 +139,29 @@ export const useDownloads = () => {
           
           logger.info('Downloads', `[Renderer] Local database & task status updated. status: ${t.status}, progress: ${t.progress}%`)
           
+          const activeStatuses = ['downloading', 'resolving', 'converting', 'compressing', 'processing', 'waiting']
+
           // Reset error notification flag when task starts downloading
-          if (t.status === 'downloading' || t.status === 'resolving' || t.status === 'processing') {
+          if (activeStatuses.includes(t.status)) {
             notifiedErrorTaskIds.delete(t.id)
           }
 
-          // Trigger notifications
-          if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'completed') {
+          // Trigger notifications & messages
+          if (t.status === 'compressing' && (prevStatus === 'downloading' || prevStatus === 'converting' || prevStatus === 'resolving')) {
+            // Auto-compression started
+            const { useMessage } = await import('./useMessage')
+            useMessage().showMessage(`任务 "${t.name}" 下载完成，开始压缩`, 'info')
+          } else if (prevStatus === 'compressing' && t.status === 'completed') {
+            // Compression completed
             notifiedErrorTaskIds.delete(t.id)
-            const { useNotification } = await import('./useNotification')
-            useNotification().showNotification({
-              type: 'success',
-              title: '下载完成',
-              message: t.name,
-              sourceRoute: '/'
-            })
-          } else if ((prevStatus === 'downloading' || prevStatus === 'processing' || prevStatus === 'resolving') && t.status === 'error') {
+            const { useMessage } = await import('./useMessage')
+            useMessage().showMessage(`任务 "${t.name}" 压缩完成`, 'success')
+          } else if (activeStatuses.includes(prevStatus) && t.status === 'completed') {
+            // Normal download completed (without compression)
+            notifiedErrorTaskIds.delete(t.id)
+            const { useMessage } = await import('./useMessage')
+            useMessage().showMessage(`任务 "${t.name}" 下载完成`, 'success')
+          } else if (activeStatuses.includes(prevStatus) && t.status === 'error') {
             if (!notifiedErrorTaskIds.has(t.id)) {
               notifiedErrorTaskIds.add(t.id)
               const { useNotification } = await import('./useNotification')
@@ -240,17 +273,11 @@ export const useDownloads = () => {
     const t = tasks.value.find(t => t.id === id)
     if (t && window.electronAPI) {
       delete t.errorMsg
-      const exists = await window.electronAPI.fileExists(t.savePath);
-      if (exists) {
-        t.status = 'completed';
-        t.progress = 100;
-        await db.downloads.put(JSON.parse(JSON.stringify(t)));
-        return;
-      }
 
       if (t.status === 'file_removed' || t.status === 'file_corrupted') {
         t.receivedBytes = 0
         t.progress = 0
+        delete t.downloadedSegments
       }
       t.status = 'downloading'
       await db.downloads.put(JSON.parse(JSON.stringify(t)))
@@ -272,7 +299,7 @@ export const useDownloads = () => {
   const deleteTask = async (id: string, deleteFile = false) => {
     const t = tasks.value.find(t => t.id === id)
     if (t) {
-      if (t.status === 'downloading' || t.status === 'processing' || t.status === 'resolving') {
+      if (['downloading', 'resolving', 'converting', 'compressing', 'processing', 'waiting'].includes(t.status)) {
         if (window.electronAPI) window.electronAPI.cancelDownload(id)
       }
       const isUnfinished = t.status !== 'completed';
