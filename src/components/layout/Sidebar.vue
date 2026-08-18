@@ -25,6 +25,31 @@
       </router-link>
 
       <div class="menu-group">
+        <div class="group-title" :title="isCollapsed ? '本地资源' : ''">
+          <v-animated-text text="本地资源" :isCollapsed="isCollapsed" />
+          <div class="collapsed-divider"></div>
+        </div>
+        <div v-if="!state.localResources || state.localResources.length === 0" class="empty-item">
+          <span class="menu-text">暂未配置资源</span>
+        </div>
+        <router-link
+          v-for="item in state.localResources"
+          :key="item.id"
+          :to="`/resource/local/${item.id}`"
+          class="menu-item sub-item"
+          active-class="active"
+          :title="isCollapsed ? item.name : ''"
+        >
+          <div class="menu-icon-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <span class="menu-text">{{ item.name }}</span>
+        </router-link>
+      </div>
+
+      <div class="menu-group">
         <div class="group-title" :title="isCollapsed ? 'CMS 资源' : ''">
           <v-animated-text text="CMS 资源" :isCollapsed="isCollapsed" />
           <div class="collapsed-divider"></div>

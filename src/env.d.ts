@@ -38,6 +38,10 @@ interface Window {
     fileExists: (filePath: string) => Promise<boolean>
     moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
     getDirectoryTree: (rootDir: string, maxDepth?: number) => Promise<Array<{ path: string, name: string, depth: number }>>
+    readLocalDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string; items: Array<{ name: string; path: string; isDirectory: boolean; size: number; mtime: number; ext: string }> }>
+    createLocalFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
+    deleteLocalPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+    scanLocalVideos: (targetPaths: string[]) => Promise<{ success: boolean; videos: Array<{ name: string; path: string; size: number }>; error?: string }>
     silentParseHtml: (targetUrl: string, scripts?: string[], evalExprs?: string[]) => Promise<{ success: boolean; html?: string; evaluatedVars?: Record<string, any>; error?: string }>
     setMediaReferer: (mediaUrl: string, pageUrl: string) => Promise<void>
     createMediaClient: (config: { clientId: string, referer: string, origin?: string }) => Promise<void>

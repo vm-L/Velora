@@ -4,6 +4,7 @@ export interface ResourceItem {
   id: string
   name: string
   url: string
+  path?: string
   icon?: string
   iconOriginalUrl?: string
 }
@@ -75,7 +76,29 @@ export interface ParseRule {
   items: ParseRuleItem[];
 }
 
-export const state = reactive({
+export interface SettingsState {
+  closeBehavior: string
+  theme: string
+  imageDirectory: string
+  audioDirectory: string
+  videoDirectory: string
+  fileDirectory: string
+  maxConcurrentDownloads: number
+  maxMemoryBufferMB: number
+  enableVideoCompress: boolean
+  videoCompressTargetGB: number
+  videoCompressMinBitrateKbps: number
+  localResources: ResourceItem[]
+  cmsResources: ResourceItem[]
+  externalSites: ResourceItem[]
+  customStyles: Record<string, Record<string, string>>
+  customScripts: Record<string, CustomScript[]>
+  customParseRules: Record<string, ParseRule[]>
+  adBlockSources: AdBlockSource[]
+  loaded: boolean
+}
+
+export const state = reactive<SettingsState>({
   closeBehavior: 'tray',
   theme: 'light',
   imageDirectory: '',
@@ -87,6 +110,7 @@ export const state = reactive({
   enableVideoCompress: false,
   videoCompressTargetGB: 1.5,
   videoCompressMinBitrateKbps: 1500,
+  localResources: [] as ResourceItem[],
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
   customStyles: {} as Record<string, Record<string, string>>,
@@ -111,6 +135,7 @@ export const useSettings = () => {
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
     const savedMinBitrate = await window.electronAPI.getSetting('videoCompressMinBitrateKbps')
     state.videoCompressMinBitrateKbps = typeof savedMinBitrate === 'number' ? savedMinBitrate : 1500
+    state.localResources = (await window.electronAPI.getSetting('localResources')) || []
     state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
     state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
@@ -192,6 +217,11 @@ export const useSettings = () => {
   const saveVideoCompressMinBitrateKbps = async (kbps: number) => {
     state.videoCompressMinBitrateKbps = kbps
     await window.electronAPI.setSetting('videoCompressMinBitrateKbps', kbps)
+  }
+
+  const saveLocalResources = async (resources: ResourceItem[]) => {
+    state.localResources = resources
+    await window.electronAPI.setSetting('localResources', JSON.parse(JSON.stringify(resources)))
   }
 
   const saveCmsResources = async (resources: ResourceItem[]) => {
@@ -279,12 +309,13 @@ export const useSettings = () => {
   const exportResourceBackup = async () => {
     const payload = {
       type: 'velora-resource-backup',
-      version: '1.0.0',
+      version: '1.1.0',
       timestamp: Date.now(),
       data: {
         webResources: JSON.parse(JSON.stringify(state.externalSites || [])),
         customParseRules: JSON.parse(JSON.stringify(state.customParseRules || {})),
         customScripts: JSON.parse(JSON.stringify(state.customScripts || {})),
+        localResources: JSON.parse(JSON.stringify(state.localResources || [])),
         cmsResources: JSON.parse(JSON.stringify(state.cmsResources || []))
       }
     };
@@ -296,12 +327,14 @@ export const useSettings = () => {
     const newWebResources: ResourceItem[] = data.webResources || [];
     const newParseRules: Record<string, ParseRule[]> = data.customParseRules || {};
     const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
+    const newLocalResources: ResourceItem[] = data.localResources || [];
     const newCmsResources: ResourceItem[] = data.cmsResources || [];
 
     if (mode === 'overwrite') {
       await saveExternalSites(newWebResources);
       await saveCustomParseRules(newParseRules);
       await saveCustomScripts(newScripts);
+      await saveLocalResources(newLocalResources);
       await saveCmsResources(newCmsResources);
     } else {
       // 增量合并模式
@@ -343,6 +376,14 @@ export const useSettings = () => {
       }
       await saveCustomScripts(mergedScripts);
 
+      const currentLocalMap = new Map((state.localResources || []).map(r => [r.id, r]));
+      for (const item of newLocalResources) {
+        if (!currentLocalMap.has(item.id)) {
+          currentLocalMap.set(item.id, item);
+        }
+      }
+      await saveLocalResources(Array.from(currentLocalMap.values()));
+
       const currentCmsMap = new Map((state.cmsResources || []).map(r => [r.id, r]));
       for (const item of newCmsResources) {
         if (!currentCmsMap.has(item.id)) {
@@ -367,6 +408,7 @@ export const useSettings = () => {
     saveEnableVideoCompress,
     saveVideoCompressTargetGB,
     saveVideoCompressMinBitrateKbps,
+    saveLocalResources,
     saveCmsResources, 
     saveExternalSites, 
     saveCustomStyles,

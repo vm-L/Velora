@@ -169,6 +169,58 @@
         </div>
       </div>
 
+      <!-- Local Resources -->
+      <div class="settings-section-title">本地资源</div>
+      <div class="settings-card">
+        <div v-for="(item, index) in state.localResources" :key="item.id" class="settings-row"
+          @dragover.prevent @dragenter.prevent
+          @drop="onDrop($event, 'local', index)">
+
+          <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'local', index)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
+              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
+              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
+            </svg>
+          </div>
+
+          <template v-if="editingId === item.id">
+            <div class="settings-info edit-mode-info">
+              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" />
+              <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
+                <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" />
+                <v-button variant="secondary" @click="handleSelectEditLocalDir">选择目录</v-button>
+              </div>
+            </div>
+            <div class="action-buttons">
+              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
+              <v-button variant="primary" class="save-btn" @click="saveEdit('local', index)">保存</v-button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="settings-info resource-info">
+              <h3>{{ item.name }}</h3>
+              <p>{{ item.path || item.url }}</p>
+            </div>
+            <div class="action-buttons">
+              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
+              <v-button variant="danger-soft" class="delete-btn" @click="removeLocalResource(index)">删除</v-button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Add New Local Resource -->
+        <div class="settings-row add-row">
+          <v-input v-model="newLocalName" type="text" placeholder="挂载名称" class="inline-input name-input" />
+          <v-input v-model="newLocalPath" type="text" placeholder="本地文件夹路径" class="inline-input url-input flex-1" />
+          <v-button variant="secondary" @click="handleSelectNewLocalDir">选择目录</v-button>
+          <v-button variant="primary" class="add-btn" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">添加</v-button>
+        </div>
+      </div>
+
       <!-- CMS Resources -->
       <div class="settings-section-title">CMS 资源</div>
       <div class="settings-card">
@@ -489,6 +541,7 @@ const {
   saveEnableVideoCompress,
   saveVideoCompressTargetGB,
   saveVideoCompressMinBitrateKbps,
+  saveLocalResources,
   saveCmsResources, 
   saveExternalSites, 
   saveCustomStyles,
@@ -530,10 +583,11 @@ const importSummaryText = computed(() => {
   if (!pendingImportData.value?.data) return '';
   const d = pendingImportData.value.data;
   const webCount = (d.webResources || []).length;
+  const localCount = (d.localResources || []).length;
   const cmsCount = (d.cmsResources || []).length;
   const ruleCount = Object.values(d.customParseRules || {}).reduce((acc: number, cur: any) => acc + (cur?.length || 0), 0);
   const scriptCount = Object.values(d.customScripts || {}).reduce((acc: number, cur: any) => acc + (cur?.length || 0), 0);
-  return `${webCount} 个网站资源、${cmsCount} 个 CMS 资源站点、${ruleCount} 条解析规则与 ${scriptCount} 条注入脚本`;
+  return `${webCount} 个网站资源、${localCount} 个本地资源、${cmsCount} 个 CMS 资源站点、${ruleCount} 条解析规则与 ${scriptCount} 条注入脚本`;
 });
 
 const handleExportResources = async () => {
@@ -601,6 +655,9 @@ const handleUpdateAllRules = async () => {
   }
 };
 
+const newLocalName = ref('');
+const newLocalPath = ref('');
+
 const newCmsName = ref('');
 const newCmsUrl = ref('https://');
 
@@ -610,6 +667,7 @@ const newExtUrl = ref('https://');
 const editingId = ref<string | null>(null);
 const editTempName = ref('');
 const editTempUrl = ref('');
+const editTempPath = ref('');
 
 const updateBehavior = (behavior: string) => {
   setCloseBehavior(behavior);
@@ -643,6 +701,25 @@ const handleSelectFileDirectory = async () => {
   }
 };
 
+const handleSelectNewLocalDir = async () => {
+  const dir = await window.electronAPI.selectDirectory();
+  if (dir) {
+    newLocalPath.value = dir;
+    if (!newLocalName.value) {
+      // 提取最后一级目录名作为默认资源名称
+      const parts = dir.replace(/[\\/]+$/, '').split(/[\\/]/);
+      newLocalName.value = parts[parts.length - 1] || '本地目录';
+    }
+  }
+};
+
+const handleSelectEditLocalDir = async () => {
+  const dir = await window.electronAPI.selectDirectory();
+  if (dir) {
+    editTempPath.value = dir;
+  }
+};
+
 const handleMaxConcurrentChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   let val = parseInt(target.value, 10);
@@ -660,6 +737,37 @@ const handleMaxMemoryChange = (event: Event) => {
 };
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+const addLocalResource = () => {
+  if (!newLocalName.value || !newLocalPath.value) return;
+  const resources = [...(state.localResources || [])];
+  resources.push({
+    id: generateId(),
+    name: newLocalName.value,
+    path: newLocalPath.value,
+    url: newLocalPath.value
+  });
+  saveLocalResources(resources);
+  newLocalName.value = '';
+  newLocalPath.value = '';
+  showMessage('本地资源挂载成功', 'success');
+};
+
+const removeLocalResource = async (index: number) => {
+  const resource = state.localResources[index];
+  const confirmed = await confirm({
+    title: '移除本地资源',
+    message: `确定要移除本地挂载目录 "${resource.name}" 吗？（不会删除本地实际文件）`,
+    confirmText: '移除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
+  const resources = [...state.localResources];
+  resources.splice(index, 1);
+  saveLocalResources(resources);
+};
 
 const addCmsResource = () => {
   if (!newCmsName.value || !newCmsUrl.value) return;
@@ -722,20 +830,31 @@ const removeExternalSite = async (index: number) => {
 const startEdit = (item: any) => {
   editingId.value = item.id;
   editTempName.value = item.name;
-  editTempUrl.value = item.url;
+  editTempUrl.value = item.url || '';
+  editTempPath.value = item.path || item.url || '';
 };
 
 const cancelEdit = () => {
   editingId.value = null;
   editTempName.value = '';
   editTempUrl.value = '';
+  editTempPath.value = '';
 };
 
 const { updateResourceUrl } = useOpenedResources();
 const { updateCMSUrl } = useOpenedCMS();
 
-const saveEdit = (type: 'cms' | 'ext', index: number) => {
-  if (type === 'cms') {
+const saveEdit = (type: 'local' | 'cms' | 'ext', index: number) => {
+  if (type === 'local') {
+    const resources = [...state.localResources];
+    resources[index] = {
+      ...resources[index],
+      name: editTempName.value,
+      path: editTempPath.value,
+      url: editTempPath.value
+    };
+    saveLocalResources(resources);
+  } else if (type === 'cms') {
     const resources = [...state.cmsResources];
     resources[index] = { ...resources[index], name: editTempName.value, url: editTempUrl.value };
     saveCmsResources(resources);
@@ -750,7 +869,7 @@ const saveEdit = (type: 'cms' | 'ext', index: number) => {
 };
 
 // Drag and drop sorting
-const onDragStart = (e: DragEvent, type: 'cms' | 'ext', index: number) => {
+const onDragStart = (e: DragEvent, type: 'local' | 'cms' | 'ext', index: number) => {
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify({ type, index }));
@@ -764,7 +883,7 @@ const onDragStart = (e: DragEvent, type: 'cms' | 'ext', index: number) => {
   }
 };
 
-const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) => {
+const onDrop = (e: DragEvent, targetType: 'local' | 'cms' | 'ext', targetIndex: number) => {
   if (!e.dataTransfer) return;
   const dataString = e.dataTransfer.getData('text/plain');
   if (!dataString) return;
@@ -776,7 +895,12 @@ const onDrop = (e: DragEvent, targetType: 'cms' | 'ext', targetIndex: number) =>
     const sourceIndex = data.index;
     if (sourceIndex === targetIndex) return;
 
-    if (targetType === 'cms') {
+    if (targetType === 'local') {
+      const items = [...state.localResources];
+      const [movedItem] = items.splice(sourceIndex, 1);
+      items.splice(targetIndex, 0, movedItem);
+      saveLocalResources(items);
+    } else if (targetType === 'cms') {
       const items = [...state.cmsResources];
       const [movedItem] = items.splice(sourceIndex, 1);
       items.splice(targetIndex, 0, movedItem);

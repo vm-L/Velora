@@ -61,12 +61,12 @@ import type { DownloadTask } from '../../db';
 
 const props = defineProps<{
   visible: boolean;
-  tasks: DownloadTask[];
+  tasks: Array<DownloadTask | any>;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
-  (e: 'confirm', payload: { tasks: DownloadTask[]; targetBitrateKbps: number }): void;
+  (e: 'confirm', payload: { tasks: Array<DownloadTask | any>; targetBitrateKbps: number }): void;
 }>();
 
 const { state: settingsState } = useSettings();

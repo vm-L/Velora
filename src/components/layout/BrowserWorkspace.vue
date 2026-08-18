@@ -1702,20 +1702,18 @@ const onSaveRules = async (domain: string, cssString: string) => {
 /* Custom Context Menu */
 .context-menu {
   position: fixed;
-  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: var(--shadow-soft);
-  padding: 4px;
-  width: 140px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  width: 150px;
   z-index: 99999;
   display: flex;
   flex-direction: column;
   gap: 2px;
   user-select: none;
-  animation: menu-show 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: menu-show 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes menu-show {

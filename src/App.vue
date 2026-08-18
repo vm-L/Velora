@@ -4,11 +4,9 @@
     <Sidebar />
     <div class="main-panel">
       <router-view v-slot="{ Component, route }">
-        <transition name="fade" mode="out-in">
-          <keep-alive>
-            <component :is="Component" :key="route.fullPath" />
-          </keep-alive>
-        </transition>
+        <keep-alive>
+          <component :is="Component" :key="route.fullPath" />
+        </keep-alive>
       </router-view>
 
       <!-- Global Workspaces for true keep-alive (prevents webview reload) -->
@@ -18,6 +16,10 @@
       <!-- CMS Workspaces for multi-site v-show keep-alive -->
       <CMSWorkspace v-for="res in openedCMS" :key="res.id" :resourceId="res.id" :resourceUrl="res.url"
         v-show="$route.name === 'Resource' && $route.params.type === 'cms' && $route.params.id === res.id" class="global-workspace" />
+
+      <!-- Local Workspaces for multi-site v-show keep-alive -->
+      <LocalWorkspace v-for="res in openedLocal" :key="res.id" :resourceId="res.id" :resourcePath="res.path" :resourceName="res.name"
+        v-show="$route.name === 'Resource' && $route.params.type === 'local' && $route.params.id === res.id" class="global-workspace" />
     </div>
   </div>
   <v-confirm-dialog />
@@ -35,16 +37,19 @@ import VMessageBar from './components/feedback/VMessageBar.vue';
 import VNotificationBar from './components/feedback/VNotificationBar.vue';
 import BrowserWorkspace from './components/layout/BrowserWorkspace.vue';
 import CMSWorkspace from './components/layout/CMSWorkspace.vue';
+import LocalWorkspace from './components/layout/LocalWorkspace.vue';
 import { useSettings } from './composables/useSettings';
 import { useDownloads } from './composables/useDownloads';
 import { useOpenedResources } from './composables/useOpenedResources';
 import { useOpenedCMS } from './composables/useOpenedCMS';
+import { useOpenedLocal } from './composables/useOpenedLocal';
 
 const route = useRoute();
 const { state, loadSettings } = useSettings();
 const { loadTasks, initListeners, isInitialized, auditDiskFiles } = useDownloads();
 const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
+const { openedLocal, openLocal } = useOpenedLocal();
 
 onMounted(async () => {
   await loadSettings();
@@ -56,7 +61,7 @@ onMounted(async () => {
     await auditDiskFiles();
   }
 
-  // 启动所有 CMS 资源与网站资源的后台静默预加载
+  // 启动所有资源后台预加载/注册
   preloadAllResources();
 });
 
@@ -66,6 +71,11 @@ watch(() => state.theme, (newTheme) => {
 
 // 后台并发预加载函数
 const preloadAllResources = () => {
+  if (Array.isArray(state.localResources)) {
+    state.localResources.forEach(local => {
+      openLocal(local.id, local.path || local.url, local.name);
+    });
+  }
   if (Array.isArray(state.cmsResources)) {
     state.cmsResources.forEach(cms => {
       openCMS(cms.id, cms.url);
@@ -79,6 +89,14 @@ const preloadAllResources = () => {
 };
 
 // 监听配置变更，动态同步预加载资源
+watch(() => state.localResources, (newList) => {
+  if (Array.isArray(newList)) {
+    newList.forEach(local => {
+      openLocal(local.id, local.path || local.url, local.name);
+    });
+  }
+}, { deep: true });
+
 watch(() => state.cmsResources, (newList) => {
   if (Array.isArray(newList)) {
     newList.forEach(cms => {
@@ -99,7 +117,12 @@ watch(() => state.externalSites, (newList) => {
 watch(() => [route.params.type, route.params.id, route.fullPath], ([type, id, fullPath]) => {
   const currentType = (type as string) || (route.path.includes('/cms/') ? 'cms' : '')
   const currentId = id as string
-  if (currentType === 'ext' && currentId) {
+  if (currentType === 'local' && currentId) {
+    const local = (state.localResources || []).find(l => l.id === currentId);
+    if (local) {
+      openLocal(local.id, local.path || local.url, local.name);
+    }
+  } else if (currentType === 'ext' && currentId) {
     const site = state.externalSites.find(s => s.id === currentId);
     if (site) {
       openResource(site.id, site.url);
@@ -269,18 +292,4 @@ textarea {
   visibility: hidden !important;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.fade-enter-from {
-  opacity: 0;
-  transform: translateY(5px);
-}
-
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-5px);
-}
 </style>

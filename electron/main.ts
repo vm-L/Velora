@@ -940,6 +940,119 @@ ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: n
   }
 });
 
+ipcMain.handle('read-local-directory', async (_event, dirPath: string) => {
+  try {
+    if (!dirPath || !fs.existsSync(dirPath)) {
+      return { success: false, error: '目录不存在', items: [] };
+    }
+    const stat = await fs.promises.stat(dirPath);
+    if (!stat.isDirectory()) {
+      return { success: false, error: '路径不是有效目录', items: [] };
+    }
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const items = await Promise.all(
+      entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name);
+        try {
+          const itemStat = await fs.promises.stat(fullPath);
+          const isDir = itemStat.isDirectory();
+          const ext = isDir ? '' : path.extname(entry.name).toLowerCase().replace(/^\./, '');
+          return {
+            name: entry.name,
+            path: fullPath,
+            isDirectory: isDir,
+            size: isDir ? 0 : itemStat.size,
+            mtime: itemStat.mtimeMs,
+            ext
+          };
+        } catch {
+          return {
+            name: entry.name,
+            path: fullPath,
+            isDirectory: entry.isDirectory(),
+            size: 0,
+            mtime: 0,
+            ext: ''
+          };
+        }
+      })
+    );
+    return { success: true, items };
+  } catch (err: any) {
+    logger.error('Main', `Failed to read directory ${dirPath}: ${err.message}`);
+    return { success: false, error: err.message, items: [] };
+  }
+});
+
+ipcMain.handle('create-local-folder', async (_event, folderPath: string) => {
+  try {
+    if (!folderPath) return { success: false, error: '路径不能为空' };
+    if (fs.existsSync(folderPath)) {
+      return { success: false, error: '同名文件夹已存在' };
+    }
+    await fs.promises.mkdir(folderPath, { recursive: true });
+    return { success: true };
+  } catch (err: any) {
+    logger.error('Main', `Failed to create folder ${folderPath}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('delete-local-path', async (_event, targetPath: string) => {
+  try {
+    if (!targetPath || !fs.existsSync(targetPath)) return { success: false, error: '文件或目录不存在' };
+    await fs.promises.rm(targetPath, { recursive: true, force: true });
+    return { success: true };
+  } catch (err: any) {
+    logger.error('Main', `Failed to delete local path ${targetPath}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('scan-local-videos', async (_event, targetPaths: string[]) => {
+  const VIDEO_EXTS = new Set(['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v', 'ts', 'm3u8']);
+  const results: Array<{ name: string; path: string; size: number }> = [];
+
+  const scanPath = async (p: string) => {
+    try {
+      if (!fs.existsSync(p)) return;
+      const stat = await fs.promises.stat(p);
+      if (stat.isDirectory()) {
+        const entries = await fs.promises.readdir(p, { withFileTypes: true });
+        for (const entry of entries) {
+          const subPath = path.join(p, entry.name);
+          await scanPath(subPath);
+        }
+      } else {
+        const ext = path.extname(p).toLowerCase().replace(/^\./, '');
+        if (VIDEO_EXTS.has(ext)) {
+          results.push({
+            name: path.basename(p),
+            path: p.replace(/\\/g, '/'),
+            size: stat.size
+          });
+        }
+      }
+    } catch (err: any) {
+      logger.warn('Main', `[ScanVideos] Skip ${p}: ${err.message}`);
+    }
+  };
+
+  if (Array.isArray(targetPaths)) {
+    for (const p of targetPaths) {
+      if (p) await scanPath(p);
+    }
+  }
+
+  // Deduplicate by path
+  const uniqueMap = new Map<string, { name: string; path: string; size: number }>();
+  for (const item of results) {
+    uniqueMap.set(item.path, item);
+  }
+
+  return { success: true, videos: Array.from(uniqueMap.values()) };
+});
+
 ipcMain.handle('silent-parse-html', async (_event, targetUrl: string, scripts?: string[], evalExprs?: string[]) => {
   try {
     if (!targetUrl) {

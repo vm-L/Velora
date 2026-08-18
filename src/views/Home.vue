@@ -203,7 +203,7 @@
                 <span v-if="task.status === 'resolving'">解析中</span>
                 <span v-else-if="task.status === 'downloading'">{{ formatBytes(task.speed) }}/s</span>
                 <span v-else-if="task.status === 'converting'">格式转换中</span>
-                <span v-else-if="task.status === 'compressing'">{{ task.speedText ? `压缩中 (${task.speedText})` : '正在压缩' }}</span>
+                <span v-else-if="task.status === 'compressing'">{{ task.speedText ? `${task.speedText} 倍速` : '正在压缩' }}</span>
                 <span v-else-if="task.status === 'processing'">处理中</span>
                 <template v-if="task.status === 'compressing' && task.etaSeconds !== undefined">
                   <span class="meta-divider">•</span>
