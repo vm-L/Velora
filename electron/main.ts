@@ -108,6 +108,7 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
 import { storeManager, setupStoreHandlers } from './store'
 import { downloader } from './downloader'
 import { logger } from './logger'
+import { lanServer } from './lanServer'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
@@ -758,11 +759,52 @@ function createWindow() {
 }
 
 
+const getMountedLocalResources = async () => {
+  const localRes = await storeManager.getSetting('localResources');
+  if (Array.isArray(localRes)) {
+    return localRes.map((r: any) => ({ id: r.id, name: r.name, path: r.path }));
+  }
+  return [];
+};
+
+const initOrRestartLanServer = async () => {
+  const enabled = await storeManager.getSetting('lanShareEnabled');
+  if (!enabled) {
+    await lanServer.stop();
+    return { success: true, running: false };
+  }
+  const port = (await storeManager.getSetting('lanSharePort')) || 8899;
+  const password = (await storeManager.getSetting('lanSharePassword')) || '';
+  const allowEdit = (await storeManager.getSetting('lanShareAllowEdit')) || false;
+  return await lanServer.start({
+    enabled: true,
+    port,
+    password,
+    allowEdit
+  }, getMountedLocalResources);
+};
+
+ipcMain.handle('get-lan-share-status', async () => {
+  return lanServer.getStatus();
+});
+
+ipcMain.handle('restart-lan-server', async () => {
+  return await initOrRestartLanServer();
+});
+
+ipcMain.handle('stop-lan-server', async () => {
+  await lanServer.stop();
+  return { success: true };
+});
+
 app.whenReady().then(async () => {
   
   await clearPrivacyData()
   setupStoreHandlers()
   createWindow()
+  initOrRestartLanServer().catch((err) => {
+    logger.error('Main', `Failed to initialize LAN server: ${err.message}`);
+  });
 
   // 自动检测系统环境变量中是否存在 ffmpeg
   exec('ffmpeg -version', (error) => {

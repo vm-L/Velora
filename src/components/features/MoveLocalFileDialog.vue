@@ -36,7 +36,7 @@
           <div class="directory-tree-container">
             <div v-if="loading" class="tree-loading">
               <div class="spinner"></div>
-              <span>正在扫描目录树...</span>
+              <span>正在扫描目录树</span>
             </div>
             <div v-else-if="dirList.length === 0" class="tree-empty">
               <span>未扫描到可用目录</span>

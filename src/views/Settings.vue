@@ -169,56 +169,108 @@
         </div>
       </div>
 
-      <!-- Local Resources -->
+      <!-- Local Resources Section (Merged) -->
       <div class="settings-section-title">本地资源</div>
       <div class="settings-card">
-        <div v-for="(item, index) in state.localResources" :key="item.id" class="settings-row"
-          @dragover.prevent @dragenter.prevent
-          @drop="onDrop($event, 'local', index)">
+        <!-- Mount Directory Row -->
+        <div class="settings-row">
+          <div class="settings-info">
+            <h3>挂载目录</h3>
+            <p>已挂载 {{ (state.localResources || []).length }} 个本地资源文件夹</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-button variant="secondary" @click="showMountModal = true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              挂载目录
+            </v-button>
+          </div>
+        </div>
 
-          <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'local', index)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-            </svg>
+        <!-- LAN Share Toggle -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>局域网共享服务</h3>
+            <p>允许通过局域网浏览器访问已挂载的本地资源</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-switch
+              :model-value="state.lanShareEnabled"
+              @change="handleToggleLanShare"
+            />
+          </div>
+        </div>
+
+        <!-- Port, Password, Edit Permission, URL -->
+        <template v-if="state.lanShareEnabled">
+          <!-- Port -->
+          <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+            <div class="settings-info">
+              <h3>服务端口</h3>
+              <p>局域网 HTTP 服务监听端口</p>
+            </div>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
+              <v-input v-model="lanPortInput" type="number" placeholder="8899" style="max-width: 120px;" />
+              <v-button variant="secondary" @click="handleApplyLanPort">应用端口</v-button>
+            </div>
           </div>
 
-          <template v-if="editingId === item.id">
-            <div class="settings-info edit-mode-info">
-              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" />
-              <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
-                <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" />
-                <v-button variant="secondary" @click="handleSelectEditLocalDir">选择目录</v-button>
-              </div>
+          <!-- Password -->
+          <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+            <div class="settings-info">
+              <h3>访问密码</h3>
+              <p>留空为免密公开访问</p>
             </div>
-            <div class="action-buttons">
-              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
-              <v-button variant="primary" class="save-btn" @click="saveEdit('local', index)">保存</v-button>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
+              <v-input v-model="lanPasswordInput" type="text" placeholder="留空为免密访问" style="max-width: 180px;" />
+              <v-button variant="secondary" @click="handleApplyLanPassword">保存密码</v-button>
             </div>
-          </template>
-          <template v-else>
-            <div class="settings-info resource-info">
-              <h3>{{ item.name }}</h3>
-              <p>{{ item.path || item.url }}</p>
-            </div>
-            <div class="action-buttons">
-              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
-              <v-button variant="danger-soft" class="delete-btn" @click="removeLocalResource(index)">删除</v-button>
-            </div>
-          </template>
-        </div>
+          </div>
 
-        <!-- Add New Local Resource -->
-        <div class="settings-row add-row">
-          <v-input v-model="newLocalName" type="text" placeholder="挂载名称" class="inline-input name-input" />
-          <v-input v-model="newLocalPath" type="text" placeholder="本地文件夹路径" class="inline-input url-input flex-1" />
-          <v-button variant="secondary" @click="handleSelectNewLocalDir">选择目录</v-button>
-          <v-button variant="primary" class="add-btn" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">添加</v-button>
-        </div>
+          <!-- Allow Edit Toggle -->
+          <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+            <div class="settings-info">
+              <h3>编辑模式</h3>
+              <p>允许局域网设备对文件进行编辑</p>
+            </div>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+              <v-switch
+                :model-value="state.lanShareAllowEdit"
+                @change="handleToggleLanAllowEdit"
+              />
+            </div>
+          </div>
+
+          <!-- URL and QR Code Banner -->
+          <div class="settings-row" style="border-top: 1px solid var(--border-light); background: rgba(59, 130, 246, 0.04);">
+            <div class="settings-info">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="lan-status-dot"></span>
+                <h3 style="color: var(--color-primary, #3b82f6);">服务运行中: {{ lanShareStatus.url }}</h3>
+              </div>
+              <p>在同一局域网下的手机、平板或其他电脑浏览器中访问此地址</p>
+            </div>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
+              <v-button variant="secondary" @click="handleCopyLanUrl">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                复制链接
+              </v-button>
+              <v-button variant="primary" @click="showQrModal = true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                手机扫码
+              </v-button>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- CMS Resources -->
@@ -504,17 +556,122 @@
         </div>
       </div>
     </div>
+
+    <!-- Mount Local Resources Modal -->
+    <div v-if="showMountModal" class="modal-overlay" @click.self="showMountModal = false">
+      <div class="modal-content" style="max-width: 680px; width: 90vw;">
+        <div class="modal-header">
+          <h3>挂载本地目录</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="showMountModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px; max-height: 60vh; overflow-y: auto;">
+          <div v-if="!state.localResources || state.localResources.length === 0" class="empty-state" style="padding: 30px 0;">
+            暂未挂载任何本地目录
+          </div>
+          <div v-else style="display: flex; flex-direction: column; gap: 8px;">
+            <div
+              v-for="(item, index) in state.localResources"
+              :key="item.id"
+              class="settings-row"
+              style="border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 14px; background: var(--bg-hover-soft);"
+              @dragover.prevent @dragenter.prevent
+              @drop="onDrop($event, 'local', index)"
+            >
+              <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'local', index)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
+                  <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
+                  <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
+                  <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
+                  <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
+                  <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
+                </svg>
+              </div>
+
+              <template v-if="editingId === item.id">
+                <div class="settings-info edit-mode-info">
+                  <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" />
+                  <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
+                    <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" />
+                    <v-button variant="secondary" @click="handleSelectEditLocalDir">选择目录</v-button>
+                  </div>
+                </div>
+                <div class="action-buttons">
+                  <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
+                  <v-button variant="primary" class="save-btn" @click="saveEdit('local', index)">保存</v-button>
+                </div>
+              </template>
+              <template v-else>
+                <div class="settings-info resource-info">
+                  <h3>{{ item.name }}</h3>
+                  <p>{{ item.path || item.url }}</p>
+                </div>
+                <div class="action-buttons">
+                  <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
+                  <v-button variant="danger-soft" class="delete-btn" @click="removeLocalResource(index)">删除</v-button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Add New Local Resource inside Modal -->
+          <div class="settings-row add-row" style="margin-top: 14px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 12px;">
+            <v-input v-model="newLocalName" type="text" placeholder="挂载名称" class="inline-input name-input" style="max-width: 140px;" />
+            <v-input v-model="newLocalPath" type="text" placeholder="本地文件夹路径" class="inline-input url-input flex-1" />
+            <v-button variant="secondary" @click="handleSelectNewLocalDir">选择目录</v-button>
+            <v-button variant="primary" class="add-btn" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">添加</v-button>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end;">
+          <v-button variant="primary" @click="showMountModal = false">完成</v-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LAN Share QR Code Modal -->
+    <div v-if="showQrModal" class="modal-overlay" @click.self="showQrModal = false">
+      <div class="modal-content" style="max-width: 360px; width: 90vw; text-align: center;">
+        <div class="modal-header">
+          <h3>手机扫码访问</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="showQrModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 24px 20px; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+          <div class="qr-box" v-html="lanQrCodeSvg" style="line-height: 0; padding: 10px; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+          <p style="font-size: 13px; color: var(--text-secondary); word-break: break-all; margin-top: 4px;">
+            {{ lanShareStatus.url }}
+          </p>
+          <p style="font-size: 12px; color: var(--text-secondary);">
+            请确保手机与当前电脑连接在同一局域网 (Wi-Fi)
+          </p>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; padding: 12px 20px; border-top: 1px solid var(--border-light);">
+          <v-button variant="secondary" size="small" @click="handleCopyLanUrl">复制链接</v-button>
+          <v-button variant="primary" size="small" @click="showQrModal = false">完成</v-button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { CustomScript, ParseRule, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
 import { useMessage } from '../composables/useMessage';
 import { useOpenedResources } from '../composables/useOpenedResources';
 import { useOpenedCMS } from '../composables/useOpenedCMS';
 import { logger } from '../services/logger';
+import { generateQrCodeSvg } from '../utils/qrcode';
 import VButton from '../components/base/VButton.vue';
 
 import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
@@ -549,7 +706,10 @@ const {
   saveCustomParseRules,
   syncAllAdBlockSources,
   exportResourceBackup,
-  importResourceBackup
+  importResourceBackup,
+  saveLanShareEnabled,
+  saveLanShareAllowEdit,
+  saveLanShareSettings
 } = useSettings();
 const { confirm } = useConfirm();
 const { showMessage } = useMessage();
@@ -557,6 +717,120 @@ const { showMessage } = useMessage();
 const handleCompressToggle = (val: boolean) => {
   saveEnableVideoCompress(val);
   showMessage(val ? '已开启下载后智能视频压缩' : '已关闭下载后视频压缩', 'info');
+};
+
+// Local Resource Mount Modal State
+const showMountModal = ref<boolean>(false);
+
+// LAN Share States & Handlers
+const lanPortInput = ref<number>(8899);
+const lanPasswordInput = ref<string>('');
+const showQrModal = ref<boolean>(false);
+const lanShareStatus = ref<{
+  running: boolean;
+  port: number;
+  ip: string;
+  url: string;
+  hasPassword: boolean;
+  allowEdit: boolean;
+}>({
+  running: false,
+  port: 8899,
+  ip: '127.0.0.1',
+  url: 'http://127.0.0.1:8899',
+  hasPassword: false,
+  allowEdit: false
+});
+
+const refreshLanStatus = async () => {
+  if (window.electronAPI && window.electronAPI.getLanShareStatus) {
+    try {
+      const status = await window.electronAPI.getLanShareStatus();
+      if (status) {
+        lanShareStatus.value = status;
+        lanPortInput.value = status.port || state.lanSharePort || 8899;
+        lanPasswordInput.value = state.lanSharePassword || '';
+      }
+    } catch (err: any) {
+      logger.error('Settings', `Failed to get LAN status: ${err?.message}`);
+    }
+  }
+};
+
+onMounted(async () => {
+  await refreshLanStatus();
+});
+
+const lanQrCodeSvg = computed(() => {
+  return generateQrCodeSvg(lanShareStatus.value.url, 200);
+});
+
+const handleToggleLanShare = async (val: boolean) => {
+  try {
+    await saveLanShareEnabled(val);
+    await refreshLanStatus();
+    showMessage(val ? `局域网共享服务已启动: ${lanShareStatus.value.url}` : '局域网共享服务已停止', val ? 'success' : 'info');
+  } catch (err: any) {
+    showMessage(`操作失败: ${err?.message}`, 'error');
+  }
+};
+
+const handleApplyLanPort = async () => {
+  const port = parseInt(String(lanPortInput.value), 10);
+  if (isNaN(port) || port < 1024 || port > 65535) {
+    showMessage('请输入 1024~65535 之间的有效端口号', 'warning');
+    return;
+  }
+  try {
+    const res = await saveLanShareSettings({
+      enabled: state.lanShareEnabled,
+      port,
+      password: state.lanSharePassword,
+      allowEdit: state.lanShareAllowEdit
+    });
+    await refreshLanStatus();
+    if (res && res.error) {
+      showMessage(`端口应用失败: ${res.error}`, 'error');
+    } else {
+      showMessage(`已应用新端口: ${port}`, 'success');
+    }
+  } catch (err: any) {
+    showMessage(`端口应用失败: ${err?.message}`, 'error');
+  }
+};
+
+const handleApplyLanPassword = async () => {
+  try {
+    await saveLanShareSettings({
+      enabled: state.lanShareEnabled,
+      port: state.lanSharePort,
+      password: lanPasswordInput.value.trim(),
+      allowEdit: state.lanShareAllowEdit
+    });
+    await refreshLanStatus();
+    showMessage(lanPasswordInput.value.trim() ? '访问密码已保存' : '已清除访问密码 (免密访问)', 'success');
+  } catch (err: any) {
+    showMessage(`密码保存失败: ${err?.message}`, 'error');
+  }
+};
+
+const handleToggleLanAllowEdit = async (val: boolean) => {
+  try {
+    await saveLanShareAllowEdit(val);
+    await refreshLanStatus();
+    showMessage(val ? '已开启局域网设备编辑权限' : '已设置为只读模式', 'info');
+  } catch (err: any) {
+    showMessage(`操作失败: ${err?.message}`, 'error');
+  }
+};
+
+const handleCopyLanUrl = () => {
+  if (!lanShareStatus.value.url) return;
+  navigator.clipboard.writeText(lanShareStatus.value.url).then(() => {
+    showMessage('已复制局域网访问链接到剪贴板', 'success');
+  }).catch(() => {
+    showMessage('复制链接失败', 'error');
+  });
 };
 
 const handleTargetGBChange = (e: Event) => {
@@ -1137,6 +1411,28 @@ const deleteDomainStyle = async (domain: string) => {
   flex-direction: column;
   width: 100%;
   overflow: hidden;
+}
+
+.lan-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  display: inline-block;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 .settings-row {

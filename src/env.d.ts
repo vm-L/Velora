@@ -51,6 +51,9 @@ interface Window {
     compileAdBlockRules: (sourcesData: Record<string, string>) => Promise<number>
     exportResourcesJson: (data: any) => Promise<{ success: boolean; cancelled?: boolean; filePath?: string; error?: string }>
     importResourcesJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: any; error?: string }>
+    getLanShareStatus: () => Promise<{ running: boolean; port: number; ip: string; url: string; hasPassword: boolean; allowEdit: boolean }>
+    restartLanServer: () => Promise<{ success: boolean; port?: number; error?: string; running?: boolean }>
+    stopLanServer: () => Promise<{ success: boolean }>
     log: (level: 'info' | 'warn' | 'error', scope: string, message: string) => void
   }
 }

@@ -21,7 +21,11 @@ class StoreManager {
         videoDirectory: app.getPath('downloads'),
         fileDirectory: app.getPath('downloads'),
         maxConcurrentDownloads: 3,
-        maxMemoryBufferMB: 128
+        maxMemoryBufferMB: 128,
+        lanShareEnabled: false,
+        lanSharePort: 8899,
+        lanSharePassword: '',
+        lanShareAllowEdit: false
       }
     })
   }

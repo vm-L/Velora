@@ -53,5 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compileAdBlockRules: (sourcesData: Record<string, string>) => ipcRenderer.invoke('compile-adblock-rules', sourcesData),
   exportResourcesJson: (data: any) => ipcRenderer.invoke('export-resources-json', data),
   importResourcesJson: () => ipcRenderer.invoke('import-resources-json'),
+  getLanShareStatus: () => ipcRenderer.invoke('get-lan-share-status'),
+  restartLanServer: () => ipcRenderer.invoke('restart-lan-server'),
+  stopLanServer: () => ipcRenderer.invoke('stop-lan-server'),
   log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
 })

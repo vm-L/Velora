@@ -35,7 +35,7 @@
 
           <div class="compress-hint">
             <VIcon name="info" :size="14" style="flex-shrink: 0;" />
-            <span>压缩任务同一时间仅允许开始一个，其他任务将自动进入排队等候状态；小于或等于目标码率的文件将自动跳过。</span>
+            <span>压缩任务同一时间仅开始一个，其他任务将自动进入排队等候状态；小于或等于目标码率的文件将自动跳过。</span>
           </div>
         </div>
 

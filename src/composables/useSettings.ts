@@ -95,6 +95,10 @@ export interface SettingsState {
   customScripts: Record<string, CustomScript[]>
   customParseRules: Record<string, ParseRule[]>
   adBlockSources: AdBlockSource[]
+  lanShareEnabled: boolean
+  lanSharePort: number
+  lanSharePassword: string
+  lanShareAllowEdit: boolean
   loaded: boolean
 }
 
@@ -117,6 +121,10 @@ export const state = reactive<SettingsState>({
   customScripts: {} as Record<string, CustomScript[]>,
   customParseRules: {} as Record<string, ParseRule[]>,
   adBlockSources: [] as AdBlockSource[],
+  lanShareEnabled: false,
+  lanSharePort: 8899,
+  lanSharePassword: '',
+  lanShareAllowEdit: false,
   loaded: false
 })
 
@@ -141,6 +149,10 @@ export const useSettings = () => {
     state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
     state.customScripts = (await window.electronAPI.getSetting('customScripts')) || {}
     state.customParseRules = (await window.electronAPI.getSetting('customParseRules')) || {}
+    state.lanShareEnabled = (await window.electronAPI.getSetting('lanShareEnabled')) || false
+    state.lanSharePort = (await window.electronAPI.getSetting('lanSharePort')) || 8899
+    state.lanSharePassword = (await window.electronAPI.getSetting('lanSharePassword')) || ''
+    state.lanShareAllowEdit = (await window.electronAPI.getSetting('lanShareAllowEdit')) || false
 
     // Load adblock sources & merge built-ins
     const savedSources: AdBlockSource[] = (await window.electronAPI.getSetting('adBlockSources')) || [];
@@ -309,7 +321,7 @@ export const useSettings = () => {
   const exportResourceBackup = async () => {
     const payload = {
       type: 'velora-resource-backup',
-      version: '1.1.0',
+      version: '1.2.0',
       timestamp: Date.now(),
       data: {
         webResources: JSON.parse(JSON.stringify(state.externalSites || [])),
@@ -394,6 +406,57 @@ export const useSettings = () => {
     }
   };
 
+  const saveLanShareEnabled = async (enabled: boolean) => {
+    state.lanShareEnabled = enabled;
+    await window.electronAPI.setSetting('lanShareEnabled', enabled);
+    if (enabled) {
+      await window.electronAPI.restartLanServer();
+    } else {
+      await window.electronAPI.stopLanServer();
+    }
+  };
+
+  const saveLanSharePort = async (port: number) => {
+    state.lanSharePort = port;
+    await window.electronAPI.setSetting('lanSharePort', port);
+    if (state.lanShareEnabled) {
+      await window.electronAPI.restartLanServer();
+    }
+  };
+
+  const saveLanSharePassword = async (password: string) => {
+    state.lanSharePassword = password;
+    await window.electronAPI.setSetting('lanSharePassword', password);
+    if (state.lanShareEnabled) {
+      await window.electronAPI.restartLanServer();
+    }
+  };
+
+  const saveLanShareAllowEdit = async (allowEdit: boolean) => {
+    state.lanShareAllowEdit = allowEdit;
+    await window.electronAPI.setSetting('lanShareAllowEdit', allowEdit);
+    if (state.lanShareEnabled) {
+      await window.electronAPI.restartLanServer();
+    }
+  };
+
+  const saveLanShareSettings = async (options: { enabled: boolean; port: number; password: string; allowEdit: boolean }) => {
+    state.lanShareEnabled = options.enabled;
+    state.lanSharePort = options.port;
+    state.lanSharePassword = options.password;
+    state.lanShareAllowEdit = options.allowEdit;
+    await window.electronAPI.setSetting('lanShareEnabled', options.enabled);
+    await window.electronAPI.setSetting('lanSharePort', options.port);
+    await window.electronAPI.setSetting('lanSharePassword', options.password);
+    await window.electronAPI.setSetting('lanShareAllowEdit', options.allowEdit);
+    if (options.enabled) {
+      return await window.electronAPI.restartLanServer();
+    } else {
+      await window.electronAPI.stopLanServer();
+      return { success: true, running: false };
+    }
+  };
+
   return { 
     state, 
     loadSettings, 
@@ -419,6 +482,11 @@ export const useSettings = () => {
     syncAllAdBlockSources,
     recompileRules,
     exportResourceBackup,
-    importResourceBackup
+    importResourceBackup,
+    saveLanShareEnabled,
+    saveLanSharePort,
+    saveLanSharePassword,
+    saveLanShareAllowEdit,
+    saveLanShareSettings
   }
 }

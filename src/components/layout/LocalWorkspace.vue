@@ -96,7 +96,7 @@
       <!-- Loading State -->
       <div v-if="loading" class="state-container">
         <div class="spinner"></div>
-        <span>正在读取目录内容...</span>
+        <span>正在读取目录内容</span>
       </div>
 
       <!-- Error State -->
@@ -914,7 +914,7 @@ const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any; t
 const handleCompressDirectory = async (item: LocalFileItem) => {
   closeContextMenu();
   if (!item || !window.electronAPI) return;
-  showMessage(`正在扫描目录 "${item.name}" 中的视频文件...`, 'info');
+  showMessage(`正在扫描目录 "${item.name}" 中的视频文件`, 'info');
   try {
     const res = await window.electronAPI.scanLocalVideos([item.path]);
     if (res && res.success && res.videos && res.videos.length > 0) {
@@ -937,7 +937,7 @@ const handleCompressDirectory = async (item: LocalFileItem) => {
 const openBatchCompressModal = async () => {
   closeContextMenu();
   if (!window.electronAPI || selectedPaths.value.size === 0) return;
-  showMessage('正在扫描所选项目中的视频文件...', 'info');
+  showMessage('正在扫描所选项目中的视频文件', 'info');
   try {
     const paths = Array.from(selectedPaths.value);
     const res = await window.electronAPI.scanLocalVideos(paths);
