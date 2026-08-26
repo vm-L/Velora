@@ -210,9 +210,15 @@
               <h3>服务端口</h3>
               <p>局域网 HTTP 服务监听端口</p>
             </div>
-            <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
-              <v-input v-model="lanPortInput" type="number" placeholder="8899" style="max-width: 120px;" />
-              <v-button variant="secondary" @click="handleApplyLanPort">应用端口</v-button>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+              <v-input
+                v-model="lanPortInput"
+                type="number"
+                placeholder="8899"
+                style="max-width: 140px;"
+                @blur="handleApplyLanPort"
+                @enter="handleApplyLanPort"
+              />
             </div>
           </div>
 
@@ -222,9 +228,15 @@
               <h3>访问密码</h3>
               <p>留空为免密公开访问</p>
             </div>
-            <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
-              <v-input v-model="lanPasswordInput" type="text" placeholder="留空为免密访问" style="max-width: 180px;" />
-              <v-button variant="secondary" @click="handleApplyLanPassword">保存密码</v-button>
+            <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+              <v-input
+                v-model="lanPasswordInput"
+                type="text"
+                placeholder="留空为免密访问"
+                style="max-width: 180px;"
+                @blur="handleApplyLanPassword"
+                @enter="handleApplyLanPassword"
+              />
             </div>
           </div>
 
@@ -289,9 +301,9 @@
           </div>
 
           <template v-if="editingId === item.id">
-            <div class="settings-info edit-mode-info">
-              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
-              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
+            <div class="settings-info edit-mode-info" @focusout="handleEditFocusOut($event, 'cms', index)">
+              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" @enter="saveEdit('cms', index)" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @enter="saveEdit('cms', index)" />
             </div>
             <div class="action-buttons">
               <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
@@ -337,9 +349,9 @@
           </div>
 
           <template v-if="editingId === item.id">
-            <div class="settings-info edit-mode-info">
-              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" />
-              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" />
+            <div class="settings-info edit-mode-info" @focusout="handleEditFocusOut($event, 'ext', index)">
+              <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" @enter="saveEdit('ext', index)" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @enter="saveEdit('ext', index)" />
             </div>
             <div class="action-buttons">
               <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
@@ -591,10 +603,10 @@
               </div>
 
               <template v-if="editingId === item.id">
-                <div class="settings-info edit-mode-info">
-                  <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" />
+                <div class="settings-info edit-mode-info" @focusout="handleEditFocusOut($event, 'local', index)">
+                  <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" @enter="saveEdit('local', index)" />
                   <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
-                    <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" />
+                    <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" @enter="saveEdit('local', index)" />
                     <v-button variant="secondary" @click="handleSelectEditLocalDir">选择目录</v-button>
                   </div>
                 </div>
@@ -776,6 +788,10 @@ const handleApplyLanPort = async () => {
   const port = parseInt(String(lanPortInput.value), 10);
   if (isNaN(port) || port < 1024 || port > 65535) {
     showMessage('请输入 1024~65535 之间的有效端口号', 'warning');
+    lanPortInput.value = state.lanSharePort || 8899;
+    return;
+  }
+  if (port === state.lanSharePort && lanShareStatus.value?.port === port) {
     return;
   }
   try {
@@ -797,15 +813,19 @@ const handleApplyLanPort = async () => {
 };
 
 const handleApplyLanPassword = async () => {
+  const pwd = lanPasswordInput.value.trim();
+  if (pwd === (state.lanSharePassword || '')) {
+    return;
+  }
   try {
     await saveLanShareSettings({
       enabled: state.lanShareEnabled,
       port: state.lanSharePort,
-      password: lanPasswordInput.value.trim(),
+      password: pwd,
       allowEdit: state.lanShareAllowEdit
     });
     await refreshLanStatus();
-    showMessage(lanPasswordInput.value.trim() ? '访问密码已保存' : '已清除访问密码 (免密访问)', 'success');
+    showMessage(pwd ? '访问密码已保存' : '已清除访问密码 (免密访问)', 'success');
   } catch (err: any) {
     showMessage(`密码保存失败: ${err?.message}`, 'error');
   }
@@ -1115,26 +1135,55 @@ const cancelEdit = () => {
 const { updateResourceUrl } = useOpenedResources();
 const { updateCMSUrl } = useOpenedCMS();
 
+const handleEditFocusOut = (e: FocusEvent, type: 'local' | 'cms' | 'ext', index: number) => {
+  const currentTarget = e.currentTarget as HTMLElement;
+  const relatedTarget = e.relatedTarget as HTMLElement;
+  const parentRow = currentTarget.closest('.settings-row');
+  if (parentRow && relatedTarget && parentRow.contains(relatedTarget)) {
+    return;
+  }
+  if (editingId.value) {
+    saveEdit(type, index);
+  }
+};
+
 const saveEdit = (type: 'local' | 'cms' | 'ext', index: number) => {
+  if (!editingId.value) return;
+  const trimmedName = editTempName.value.trim();
   if (type === 'local') {
-    const resources = [...state.localResources];
-    resources[index] = {
-      ...resources[index],
-      name: editTempName.value,
-      path: editTempPath.value,
-      url: editTempPath.value
-    };
-    saveLocalResources(resources);
+    const trimmedPath = editTempPath.value.trim();
+    if (trimmedName && trimmedPath) {
+      const resources = [...state.localResources];
+      if (resources[index]) {
+        resources[index] = {
+          ...resources[index],
+          name: trimmedName,
+          path: trimmedPath,
+          url: trimmedPath
+        };
+        saveLocalResources(resources);
+      }
+    }
   } else if (type === 'cms') {
-    const resources = [...state.cmsResources];
-    resources[index] = { ...resources[index], name: editTempName.value, url: editTempUrl.value };
-    saveCmsResources(resources);
-    updateCMSUrl(resources[index].id, editTempUrl.value);
+    const trimmedUrl = editTempUrl.value.trim();
+    if (trimmedName && trimmedUrl) {
+      const resources = [...state.cmsResources];
+      if (resources[index]) {
+        resources[index] = { ...resources[index], name: trimmedName, url: trimmedUrl };
+        saveCmsResources(resources);
+        updateCMSUrl(resources[index].id, trimmedUrl);
+      }
+    }
   } else {
-    const sites = [...state.externalSites];
-    sites[index] = { ...sites[index], name: editTempName.value, url: editTempUrl.value };
-    saveExternalSites(sites);
-    updateResourceUrl(sites[index].id, editTempUrl.value);
+    const trimmedUrl = editTempUrl.value.trim();
+    if (trimmedName && trimmedUrl) {
+      const sites = [...state.externalSites];
+      if (sites[index]) {
+        sites[index] = { ...sites[index], name: trimmedName, url: trimmedUrl };
+        saveExternalSites(sites);
+        updateResourceUrl(sites[index].id, trimmedUrl);
+      }
+    }
   }
   cancelEdit();
 };

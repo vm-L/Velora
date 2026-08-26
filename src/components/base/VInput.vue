@@ -8,6 +8,7 @@
     class="v-input"
     @input="onInput"
     @change="onChange"
+    @blur="onBlur"
     @keyup.enter="$emit('enter', $event)"
   />
 </template>
@@ -36,7 +37,7 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'input', 'change', 'enter']);
+const emit = defineEmits(['update:modelValue', 'input', 'change', 'blur', 'enter']);
 
 const onInput = (e: Event) => {
   const target = e.target as HTMLInputElement;
@@ -47,6 +48,11 @@ const onInput = (e: Event) => {
 const onChange = (e: Event) => {
   const target = e.target as HTMLInputElement;
   emit('change', target.value);
+};
+
+const onBlur = (e: FocusEvent) => {
+  const target = e.target as HTMLInputElement;
+  emit('blur', target.value, e);
 };
 </script>
 
