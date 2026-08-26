@@ -370,11 +370,14 @@ export function getLanWebHtml(): string {
 
     @media (max-width: 640px) {
       .file-grid {
-        grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
-        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+        gap: 12px;
       }
       .search-wrap {
         width: 130px;
+      }
+      .file-card {
+        padding: 14px 10px;
       }
     }
 
@@ -464,7 +467,7 @@ export function getLanWebHtml(): string {
       width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       overflow: hidden;
     }
 
@@ -472,10 +475,22 @@ export function getLanWebHtml(): string {
       font-size: 13px;
       font-weight: 500;
       color: var(--text-primary);
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
       text-overflow: ellipsis;
-      line-height: 1.3;
+      word-break: break-all;
+      white-space: normal;
+      line-height: 1.35;
+      max-height: 2.7em;
+    }
+
+    @media (max-width: 640px) {
+      .card-name {
+        -webkit-line-clamp: 3;
+        max-height: 4.1em;
+      }
     }
 
     .card-size {

@@ -243,13 +243,10 @@
           </div>
 
           <!-- URL and QR Code Banner -->
-          <div class="settings-row" style="border-top: 1px solid var(--border-light); background: rgba(59, 130, 246, 0.04);">
+          <div class="settings-row">
             <div class="settings-info">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="lan-status-dot"></span>
-                <h3 style="color: var(--color-primary, #3b82f6);">服务运行中: {{ lanShareStatus.url }}</h3>
-              </div>
-              <p>在同一局域网下的手机、平板或其他电脑浏览器中访问此地址</p>
+              <h3>服务运行地址</h3>
+              <p>{{ lanShareStatus.url }}</p>
             </div>
             <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
               <v-button variant="secondary" @click="handleCopyLanUrl">
@@ -1411,28 +1408,6 @@ const deleteDomainStyle = async (domain: string) => {
   flex-direction: column;
   width: 100%;
   overflow: hidden;
-}
-
-.lan-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10b981;
-  display: inline-block;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
-  animation: pulse-dot 2s infinite;
-}
-
-@keyframes pulse-dot {
-  0% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-  }
 }
 
 .settings-row {

@@ -1354,11 +1354,16 @@ const formatTime = (ts: number): string => {
       font-size: 12px;
       font-weight: 500;
       color: var(--text-primary);
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
       text-overflow: ellipsis;
+      word-break: break-all;
+      white-space: normal;
       padding: 0 2px;
-      line-height: 1.4;
+      line-height: 1.35;
+      max-height: 2.7em;
     }
 
     .card-size {
