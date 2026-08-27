@@ -1,6 +1,6 @@
 {
   "name": "velora",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "this is a electron init",
   "author": "JY",
   "main": "dist-electron/main.js",
@@ -34,16 +34,18 @@
     "appId": "com.velora.app",
     "productName": "Velora",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist",
       "dist-electron",
-      "public"
+      "public",
+      "build"
     ],
     "forceCodeSigning": false,
     "win": {
-      "icon": "public/icon.ico",
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "dir",

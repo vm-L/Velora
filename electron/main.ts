@@ -118,14 +118,23 @@ import { lanServer } from './lanServer'
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
 
-const iconBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAySURBVDhPY/iPBoB0AOP///8xpE2D0RgagEEoMIIGRA8MA2EwhgbgNQChwAhgBwMDAB1eF1y5w6OaAAAAAElFTkSuQmCC'
+// 设置 Windows 任务栏应用唯一 AppUserModelId，确保任务栏图标与主程序图标统一关联
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.velora.app');
+}
 
 const getAppIcon = () => {
   const iconPaths = [
+    path.join(__dirname, '../public/icon.ico'),
     path.join(__dirname, '../public/icon.png'),
+    path.join(__dirname, '../../public/icon.ico'),
     path.join(__dirname, '../../public/icon.png'),
+    path.join(process.resourcesPath || '', 'public/icon.ico'),
     path.join(process.resourcesPath || '', 'public/icon.png'),
+    path.join(process.resourcesPath || '', 'app.asar/public/icon.ico'),
     path.join(process.resourcesPath || '', 'app.asar/public/icon.png'),
+    path.join(process.cwd(), 'build/icon.ico'),
+    path.join(process.cwd(), 'public/icon.ico'),
     path.join(process.cwd(), 'public/icon.png'),
     path.join(process.cwd(), 'build/icon.png')
   ];
