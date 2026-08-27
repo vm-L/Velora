@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowUnmaximized: (callback: () => void) => ipcRenderer.on('window-unmaximized', () => callback()),
   setSetting: (key: string, value: any) => ipcRenderer.send('set-setting', key, value),
   getSetting: (key: string) => ipcRenderer.invoke('get-setting', key),
+  getAllSettings: () => ipcRenderer.invoke('get-all-settings'),
   setCloseBehavior: (behavior: string) => ipcRenderer.send('set-setting', 'closeBehavior', behavior),
   getCloseBehavior: () => ipcRenderer.invoke('get-setting', 'closeBehavior'),
   onWebviewNewWindow: (callback: (url: string) => void) => {

@@ -130,32 +130,37 @@ export const state = reactive<SettingsState>({
 
 export const useSettings = () => {
   const loadSettings = async () => {
-    state.closeBehavior = (await window.electronAPI.getSetting('closeBehavior')) || 'tray'
-    state.theme = (await window.electronAPI.getSetting('theme')) || 'light'
-    state.imageDirectory = (await window.electronAPI.getSetting('imageDirectory')) || ''
-    state.audioDirectory = (await window.electronAPI.getSetting('audioDirectory')) || ''
-    state.videoDirectory = (await window.electronAPI.getSetting('videoDirectory')) || ''
-    state.fileDirectory = (await window.electronAPI.getSetting('fileDirectory')) || ''
-    state.maxConcurrentDownloads = (await window.electronAPI.getSetting('maxConcurrentDownloads')) || 3
-    state.maxMemoryBufferMB = (await window.electronAPI.getSetting('maxMemoryBufferMB')) || 128
-    state.enableVideoCompress = (await window.electronAPI.getSetting('enableVideoCompress')) || false
-    const savedTarget = (await window.electronAPI.getSetting('videoCompressTargetGB')) ?? (await window.electronAPI.getSetting('videoCompressThresholdGB'))
+    if (!window.electronAPI) return;
+
+    // Batch fetch all settings in a single atomic IPC call
+    const all = (await window.electronAPI.getAllSettings()) || {};
+
+    state.closeBehavior = all['closeBehavior'] || 'tray'
+    state.theme = all['theme'] || 'light'
+    state.imageDirectory = all['imageDirectory'] || ''
+    state.audioDirectory = all['audioDirectory'] || ''
+    state.videoDirectory = all['videoDirectory'] || ''
+    state.fileDirectory = all['fileDirectory'] || ''
+    state.maxConcurrentDownloads = all['maxConcurrentDownloads'] || 3
+    state.maxMemoryBufferMB = all['maxMemoryBufferMB'] || 128
+    state.enableVideoCompress = all['enableVideoCompress'] || false
+    const savedTarget = all['videoCompressTargetGB'] ?? all['videoCompressThresholdGB']
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
-    const savedMinBitrate = await window.electronAPI.getSetting('videoCompressMinBitrateKbps')
+    const savedMinBitrate = all['videoCompressMinBitrateKbps']
     state.videoCompressMinBitrateKbps = typeof savedMinBitrate === 'number' ? savedMinBitrate : 1500
-    state.localResources = (await window.electronAPI.getSetting('localResources')) || []
-    state.cmsResources = (await window.electronAPI.getSetting('cmsResources')) || []
-    state.externalSites = (await window.electronAPI.getSetting('externalSites')) || []
-    state.customStyles = (await window.electronAPI.getSetting('customStyles')) || {}
-    state.customScripts = (await window.electronAPI.getSetting('customScripts')) || {}
-    state.customParseRules = (await window.electronAPI.getSetting('customParseRules')) || {}
-    state.lanShareEnabled = (await window.electronAPI.getSetting('lanShareEnabled')) || false
-    state.lanSharePort = (await window.electronAPI.getSetting('lanSharePort')) || 8899
-    state.lanSharePassword = (await window.electronAPI.getSetting('lanSharePassword')) || ''
-    state.lanShareAllowEdit = (await window.electronAPI.getSetting('lanShareAllowEdit')) || false
+    state.localResources = all['localResources'] || []
+    state.cmsResources = all['cmsResources'] || []
+    state.externalSites = all['externalSites'] || []
+    state.customStyles = all['customStyles'] || {}
+    state.customScripts = all['customScripts'] || {}
+    state.customParseRules = all['customParseRules'] || {}
+    state.lanShareEnabled = all['lanShareEnabled'] || false
+    state.lanSharePort = all['lanSharePort'] || 8899
+    state.lanSharePassword = all['lanSharePassword'] || ''
+    state.lanShareAllowEdit = all['lanShareAllowEdit'] || false
 
     // Load adblock sources & merge built-ins
-    const savedSources: AdBlockSource[] = (await window.electronAPI.getSetting('adBlockSources')) || [];
+    const savedSources: AdBlockSource[] = all['adBlockSources'] || [];
     const mergedSources = [...BUILTIN_ADBLOCK_SOURCES];
     for (const saved of savedSources) {
       const idx = mergedSources.findIndex(b => b.id === saved.id);
@@ -168,12 +173,21 @@ export const useSettings = () => {
     state.adBlockSources = mergedSources;
 
     state.loaded = true;
-    await recompileRules();
 
-    // 静默后台自动更新所有已启用的规则源
-    syncAllAdBlockSources().catch(err => {
-      window.electronAPI.log('warn', 'AdBlock', 'Background auto update failed: ' + err.message);
-    });
+    // Background asynchronous adblock rules compilation & update without blocking startup
+    const runBackgroundAdBlock = () => {
+      recompileRules().finally(() => {
+        syncAllAdBlockSources().catch(err => {
+          window.electronAPI.log('warn', 'AdBlock', 'Background auto update failed: ' + err.message);
+        });
+      });
+    };
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(runBackgroundAdBlock, { timeout: 3000 });
+    } else {
+      setTimeout(runBackgroundAdBlock, 1000);
+    }
   }
 
   const setCloseBehavior = async (behavior: string) => {
@@ -321,7 +335,7 @@ export const useSettings = () => {
   const exportResourceBackup = async () => {
     const payload = {
       type: 'velora-resource-backup',
-      version: '1.2.0',
+      version: '1.2.1',
       timestamp: Date.now(),
       data: {
         webResources: JSON.parse(JSON.stringify(state.externalSites || [])),

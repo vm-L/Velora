@@ -35,6 +35,11 @@ class StoreManager {
     return this.store.get(key)
   }
 
+  async getAllSettings() {
+    await this.initPromise
+    return this.store.store || {}
+  }
+
   async setSetting(key: string, value: any) {
     await this.initPromise
     this.store.set(key, value)
@@ -46,6 +51,10 @@ export const storeManager = new StoreManager()
 export function setupStoreHandlers() {
   ipcMain.handle('get-setting', async (_, key) => {
     return await storeManager.getSetting(key)
+  })
+
+  ipcMain.handle('get-all-settings', async () => {
+    return await storeManager.getAllSettings()
   })
 
   ipcMain.on('set-setting', async (_, key, value) => {

@@ -797,16 +797,20 @@ ipcMain.handle('stop-lan-server', async () => {
   return { success: true };
 });
 
-app.whenReady().then(async () => {
-  
-  await clearPrivacyData()
+app.whenReady().then(() => {
   setupStoreHandlers()
   createWindow()
+
+  // Background non-blocking initializations
+  clearPrivacyData().catch((err) => {
+    logger.error('Privacy', `Background clear privacy error: ${err.message}`);
+  });
+
   initOrRestartLanServer().catch((err) => {
     logger.error('Main', `Failed to initialize LAN server: ${err.message}`);
   });
 
-  // 自动检测系统环境变量中是否存在 ffmpeg
+  // 自动检测系统环境变量中是否存在 ffmpeg (异步非阻塞)
   exec('ffmpeg -version', (error) => {
     if (error) {
       dialog.showErrorBox(

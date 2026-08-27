@@ -15,6 +15,7 @@ interface Window {
     onWindowUnmaximized: (callback: () => void) => void
     setSetting: (key: string, value: any) => void
     getSetting: (key: string) => Promise<any>
+    getAllSettings: () => Promise<Record<string, any>>
     setCloseBehavior: (behavior: string) => void
     getCloseBehavior: () => Promise<string>
     onWebviewNewWindow: (callback: (data: { url: string, webContentsId: number }) => void) => void

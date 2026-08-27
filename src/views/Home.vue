@@ -258,20 +258,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue';
 import { useDownloads } from '../composables/useDownloads';
 import { useMessage } from '../composables/useMessage';
 import { useConfirm } from '../composables/useConfirm';
 import VButton from '../components/base/VButton.vue';
 import VIcon from '../components/base/VIcon.vue';
 import VCheckbox from '../components/base/VCheckbox.vue';
-import ImagePreviewDialog from '../components/features/ImagePreviewDialog.vue';
-import AudioPlayerDialog from '../components/features/AudioPlayerDialog.vue';
-import VideoPlayerDialog from '../components/features/VideoPlayerDialog.vue';
-import SaveMediaDialog from '../components/features/SaveMediaDialog.vue';
-import EditTaskDialog from '../components/features/EditTaskDialog.vue';
-import CompressVideoDialog from '../components/features/CompressVideoDialog.vue';
-import BatchCompressVideoDialog from '../components/features/BatchCompressVideoDialog.vue';
+const ImagePreviewDialog = defineAsyncComponent(() => import('../components/features/ImagePreviewDialog.vue'));
+const AudioPlayerDialog = defineAsyncComponent(() => import('../components/features/AudioPlayerDialog.vue'));
+const VideoPlayerDialog = defineAsyncComponent(() => import('../components/features/VideoPlayerDialog.vue'));
+const SaveMediaDialog = defineAsyncComponent(() => import('../components/features/SaveMediaDialog.vue'));
+const EditTaskDialog = defineAsyncComponent(() => import('../components/features/EditTaskDialog.vue'));
+const CompressVideoDialog = defineAsyncComponent(() => import('../components/features/CompressVideoDialog.vue'));
+const BatchCompressVideoDialog = defineAsyncComponent(() => import('../components/features/BatchCompressVideoDialog.vue'));
 import { useNotification } from '../composables/useNotification';
 import { useSettings } from '../composables/useSettings';
 import { logger } from '../services/logger';

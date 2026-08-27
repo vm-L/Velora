@@ -28,16 +28,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue';
+import { defineAsyncComponent, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import TitleBar from './components/layout/TitleBar.vue';
 import Sidebar from './components/layout/Sidebar.vue';
 import VConfirmDialog from './components/feedback/VConfirmDialog.vue';
 import VMessageBar from './components/feedback/VMessageBar.vue';
 import VNotificationBar from './components/feedback/VNotificationBar.vue';
-import BrowserWorkspace from './components/layout/BrowserWorkspace.vue';
-import CMSWorkspace from './components/layout/CMSWorkspace.vue';
-import LocalWorkspace from './components/layout/LocalWorkspace.vue';
+const BrowserWorkspace = defineAsyncComponent(() => import('./components/layout/BrowserWorkspace.vue'));
+const CMSWorkspace = defineAsyncComponent(() => import('./components/layout/CMSWorkspace.vue'));
+const LocalWorkspace = defineAsyncComponent(() => import('./components/layout/LocalWorkspace.vue'));
 import { useSettings } from './composables/useSettings';
 import { useDownloads } from './composables/useDownloads';
 import { useOpenedResources } from './composables/useOpenedResources';
@@ -51,6 +51,14 @@ const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 const { openedLocal, openLocal } = useOpenedLocal();
 
+const scheduleIdleTask = (fn: () => void, delay = 800) => {
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    (window as any).requestIdleCallback(() => fn(), { timeout: 2500 });
+  } else {
+    setTimeout(fn, delay);
+  }
+};
+
 onMounted(async () => {
   await loadSettings();
   document.documentElement.dataset.theme = state.theme;
@@ -58,11 +66,13 @@ onMounted(async () => {
   if (!isInitialized.value) {
     await loadTasks();
     initListeners();
-    await auditDiskFiles();
   }
 
-  // 启动所有资源后台预加载/注册
-  preloadAllResources();
+  // 延迟在首屏渲染完成后的空闲时间执行磁盘审计与后台资源预加载，避免启动风暴
+  scheduleIdleTask(() => {
+    auditDiskFiles();
+    preloadAllResources();
+  }, 800);
 });
 
 watch(() => state.theme, (newTheme) => {
