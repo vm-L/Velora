@@ -5,62 +5,45 @@ import { logger } from '../services/logger'
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
 let isListenersInitialized = false
+let loadTasksPromise: Promise<void> | null = null
 const notifiedErrorTaskIds = new Set<string>()
 
 export const useDownloads = () => {
   const loadTasks = async () => {
-    logger.info('Downloads', `[Renderer] loadTasks starting...`)
-    try {
-      const allTasks = await db.downloads.toArray()
-      logger.info('Downloads', `[Renderer] loadTasks: Found ${allTasks.length} tasks in Dexie database.`)
-      
-      // Auto-pause active downloading tasks & restore interrupted processing tasks
-      for (const t of allTasks) {
-        if (t.status === 'compressing' || t.status === 'processing') {
-          t.status = 'completed'
-          t.progress = 100
-          t.speed = 0
-          delete t.speedText
-          delete t.etaSeconds
-          await db.downloads.put(t)
-          if (t.savePath && window.electronAPI && window.electronAPI.deleteFile) {
-            const lastDot = t.savePath.lastIndexOf('.')
-            const tempPath = lastDot !== -1 ? `${t.savePath.substring(0, lastDot)}.compress_tmp.mp4` : `${t.savePath}.compress_tmp.mp4`
-            window.electronAPI.deleteFile(tempPath).catch(() => {})
+    if (isInitialized.value) return;
+    if (loadTasksPromise) return loadTasksPromise;
+
+    loadTasksPromise = (async () => {
+      try {
+        const allTasks = await db.downloads.orderBy('createdAt').reverse().toArray()
+        
+        let needDbUpdate = false
+        const updatedTasks = allTasks.map(t => {
+          if (t.status === 'compressing' || t.status === 'processing') {
+            needDbUpdate = true
+            return { ...t, status: 'completed' as const, progress: 100, speed: 0, speedText: undefined, etaSeconds: undefined }
+          } else if (t.status === 'downloading' || t.status === 'resolving' || t.status === 'converting') {
+            needDbUpdate = true
+            return { ...t, status: 'paused' as const, speed: 0, speedText: undefined, etaSeconds: undefined }
           }
-        } else if (t.status === 'downloading' || t.status === 'resolving' || t.status === 'converting') {
-          t.status = 'paused'
-          t.speed = 0
-          delete t.speedText
-          delete t.etaSeconds
-          await db.downloads.put(t)
-        } else if (t.savePath && window.electronAPI && window.electronAPI.fileExists) {
-          try {
-            const exists = await window.electronAPI.fileExists(t.savePath)
-            if (!exists && t.status === 'completed') {
-              t.status = 'file_removed'
-              t.speed = 0
-              await db.downloads.put(t)
-              logger.info('Downloads', `[Startup Check] Task "${t.name}" file missing, updated status to file_removed.`)
-            } else if (exists && (t.status === 'file_removed' || t.status === 'file_corrupted')) {
-              t.status = 'completed'
-              t.progress = 100
-              t.speed = 0
-              await db.downloads.put(t)
-              logger.info('Downloads', `[Startup Check] Task "${t.name}" file found, restored status to completed.`)
-            }
-          } catch (err: any) {
-            logger.error('Downloads', `[Startup Check] Failed to check file for task ${t.id}: ${err.message}`)
-          }
+          return t
+        })
+
+        if (needDbUpdate) {
+          await db.downloads.bulkPut(updatedTasks)
         }
+
+        tasks.value = updatedTasks
+        isInitialized.value = true
+        initListeners()
+      } catch (err: any) {
+        logger.error('Downloads', `[Renderer] loadTasks failed: ${err.message}`)
+      } finally {
+        loadTasksPromise = null
       }
-      tasks.value = await db.downloads.orderBy('createdAt').reverse().toArray()
-      isInitialized.value = true
-      logger.info('Downloads', `[Renderer] loadTasks finished. tasks.value loaded. size: ${tasks.value.length}`)
-      initListeners()
-    } catch (err: any) {
-      logger.error('Downloads', `[Renderer] loadTasks failed: ${err.message}`)
-    }
+    })()
+
+    return loadTasksPromise
   }
 
   const initListeners = () => {

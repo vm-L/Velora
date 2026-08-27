@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 
-export type LogLevel = 'info' | 'warn' | 'error'
+export type LogLevel = 'info' | 'warn' | 'error' | 'perf'
 
 class Logger {
   private logPath: string
@@ -13,16 +13,24 @@ class Logger {
     this.isDev = !app.isPackaged
   }
 
+  setLogDirectory(dir: string) {
+    if (dir) {
+      this.logPath = path.join(dir, 'app.log')
+    }
+  }
+
+  perf(scope: string, message: string) {
+    this.write('PERF', scope, message)
+  }
+
   info(scope: string, message: string) {
-    if (this.isDev) {
+    if (this.isDev || scope.toLowerCase().includes('perf')) {
       this.write('INFO', scope, message)
     }
   }
 
   warn(scope: string, message: string) {
-    if (this.isDev) {
-      this.write('WARN', scope, message)
-    }
+    this.write('WARN', scope, message)
   }
 
   error(scope: string, message: string) {

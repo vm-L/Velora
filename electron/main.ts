@@ -3,6 +3,11 @@ import path from 'path'
 import fs from 'fs'
 import http from 'http'
 
+// 启动渲染与图形硬件加速配置
+app.commandLine.appendSwitch('disable-http-cache', 'false');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+
 // 配置本地绿色同级目录数据存储路径 (dev 及打包便携版数据均归集于程序同级目录的 data/ 文件夹内)
 const getLocalDataDir = () => {
   let baseDir = process.cwd();
@@ -28,6 +33,8 @@ app.setPath('sessionData', path.join(localDataPath, 'session'));
 
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
+import { logger } from './logger'
+logger.setLogDirectory(localDataPath);
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -107,7 +114,6 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
 
 import { storeManager, setupStoreHandlers } from './store'
 import { downloader } from './downloader'
-import { logger } from './logger'
 import { lanServer } from './lanServer'
 
 let tray: Tray | null = null
@@ -432,7 +438,7 @@ function createWindow() {
   // Downloader IPCs
   downloader.setWindow(mainWindow)
   
-  ipcMain.on('log-message', (_, { level, scope, message }: { level: 'info' | 'warn' | 'error', scope: string, message: string }) => {
+  ipcMain.on('log-message', (_, { level, scope, message }: { level: 'info' | 'warn' | 'error' | 'perf', scope: string, message: string }) => {
     logger[level || 'info'](scope || 'Renderer', message || '')
   })
 
@@ -802,10 +808,6 @@ app.whenReady().then(() => {
   createWindow()
 
   // Background non-blocking initializations
-  clearPrivacyData().catch((err) => {
-    logger.error('Privacy', `Background clear privacy error: ${err.message}`);
-  });
-
   initOrRestartLanServer().catch((err) => {
     logger.error('Main', `Failed to initialize LAN server: ${err.message}`);
   });
@@ -1143,8 +1145,8 @@ ipcMain.handle('silent-parse-html', async (_event, targetUrl: string, scripts?: 
               if (scriptCode && scriptCode.trim()) {
                 try {
                   await win.webContents.executeJavaScript(scriptCode);
-                } catch (scriptErr) {
-                  console.error('[silent-parse-html] 执行自定义 JS 脚本发生错误:', scriptErr);
+                } catch (scriptErr: any) {
+                  logger.error('Parser', `[silent-parse-html] 执行自定义 JS 脚本发生错误: ${scriptErr?.message || scriptErr}`);
                 }
               }
             }

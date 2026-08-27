@@ -95,6 +95,7 @@ import { ref, watch, computed } from 'vue';
 import VIcon from '../base/VIcon.vue';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import { logger } from '../../services/logger';
 import { useSettings } from '../../composables/useSettings';
 import type { DownloadTask } from '../../db';
 
@@ -183,8 +184,8 @@ watch(
             if (info.duration > 0) durationSeconds.value = info.duration;
             if (info.bitrate > 0) originalBitrate.value = info.bitrate;
           }
-        } catch (err) {
-          console.error('[CompressVideoDialog] 获取视频信息失败:', err);
+        } catch (err: any) {
+          logger.error('CompressVideoDialog', `获取视频信息失败: ${err?.message || err}`);
         } finally {
           isLoadingInfo.value = false;
         }

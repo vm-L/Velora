@@ -665,8 +665,8 @@ const toggleFullscreen = async () => {
       await document.exitFullscreen();
       isInAppFullscreen.value = false;
     }
-  } catch (err) {
-    console.error("Fullscreen error", err);
+  } catch (err: any) {
+    logger.error('VideoPlayerDialog', `Fullscreen error: ${err?.message || err}`);
   }
 };
 

@@ -1227,8 +1227,8 @@ const onExecuteScript = async (code: string) => {
   if (webview && code) {
     try {
       await webview.executeJavaScript(code);
-    } catch (e) {
-      console.error('JS Execute Error:', e);
+    } catch (e: any) {
+      logger.error('BrowserWorkspace', `JS Execute Error: ${e?.message || e}`);
     }
   }
 };
