@@ -7,7 +7,8 @@ dist/
 dist-electron/
 out/
 release/
-build/
+build/*
+!build/icon.*
 *.tsbuildinfo
 
 # test

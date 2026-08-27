@@ -303,11 +303,11 @@
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info" @focusout="handleEditFocusOut($event, 'cms', index)">
               <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" @enter="saveEdit('cms', index)" />
-              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @enter="saveEdit('cms', index)" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @blur="editTempUrl = formatUrlPrefix(editTempUrl)" @enter="saveEdit('cms', index)" />
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
-              <v-button variant="primary" class="save-btn" @click="saveEdit('cms', index)">保存</v-button>
+              <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
+              <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('cms', index)">保存</v-button>
             </div>
           </template>
           <template v-else>
@@ -325,7 +325,7 @@
         <!-- Add New CMS Resource -->
         <div class="settings-row add-row">
           <v-input v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input name-input" />
-          <v-input v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <v-input v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" @blur="newCmsUrl = formatUrlPrefix(newCmsUrl)" @enter="addCmsResource" />
           <v-button variant="primary" class="add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</v-button>
         </div>
       </div>
@@ -351,11 +351,11 @@
           <template v-if="editingId === item.id">
             <div class="settings-info edit-mode-info" @focusout="handleEditFocusOut($event, 'ext', index)">
               <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="名称" @enter="saveEdit('ext', index)" />
-              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @enter="saveEdit('ext', index)" />
+              <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @blur="editTempUrl = formatUrlPrefix(editTempUrl)" @enter="saveEdit('ext', index)" />
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
-              <v-button variant="primary" class="save-btn" @click="saveEdit('ext', index)">保存</v-button>
+              <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
+              <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('ext', index)">保存</v-button>
             </div>
           </template>
           <template v-else>
@@ -376,7 +376,7 @@
         <!-- Add New External Site -->
         <div class="settings-row add-row">
           <v-input v-model="newExtName" type="text" placeholder="网站名称" class="inline-input name-input" />
-          <v-input v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" />
+          <v-input v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" @blur="newExtUrl = formatUrlPrefix(newExtUrl)" @enter="addExternalSite" />
           <v-button variant="primary" class="add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</v-button>
         </div>
       </div>
@@ -607,12 +607,12 @@
                   <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" @enter="saveEdit('local', index)" />
                   <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
                     <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" @enter="saveEdit('local', index)" />
-                    <v-button variant="secondary" @click="handleSelectEditLocalDir">选择目录</v-button>
+                    <v-button variant="secondary" @mousedown.prevent @click="handleSelectEditLocalDir">选择目录</v-button>
                   </div>
                 </div>
                 <div class="action-buttons">
-                  <v-button variant="secondary" class="cancel-btn" @click="cancelEdit">取消</v-button>
-                  <v-button variant="primary" class="save-btn" @click="saveEdit('local', index)">保存</v-button>
+                  <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
+                  <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('local', index)">保存</v-button>
                 </div>
               </template>
               <template v-else>
@@ -632,7 +632,7 @@
           <div class="settings-row add-row" style="margin-top: 14px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 12px;">
             <v-input v-model="newLocalName" type="text" placeholder="挂载名称" class="inline-input name-input" style="max-width: 140px;" />
             <v-input v-model="newLocalPath" type="text" placeholder="本地文件夹路径" class="inline-input url-input flex-1" />
-            <v-button variant="secondary" @click="handleSelectNewLocalDir">选择目录</v-button>
+            <v-button variant="secondary" @mousedown.prevent @click="handleSelectNewLocalDir">选择目录</v-button>
             <v-button variant="primary" class="add-btn" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">添加</v-button>
           </div>
         </div>
@@ -960,54 +960,114 @@ const editTempName = ref('');
 const editTempUrl = ref('');
 const editTempPath = ref('');
 
+const isSelectingDirectory = ref(false);
+
+const formatUrlPrefix = (val: string): string => {
+  const trimmed = (val || '').trim();
+  if (!trimmed || trimmed === 'https://' || trimmed === 'http://') return '';
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`;
+  }
+  return `https://${trimmed}`;
+};
+
 const updateBehavior = (behavior: string) => {
   setCloseBehavior(behavior);
 };
 
 const handleSelectDirectory = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    saveImageDirectory(dir);
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      state.imageDirectory = dir;
+      saveImageDirectory(dir);
+    }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
 const handleSelectAudioDirectory = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    saveAudioDirectory(dir);
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      state.audioDirectory = dir;
+      saveAudioDirectory(dir);
+    }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
 const handleSelectVideoDirectory = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    saveVideoDirectory(dir);
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      state.videoDirectory = dir;
+      saveVideoDirectory(dir);
+    }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
 const handleSelectFileDirectory = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    saveFileDirectory(dir);
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      state.fileDirectory = dir;
+      saveFileDirectory(dir);
+    }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
 const handleSelectNewLocalDir = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    newLocalPath.value = dir;
-    if (!newLocalName.value) {
-      // 提取最后一级目录名作为默认资源名称
-      const parts = dir.replace(/[\\/]+$/, '').split(/[\\/]/);
-      newLocalName.value = parts[parts.length - 1] || '本地目录';
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      newLocalPath.value = dir;
+      if (!newLocalName.value) {
+        // 提取最后一级目录名作为默认资源名称
+        const parts = dir.replace(/[\\/]+$/, '').split(/[\\/]/);
+        newLocalName.value = parts[parts.length - 1] || '本地目录';
+      }
     }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
 const handleSelectEditLocalDir = async () => {
-  const dir = await window.electronAPI.selectDirectory();
-  if (dir) {
-    editTempPath.value = dir;
+  isSelectingDirectory.value = true;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      editTempPath.value = dir;
+    }
+  } finally {
+    setTimeout(() => {
+      isSelectingDirectory.value = false;
+    }, 300);
   }
 };
 
@@ -1061,12 +1121,14 @@ const removeLocalResource = async (index: number) => {
 };
 
 const addCmsResource = () => {
-  if (!newCmsName.value || !newCmsUrl.value) return;
+  const formattedUrl = formatUrlPrefix(newCmsUrl.value);
+  const trimmedName = newCmsName.value.trim();
+  if (!trimmedName || !formattedUrl) return;
   const resources = [...state.cmsResources];
   resources.push({
     id: generateId(),
-    name: newCmsName.value,
-    url: newCmsUrl.value
+    name: trimmedName,
+    url: formattedUrl
   });
   saveCmsResources(resources);
   newCmsName.value = '';
@@ -1090,12 +1152,14 @@ const removeCmsResource = async (index: number) => {
 };
 
 const addExternalSite = () => {
-  if (!newExtName.value || !newExtUrl.value) return;
+  const formattedUrl = formatUrlPrefix(newExtUrl.value);
+  const trimmedName = newExtName.value.trim();
+  if (!trimmedName || !formattedUrl) return;
   const sites = [...state.externalSites];
   sites.push({
     id: generateId(),
-    name: newExtName.value,
-    url: newExtUrl.value
+    name: trimmedName,
+    url: formattedUrl
   });
   saveExternalSites(sites);
   newExtName.value = '';
@@ -1136,6 +1200,9 @@ const { updateResourceUrl } = useOpenedResources();
 const { updateCMSUrl } = useOpenedCMS();
 
 const handleEditFocusOut = (e: FocusEvent, type: 'local' | 'cms' | 'ext', index: number) => {
+  if (isSelectingDirectory.value) {
+    return;
+  }
   const currentTarget = e.currentTarget as HTMLElement;
   const relatedTarget = e.relatedTarget as HTMLElement;
   const parentRow = currentTarget.closest('.settings-row');
@@ -1165,23 +1232,23 @@ const saveEdit = (type: 'local' | 'cms' | 'ext', index: number) => {
       }
     }
   } else if (type === 'cms') {
-    const trimmedUrl = editTempUrl.value.trim();
-    if (trimmedName && trimmedUrl) {
+    const formattedUrl = formatUrlPrefix(editTempUrl.value);
+    if (trimmedName && formattedUrl) {
       const resources = [...state.cmsResources];
       if (resources[index]) {
-        resources[index] = { ...resources[index], name: trimmedName, url: trimmedUrl };
+        resources[index] = { ...resources[index], name: trimmedName, url: formattedUrl };
         saveCmsResources(resources);
-        updateCMSUrl(resources[index].id, trimmedUrl);
+        updateCMSUrl(resources[index].id, formattedUrl);
       }
     }
   } else {
-    const trimmedUrl = editTempUrl.value.trim();
-    if (trimmedName && trimmedUrl) {
+    const formattedUrl = formatUrlPrefix(editTempUrl.value);
+    if (trimmedName && formattedUrl) {
       const sites = [...state.externalSites];
       if (sites[index]) {
-        sites[index] = { ...sites[index], name: trimmedName, url: trimmedUrl };
+        sites[index] = { ...sites[index], name: trimmedName, url: formattedUrl };
         saveExternalSites(sites);
-        updateResourceUrl(sites[index].id, trimmedUrl);
+        updateResourceUrl(sites[index].id, formattedUrl);
       }
     }
   }

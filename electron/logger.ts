@@ -9,14 +9,14 @@ class Logger {
   private isDev: boolean
 
   constructor() {
-    this.logPath = path.join(process.cwd(), 'app.log')
-    this.isDev = !app.isPackaged
-  }
-
-  setLogDirectory(dir: string) {
-    if (dir) {
-      this.logPath = path.join(dir, 'app.log')
+    let baseDir = process.cwd();
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+      baseDir = process.env.PORTABLE_EXECUTABLE_DIR;
+    } else if (app.isPackaged) {
+      baseDir = path.dirname(app.getPath('exe'));
     }
+    this.logPath = path.join(baseDir, 'app.log')
+    this.isDev = !app.isPackaged
   }
 
   perf(scope: string, message: string) {
@@ -37,8 +37,21 @@ class Logger {
     this.write('ERROR', scope, message)
   }
 
+  private getLocalTimestamp(): string {
+    const d = new Date()
+    const pad = (n: number, z = 2) => String(n).padStart(z, '0')
+    const year = d.getFullYear()
+    const month = pad(d.getMonth() + 1)
+    const day = pad(d.getDate())
+    const hours = pad(d.getHours())
+    const minutes = pad(d.getMinutes())
+    const seconds = pad(d.getSeconds())
+    const ms = pad(d.getMilliseconds(), 3)
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`
+  }
+
   private write(level: string, scope: string, message: string) {
-    const timestamp = new Date().toISOString()
+    const timestamp = this.getLocalTimestamp()
     const logLine = `[${timestamp}] [${level}] [${scope}] ${message}\n`
     try {
       if (level === 'ERROR') {

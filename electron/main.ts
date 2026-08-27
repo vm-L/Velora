@@ -34,7 +34,6 @@ app.setPath('sessionData', path.join(localDataPath, 'session'));
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
 import { logger } from './logger'
-logger.setLogDirectory(localDataPath);
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -124,12 +123,14 @@ const iconBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAA
 const getAppIcon = () => {
   const iconPaths = [
     path.join(__dirname, '../public/icon.png'),
-    path.join(__dirname, 'resources/icon.png'),
+    path.join(__dirname, '../../public/icon.png'),
+    path.join(process.resourcesPath || '', 'public/icon.png'),
+    path.join(process.resourcesPath || '', 'app.asar/public/icon.png'),
     path.join(process.cwd(), 'public/icon.png'),
     path.join(process.cwd(), 'build/icon.png')
   ];
   for (const p of iconPaths) {
-    if (fs.existsSync(p)) {
+    if (p && fs.existsSync(p)) {
       const img = nativeImage.createFromPath(p);
       if (!img.isEmpty()) return img;
     }

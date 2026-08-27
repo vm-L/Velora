@@ -1,12 +1,12 @@
 {
   "name": "velora",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "this is a electron init",
   "author": "JY",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build && electron-builder && node -e \"const fs=require('fs'); fs.rmSync('release/win-unpacked', {recursive:true, force:true}); fs.rmSync('release/builder-effective-config.yaml', {force:true});\"",
+    "build": "vue-tsc && vite build && electron-builder --dir && node -e \"const fs=require('fs'); fs.rmSync('release/builder-effective-config.yaml', {force:true});\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -43,19 +43,15 @@
     ],
     "forceCodeSigning": false,
     "win": {
-      "icon": "public/icon.png",
-      "signAndEditExecutable": false,
+      "icon": "public/icon.ico",
       "target": [
         {
-          "target": "portable",
+          "target": "dir",
           "arch": [
             "x64"
           ]
         }
       ]
-    },
-    "portable": {
-      "artifactName": "${productName}.${ext}"
     }
   }
 }
