@@ -74,7 +74,7 @@ const getStyle = (index: number): any => {
   const scale = isActive ? 1 - reverseIndex * 0.04 : 1 - 3 * 0.04
   
   return {
-    transform: `translate3d(-50%, ${yOffset}px, 0) scale(${scale})`,
+    transform: `translate3d(0, ${yOffset}px, 0) scale(${scale})`,
     zIndex: 1000 - reverseIndex,
     opacity: isActive ? 1 - reverseIndex * 0.15 : 0,
     pointerEvents: reverseIndex === 0 ? 'auto' : 'none'
@@ -86,12 +86,11 @@ const getStyle = (index: number): any => {
 .message-container {
   position: fixed;
   top: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
   z-index: 10000;
   pointer-events: none;
-  width: 0;
-  height: 52px;
+  height: 0;
   display: flex;
   justify-content: center;
 }
@@ -99,7 +98,10 @@ const getStyle = (index: number): any => {
 .message-item {
   position: absolute;
   top: 0;
-  left: 50%;
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
   width: max-content;
   min-width: 320px;
   max-width: 440px;
@@ -116,7 +118,7 @@ const getStyle = (index: number): any => {
   font-size: 14px;
   font-weight: 500;
   transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1), max-width 0.3s cubic-bezier(0.2, 1, 0.2, 1), opacity 0.3s ease, padding 0.2s ease;
-  transform-origin: bottom center;
+  transform-origin: top center;
   overflow: hidden;
 
   .is-expanded & {
@@ -234,16 +236,20 @@ const getStyle = (index: number): any => {
 }
 
 /* Transitions */
+.message-list-move,
 .message-list-enter-active,
 .message-list-leave-active {
   transition: all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
 }
+.message-list-leave-active {
+  position: absolute !important;
+}
 .message-list-enter-from {
   opacity: 0;
-  transform: translate3d(-50%, -20px, 0) scale(0.9) !important;
+  transform: translate3d(0, -20px, 0) scale(0.9) !important;
 }
 .message-list-leave-to {
   opacity: 0;
-  transform: translate3d(-50%, -10px, 0) scale(0.95) !important;
+  transform: translate3d(0, -10px, 0) scale(0.95) !important;
 }
 </style>

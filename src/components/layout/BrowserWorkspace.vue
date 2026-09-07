@@ -122,6 +122,15 @@
       </webview>
     </div>
 
+    <!-- Hidden Webview for Silent Link Parsing -->
+    <div v-if="silentParseTarget" style="position: fixed; top: -9999px; left: -9999px; width: 1280px; height: 800px; opacity: 0; pointer-events: none; overflow: hidden; z-index: -999;">
+      <webview
+        :src="silentParseTarget.url"
+        :id="`silent-webview-${silentParseTarget.id}`"
+        allowpopups
+      ></webview>
+    </div>
+
     <!-- Audio Player Dialog -->
     <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageOrigin()" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
@@ -229,6 +238,7 @@ const contextMenuTabId = ref('');
 const contextMenuTargetUrl = ref('');
 const isContextMenuTargetLink = ref(false);
 const contextMenuRef = ref<HTMLElement | null>(null);
+const silentParseTarget = ref<{ url: string; id: string } | null>(null);
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
   if (isPickingElementImage.value || isPickingElementText.value) return;
@@ -535,8 +545,97 @@ const triggerSilentParse = async () => {
     let htmlText = '';
     let evaluator: ((expr: string) => Promise<any>) | undefined;
 
-    if (!isLink) {
-      // 解析当前页面：直接获取当前 webview 的 DOM HTML，并在网页内部执行 JS 读取全局变量
+    if (isLink) {
+      // 解析超链接：在后台静默挂载一个完全隐藏的独立 webview 容器（标签栏完全不展示）
+      const parseId = Math.random().toString(36).substring(2, 9);
+      silentParseTarget.value = { url: targetUrl, id: parseId };
+      await nextTick();
+
+      const hiddenWebview = document.getElementById(`silent-webview-${parseId}`) as any;
+      if (!hiddenWebview) {
+        throw new Error('创建后台解析容器失败');
+      }
+
+      // 等待 Webview 触发 dom-ready 事件（20 秒超时）
+      await new Promise<void>((resolve, reject) => {
+        let timer: any = null;
+        let isDone = false;
+        const onDomReady = () => {
+          if (isDone) return;
+          isDone = true;
+          if (timer) clearTimeout(timer);
+          hiddenWebview.removeEventListener('dom-ready', onDomReady);
+          resolve();
+        };
+
+        hiddenWebview.addEventListener('dom-ready', onDomReady);
+
+        timer = setTimeout(() => {
+          if (isDone) return;
+          isDone = true;
+          hiddenWebview.removeEventListener('dom-ready', onDomReady);
+          reject(new Error('页面加载超时（20秒）'));
+        }, 20000);
+      });
+
+      // 匹配当前 Workspace 下与目标链接 URL 符合的自定义 JS 脚本并自动注入
+      const workspaceScripts = settingsState.customScripts[props.resourceId] || [];
+      const matchedScripts = workspaceScripts
+        .filter(s => s.code && s.code.trim() && matchDomainPattern(targetUrl, s.domain))
+        .map(s => s.code);
+
+      for (const scriptCode of matchedScripts) {
+        try {
+          await hiddenWebview.executeJavaScript(scriptCode);
+        } catch (e) {
+          logger.warn('BrowserWorkspace', `注入自定义脚本失败: ${e}`);
+        }
+      }
+
+      // 等待 600ms 以便动态 JS 渲染与 DOM 更新
+      await new Promise(r => setTimeout(r, 600));
+
+      // 收集可能需要求值的全局变量表达式 (既非 /.../ 正则也非引号字符串)
+      const allRules = settingsState.customParseRules[props.resourceId] || [];
+      const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
+      const evalExprs: string[] = [];
+      matchedRules.forEach(r => {
+        r.items.forEach(it => {
+          const val = (it.value ?? it.regex ?? '').trim();
+          const isRegex = /^\/(.+)\/([gimsuy]*)$/.test(val);
+          const isQuoted = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(val);
+          if (val && !isRegex && !isQuoted) {
+            evalExprs.push(val);
+          }
+        });
+      });
+
+      const evaluatedVars: Record<string, any> = {};
+      for (const expr of evalExprs) {
+        try {
+          evaluatedVars[expr] = await hiddenWebview.executeJavaScript(expr);
+        } catch {
+          evaluatedVars[expr] = null;
+        }
+      }
+
+      // 提取完整的 outerHTML，绑定求值器
+      htmlText = await hiddenWebview.executeJavaScript('document.documentElement.outerHTML');
+      evaluator = async (expr: string) => {
+        if (expr in evaluatedVars) {
+          return evaluatedVars[expr];
+        }
+        try {
+          return await hiddenWebview.executeJavaScript(expr);
+        } catch {
+          return null;
+        }
+      };
+
+      // 解析数据读取完毕，立即关闭销毁后台临时 webview
+      silentParseTarget.value = null;
+    } else {
+      // 解析当前页面：直接获取当前活动 webview 的 DOM HTML，并在网页内部执行 JS 读取全局变量
       const tabId = contextMenuTabId.value || workspace.value?.activeTabId;
       const webview = document.getElementById(`webview-${tabId}`) as any;
       if (webview && typeof webview.executeJavaScript === 'function') {
@@ -554,56 +653,11 @@ const triggerSilentParse = async () => {
           });
           return;
         }
+      } else {
+        throw new Error('未找到当前页面的浏览器实例');
       }
     }
 
-    if (!htmlText) {
-      // 解析超链接：收集要求值的全局变量表达式，在后台静默窗口中求值
-      if (!window.electronAPI || !window.electronAPI.silentParseHtml) {
-        showMessage({
-          id: toastId,
-          text: '当前环境不支持解析功能',
-          type: 'error',
-          duration: 1500
-        });
-        return;
-      }
-
-      // 匹配当前 Workspace 下与目标链接 URL 符合的自定义 JS 脚本
-      const workspaceScripts = settingsState.customScripts[props.resourceId] || [];
-      const matchedScripts = workspaceScripts
-        .filter(s => s.code && s.code.trim() && matchDomainPattern(targetUrl, s.domain))
-        .map(s => s.code);
-
-      // 收集可能需要求值的全局变量表达式 (既非 /.../ 正则也非引号字符串)
-      const allRules = settingsState.customParseRules[props.resourceId] || [];
-      const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
-      const evalExprs: string[] = [];
-      matchedRules.forEach(r => {
-        r.items.forEach(it => {
-          const val = (it.value ?? it.regex ?? '').trim();
-          const isRegex = /^\/(.+)\/([gimsuy]*)$/.test(val);
-          const isQuoted = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(val);
-          if (val && !isRegex && !isQuoted) {
-            evalExprs.push(val);
-          }
-        });
-      });
-
-      const res = await window.electronAPI.silentParseHtml(targetUrl, matchedScripts, evalExprs);
-      if (!res.success || !res.html) {
-        showMessage({
-          id: toastId,
-          text: `解析失败: ${res.error || '获取页面内容失败'}`,
-          type: 'error',
-          duration: 2500
-        });
-        return;
-      }
-      htmlText = res.html;
-      const evaluatedVars = res.evaluatedVars || {};
-      evaluator = async (expr: string) => evaluatedVars[expr];
-    }
     const allRules = settingsState.customParseRules[props.resourceId] || [];
 
     // 根据 URL 匹配该 workspace 下的解析规则
@@ -648,6 +702,7 @@ const triggerSilentParse = async () => {
     });
   } finally {
     isParsingHtml.value = false;
+    silentParseTarget.value = null;
   }
 };
 

@@ -97,13 +97,28 @@ export const useMessage = () => {
 
     const finalId = msgId || Math.random().toString(36).substring(2, 11)
 
-    // 清理已存在的同名 ID 消息及其定时器
+    // 若已存在同名 ID 消息，直接原位更新，避免 TransitionGroup 删除并重新创建造成的动画重叠与位置偏移
     const existingIndex = messages.value.findIndex(m => m.id === finalId)
     if (existingIndex !== -1) {
       if (messages.value[existingIndex].timer) {
         clearTimeout(messages.value[existingIndex].timer)
       }
-      messages.value.splice(existingIndex, 1)
+      let timer: any = null
+      if (msgDuration > 0) {
+        timer = setTimeout(() => {
+          removeMessage(finalId)
+        }, msgDuration)
+      }
+      const existing = messages.value[existingIndex]
+      existing.text = msgText
+      existing.type = msgType
+      existing.duration = msgDuration
+      existing.remainingDuration = msgDuration
+      existing.startTime = Date.now()
+      existing.action = msgAction
+      existing.timer = timer
+      existing.isPaused = false
+      return finalId
     }
 
     // 设置新的倒计时（若 duration > 0）

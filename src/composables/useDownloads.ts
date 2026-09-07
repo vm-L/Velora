@@ -55,16 +55,38 @@ export const useDownloads = () => {
     logger.info('Downloads', `[Renderer] initListeners binding to onDownloadProgress...`)
     isListenersInitialized = true
 
-    // Start frontend speed calculation timer
+    // 5秒滑动统计窗口采样计算，平滑瞬时波动，消除分片交替时的 0B/s 抖动
+    const SPEED_WINDOW_MS = 5000;
     setInterval(() => {
+      const now = Date.now();
       tasks.value.forEach(t => {
         if (t.status === 'downloading') {
           const current = t.receivedBytes || 0;
-          const last = (t as any)._lastReceivedBytes ?? current;
-          t.speed = Math.max(0, current - last);
-          (t as any)._lastReceivedBytes = current;
+          let samples: Array<{ time: number; bytes: number }> = (t as any)._speedSamples;
+          if (!samples) {
+            samples = [];
+            (t as any)._speedSamples = samples;
+          }
+          samples.push({ time: now, bytes: current });
+
+          // 移出超出 5 秒窗口范围的陈旧采样点（保留至少一个早于窗口的基准点以覆盖完整窗口跨度）
+          while (samples.length > 2 && now - samples[1].time >= SPEED_WINDOW_MS) {
+            samples.shift();
+          }
+
+          if (samples.length >= 2) {
+            const oldest = samples[0];
+            const timeDiff = (now - oldest.time) / 1000;
+            const byteDiff = current - oldest.bytes;
+            if (timeDiff > 0.3) {
+              t.speed = Math.max(0, Math.round(byteDiff / timeDiff));
+            }
+          } else {
+            t.speed = 0;
+          }
         } else {
           t.speed = 0;
+          delete (t as any)._speedSamples;
           delete (t as any)._lastReceivedBytes;
         }
       });

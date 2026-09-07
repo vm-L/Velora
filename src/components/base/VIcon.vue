@@ -54,7 +54,8 @@ export type IconName =
   | 'success'
   | 'warning'
   | 'error'
-  | 'loading';
+  | 'loading'
+  | 'external-link';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -63,6 +64,13 @@ const iconStyle = computed(() => {
 });
 
 const iconsMap: Record<string, string> = {
+  // 新标签页 / 外部链接
+  'external-link': `
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+    <polyline points="15 3 21 3 21 9"></polyline>
+    <line x1="10" y1="14" x2="21" y2="3"></line>
+  `,
+
   // 魔法棒 (解析规则 / 解析页面)
   'magic': `
     <line x1="20" y1="20" x2="10" y2="10"></line>
