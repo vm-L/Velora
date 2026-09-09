@@ -188,7 +188,7 @@ function createSplashWindow(theme: string = 'light') {
   });
 
   const iconDataUrl = getIconDataUrl();
-  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.1';
+  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.2';
   const html = getSplashHtml(theme, iconDataUrl, version);
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
@@ -654,9 +654,13 @@ function setupIpcHandlers() {
 
   ipcMain.handle('export-resources-json', async (_event, data: any) => {
     try {
+      const defaultFilename = data?.type === 'velora-config-backup'
+        ? `velora-config-backup-${new Date().toISOString().slice(0, 10)}.json`
+        : `velora-resources-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
       const { filePath } = await dialog.showSaveDialog({
-        title: '导出网站与 CMS 资源配置',
-        defaultPath: `velora-resources-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        title: '导出 Velora 配置文件',
+        defaultPath: defaultFilename,
         filters: [{ name: 'JSON 备份文件 (*.json)', extensions: ['json'] }]
       });
       if (!filePath) return { success: false, cancelled: true };
@@ -671,7 +675,7 @@ function setupIpcHandlers() {
   ipcMain.handle('import-resources-json', async () => {
     try {
       const { filePaths, canceled } = await dialog.showOpenDialog({
-        title: '选择要导入的资源 JSON 备份文件',
+        title: '选择要导入的 Velora JSON 备份文件',
         filters: [{ name: 'JSON 备份文件 (*.json)', extensions: ['json'] }],
         properties: ['openFile']
       });
@@ -680,8 +684,8 @@ function setupIpcHandlers() {
       }
       const content = await fs.promises.readFile(filePaths[0], 'utf-8');
       const data = JSON.parse(content);
-      if (!data || data.type !== 'velora-resource-backup') {
-        return { success: false, error: '无效的备份文件：格式缺失 velora-resource-backup 校验标识' };
+      if (!data || (data.type !== 'velora-resource-backup' && data.type !== 'velora-config-backup')) {
+        return { success: false, error: '无效的备份文件：缺失 velora-config-backup / velora-resource-backup 校验标识' };
       }
       return { success: true, data };
     } catch (err: any) {
@@ -1143,6 +1147,61 @@ ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: n
     return results;
   } catch (err: any) {
     logger.error('Main', `Failed to get directory tree for ${rootDir}: ${err.message}`);
+    return [];
+  }
+});
+
+ipcMain.handle('scan-directory-media-files', async (_event, rootDir: string, maxDepth: number = 3) => {
+  try {
+    if (!rootDir || !fs.existsSync(rootDir)) {
+      return [];
+    }
+
+    const MEDIA_EXTS = new Set([
+      'mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v', 'ts', 'm3u8',
+      'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'jpg', 'png', 'webp'
+    ]);
+
+    interface ExistingMediaFile {
+      name: string;
+      path: string;
+      dir: string;
+      relativeDir: string;
+    }
+
+    const results: ExistingMediaFile[] = [];
+
+    const scan = async (currentDir: string, depth: number) => {
+      if (depth > maxDepth) return;
+      try {
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue;
+          const fullPath = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            await scan(fullPath, depth + 1);
+          } else if (entry.isFile()) {
+            const ext = path.extname(entry.name).toLowerCase().replace(/^\./, '');
+            if (MEDIA_EXTS.has(ext)) {
+              const rel = path.relative(rootDir, currentDir).replace(/\\/g, '/');
+              results.push({
+                name: entry.name,
+                path: fullPath.replace(/\\/g, '/'),
+                dir: currentDir.replace(/\\/g, '/'),
+                relativeDir: rel || '.'
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        logger.warn('Main', `Error scanning media files in ${currentDir}: ${err.message}`);
+      }
+    };
+
+    await scan(rootDir, 1);
+    return results;
+  } catch (err: any) {
+    logger.error('Main', `Failed to scan media files for ${rootDir}: ${err.message}`);
     return [];
   }
 });

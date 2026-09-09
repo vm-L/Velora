@@ -39,6 +39,7 @@ interface Window {
     fileExists: (filePath: string) => Promise<boolean>
     moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
     getDirectoryTree: (rootDir: string, maxDepth?: number) => Promise<Array<{ path: string, name: string, depth: number }>>
+    scanDirectoryMediaFiles: (rootDir: string, maxDepth?: number) => Promise<Array<{ name: string; path: string; dir: string; relativeDir: string }>>
     readLocalDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string; items: Array<{ name: string; path: string; isDirectory: boolean; size: number; mtime: number; ext: string }> }>
     createLocalFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
     deleteLocalPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>

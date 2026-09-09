@@ -2,7 +2,7 @@
   <div
     v-if="visible"
     class="save-modal-window"
-    :class="{ 'is-highlighted': isHighlighted }"
+    :class="{ 'is-highlighted': isHighlighted, 'has-duplicate-warning': !!matchedExistingFile }"
     :style="{ top: position.y + 'px', left: position.x + 'px', zIndex: currentZIndex }"
     @mousedown="bringToFront"
     ref="dialogRef"
@@ -34,6 +34,13 @@
             :options="computedNameOptions"
             class="flex-1"
           />
+        </div>
+        <!-- 相似已有文件防重提醒 -->
+        <div v-if="matchedExistingFile" class="duplicate-file-alert" title="检测到下载目录树中已存在相似文件">
+          <VIcon name="warning" :size="13" color="var(--color-warning, #f59e0b)" />
+          <span class="duplicate-text">
+            已存在相似文件：{{ matchedExistingFile.relativeDir !== '.' ? `[${matchedExistingFile.relativeDir}] ` : '' }}{{ matchedExistingFile.name }}
+          </span>
         </div>
       </div>
 
@@ -90,6 +97,8 @@ import VButton from '../base/VButton.vue';
 import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 import { sanitizeFilename } from '../../utils/filename';
+import { findBestMatchingSubdirectory } from '../../utils/dirMatcher';
+import { isSimilarExistingFile } from '../../utils/similarity';
 
 const props = withDefaults(defineProps<{
   visible?: boolean;
@@ -132,6 +141,10 @@ const fileUrl = ref('');
 const fileName = ref('');
 const isSaving = ref(false);
 const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
+// 下载目录树中的已有文件列表
+const existingMediaFiles = ref<Array<{ name: string; path: string; dir: string; relativeDir: string }>>([]);
+// 命中的相似已有文件
+const matchedExistingFile = ref<{ name: string; path: string; dir: string; relativeDir: string } | null>(null);
 
 // 智能子目录匹配状态管理
 const isAutoMatchedDir = ref(false);
@@ -161,71 +174,19 @@ const dirTreeOptions = computed<InputSelectOption[]>(() => {
   }));
 });
 
-// 核心：子目录名称与文件名的智能最长匹配算法
+// 核心：子目录名称与文件名的智能单字打分匹配算法
 const matchBestSubdirectory = (currentFileName: string) => {
   if (!settingsState.autoMatchDownloadSubdir || isUserManualDir.value) return;
   if (!dirTreeList.value || dirTreeList.value.length === 0) return;
 
-  let targetName = (currentFileName || '').trim();
-  const ext = getExtension(targetName);
-  if (ext && targetName.endsWith('.' + ext)) {
-    targetName = targetName.slice(0, -(ext.length + 1));
-  }
-  // 去除常见媒体拓展名
-  targetName = targetName.replace(/\.(m3u8|ts|mp4|mkv|avi|mov|mp3|flac|wav|jpg|png|webp)$/i, '');
-  if (!targetName) return;
-
-  const normalizedTarget = targetName.toLowerCase();
-  let bestMatch: { path: string; name: string; depth: number; matchLength: number } | null = null;
-
-  for (const item of dirTreeList.value) {
-    const dirName = item.name.trim();
-    if (!dirName) continue;
-
-    const normalizedDirName = dirName.toLowerCase();
-    let matchLen = 0;
-
-    // 优先字面量包含匹配
-    if (normalizedTarget.includes(normalizedDirName)) {
-      matchLen = normalizedDirName.length;
-    } else {
-      // 安全正则匹配
-      try {
-        const escaped = normalizedDirName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const reg = new RegExp(escaped, 'i');
-        const m = normalizedTarget.match(reg);
-        if (m && m[0]) {
-          matchLen = m[0].length;
-        }
-      } catch {
-        matchLen = 0;
-      }
-    }
-
-    if (matchLen > 0) {
-      if (!bestMatch) {
-        bestMatch = { ...item, matchLength: matchLen };
-      } else {
-        // 1. 最长字符串匹配优先（如“盗梦空间”4字 > “诺兰”2字）
-        if (matchLen > bestMatch.matchLength) {
-          bestMatch = { ...item, matchLength: matchLen };
-        } else if (matchLen === bestMatch.matchLength) {
-          // 2. 匹配长度相同时，层级更深（更具体子分类）优先
-          if (item.depth > bestMatch.depth) {
-            bestMatch = { ...item, matchLength: matchLen };
-          }
-          // 3. 深度相同时，保持遍历顺序靠前的目录
-        }
-      }
-    }
-  }
+  const bestMatch = findBestMatchingSubdirectory(currentFileName, dirTreeList.value, { threshold: 2 });
 
   if (bestMatch) {
-    saveDirectory.value = bestMatch.path;
-    autoMatchedPath.value = bestMatch.path;
+    saveDirectory.value = bestMatch.item.path;
+    autoMatchedPath.value = bestMatch.item.path;
     isAutoMatchedDir.value = true;
   } else {
-    // 未匹配到任何子目录时，自动回退保持根下载目录
+    // 未达到匹配门槛或未匹配到任何子目录时，自动回退保持根下载目录
     if (!isUserManualDir.value) {
       saveDirectory.value = props.defaultDir;
       autoMatchedPath.value = '';
@@ -234,17 +195,41 @@ const matchBestSubdirectory = (currentFileName: string) => {
   }
 };
 
+// 检查是否存在高度相似的已有文件
+const checkDuplicateExistingFile = (currentFileName: string) => {
+  if (!currentFileName || existingMediaFiles.value.length === 0) {
+    matchedExistingFile.value = null;
+    return;
+  }
+  for (const file of existingMediaFiles.value) {
+    if (isSimilarExistingFile(file.name, currentFileName)) {
+      matchedExistingFile.value = file;
+      return;
+    }
+  }
+  matchedExistingFile.value = null;
+};
+
 const loadDirTree = async () => {
-  if (props.defaultDir && window.electronAPI && window.electronAPI.getDirectoryTree) {
+  if (props.defaultDir && window.electronAPI) {
     try {
-      const list = await window.electronAPI.getDirectoryTree(props.defaultDir, 3);
-      dirTreeList.value = list;
-      // 目录树扫描完成后，立即根据初始文件名执行初次自动匹配
-      if (!isUserManualDir.value && settingsState.autoMatchDownloadSubdir) {
-        matchBestSubdirectory(fileName.value);
+      if (window.electronAPI.getDirectoryTree) {
+        const list = await window.electronAPI.getDirectoryTree(props.defaultDir, 3);
+        dirTreeList.value = list;
+        // 目录树扫描完成后，立即根据初始文件名执行初次自动匹配
+        if (!isUserManualDir.value && settingsState.autoMatchDownloadSubdir) {
+          matchBestSubdirectory(fileName.value);
+        }
+      }
+      // 同步扫描下载目录树下的已有文件以进行相似度查重
+      if (window.electronAPI.scanDirectoryMediaFiles) {
+        const files = await window.electronAPI.scanDirectoryMediaFiles(props.defaultDir, 3);
+        existingMediaFiles.value = files || [];
+        checkDuplicateExistingFile(fileName.value);
       }
     } catch {
       dirTreeList.value = [];
+      existingMediaFiles.value = [];
     }
   }
 };
@@ -311,11 +296,12 @@ onMounted(() => {
   initData();
 });
 
-// 文件名修改时实时联动重新计算最佳子目录（防覆盖锁开启时除外）
+// 文件名修改时实时联动重新计算最佳子目录与已有文件防重检查
 watch(fileName, (newVal) => {
   if (!isUserManualDir.value && settingsState.autoMatchDownloadSubdir) {
     matchBestSubdirectory(newVal);
   }
+  checkDuplicateExistingFile(newVal);
 });
 
 watch(() => props.url, () => {
@@ -428,11 +414,39 @@ const confirmSave = async () => {
     }
   }
 
+  let targetSaveDir = saveDirectory.value;
+  let targetFileName = finalName;
+
+  // 如果检测到磁盘上已存在高度相似的文件
+  if (matchedExistingFile.value) {
+    const existing = matchedExistingFile.value;
+    const normalizePath = (p: string) => (p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    const currentSaveDirNorm = normalizePath(targetSaveDir);
+    const existingDirNorm = normalizePath(existing.dir);
+
+    // 情况：相似文件存在于其他子目录（如已有在 B-诺兰，当前选中了 C-盗梦空间）
+    if (existingDirNorm !== currentSaveDirNorm) {
+      const { useConfirm } = await import('../../composables/useConfirm');
+      const shouldOverwriteOriginal = await useConfirm().confirm({
+        title: '检测到已存在相似文件',
+        message: `在子目录 [${existing.relativeDir}] 已存在高度相似的文件：\n"${existing.name}"\n\n要直接覆盖替换该位置的原文件吗？\n点击【覆盖原文件】将切换并覆盖原文件；\n点击【继续下载】将仍保存至当前选中的目录。`,
+        confirmText: '覆盖原文件',
+        cancelText: '继续下载',
+        type: 'warning'
+      });
+
+      if (shouldOverwriteOriginal) {
+        targetSaveDir = existing.dir;
+        targetFileName = existing.name;
+      }
+    }
+  }
+
   isSaving.value = true;
 
   try {
-    const savePath = `${saveDirectory.value}/${finalName}`;
-    const added = await addDownload(targetUrl, finalName, savePath, props.pageUrl);
+    const savePath = `${targetSaveDir}/${targetFileName}`;
+    const added = await addDownload(targetUrl, targetFileName, savePath, props.pageUrl);
 
     if (added) {
       showMessage('已添加到下载任务', 'success');
@@ -467,6 +481,32 @@ const confirmSave = async () => {
   animation: save-dialog-shake 0.5s ease-in-out;
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent), 0 12px 28px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+.save-modal-window.has-duplicate-warning {
+  border-color: var(--color-warning, #f59e0b) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning, #f59e0b) 30%, transparent), 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+}
+
+.duplicate-file-alert {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--color-warning, #f59e0b) 10%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 25%, transparent);
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.duplicate-file-alert .duplicate-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @keyframes save-dialog-shake {

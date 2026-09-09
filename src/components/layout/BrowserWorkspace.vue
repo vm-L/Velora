@@ -122,11 +122,15 @@
       </webview>
     </div>
 
-    <!-- Hidden Webview for Silent Link Parsing -->
-    <div v-if="silentParseTarget" style="position: fixed; top: -9999px; left: -9999px; width: 1280px; height: 800px; opacity: 0; pointer-events: none; overflow: hidden; z-index: -999;">
+    <!-- Hidden Webviews for Concurrent Silent Link Parsing -->
+    <div
+      v-for="target in silentParseTargets"
+      :key="target.id"
+      style="position: fixed; top: -9999px; left: -9999px; width: 1280px; height: 800px; opacity: 0; pointer-events: none; overflow: hidden; z-index: -999;"
+    >
       <webview
-        :src="silentParseTarget.url"
-        :id="`silent-webview-${silentParseTarget.id}`"
+        :src="target.url"
+        :id="`silent-webview-${target.id}`"
         allowpopups
       ></webview>
     </div>
@@ -161,6 +165,7 @@
       v-model:visible="ruleSelectModalVisible"
       :rules="pendingMatchingRules"
       @select="onRuleSelected"
+      @cancel="onRuleSelectCancelled"
     />
 
     <!-- Context Menu -->
@@ -227,7 +232,7 @@ const contextMenuTabId = ref('');
 const contextMenuTargetUrl = ref('');
 const isContextMenuTargetLink = ref(false);
 const contextMenuRef = ref<HTMLElement | null>(null);
-const silentParseTarget = ref<{ url: string; id: string } | null>(null);
+const silentParseTargets = ref<Array<{ url: string; id: string }>>([]);
 
 const handleWebviewContextMenu = (e: any, tabId: string) => {
   if (isPickingElementImage.value || isPickingElementText.value) return;
@@ -300,10 +305,46 @@ const triggerCopyText = () => {
 };
 
 
+// 规则选择排队队列项类型
+interface PendingRuleSelectItem {
+  targetUrl: string;
+  htmlText: string;
+  toastId: string;
+  shortLabel: string;
+  matchedRules: ParseRule[];
+  evaluator?: (expr: string) => Promise<any>;
+}
+
 const ruleSelectModalVisible = ref(false);
 const pendingMatchingRules = ref<ParseRule[]>([]);
-const pendingParseContext = ref<{ targetUrl: string; htmlText: string; toastId: string; evaluator?: (expr: string) => Promise<any> } | null>(null);
-const isParsingHtml = ref(false);
+const pendingRuleSelectQueue: PendingRuleSelectItem[] = [];
+let currentRuleSelectItem: PendingRuleSelectItem | null = null;
+
+// 最大并发解析任务数限制（防止短时间拉起过多后台 webview 导致内存与 CPU 负载过高）
+const MAX_CONCURRENT_PARSE = 3;
+let activeParseCount = 0;
+const parseTaskQueue: Array<() => Promise<void>> = [];
+
+const enqueueParseTask = (task: () => Promise<void>) => {
+  if (activeParseCount < MAX_CONCURRENT_PARSE) {
+    runParseTask(task);
+  } else {
+    parseTaskQueue.push(task);
+  }
+};
+
+const runParseTask = async (task: () => Promise<void>) => {
+  activeParseCount++;
+  try {
+    await task();
+  } finally {
+    activeParseCount--;
+    if (parseTaskQueue.length > 0) {
+      const nextTask = parseTaskQueue.shift()!;
+      runParseTask(nextTask);
+    }
+  }
+};
 
 // 域名通配符匹配逻辑
 const matchDomainPattern = (urlStr: string, domainPattern: string): boolean => {
@@ -416,7 +457,8 @@ const executeMatchedRulesForDomain = async (
   htmlText: string,
   selectedDomain: string,
   toastId: string,
-  evaluator?: (expr: string) => Promise<any>
+  evaluator?: (expr: string) => Promise<any>,
+  shortLabel?: string
 ) => {
   const allRules = settingsState.customParseRules[props.resourceId] || [];
   const domainRules = allRules.filter(r => r.domain === selectedDomain);
@@ -445,7 +487,7 @@ const executeMatchedRulesForDomain = async (
       if (nameOptions.length === 0 || urlOptions.length === 0) {
         showMessage({
           id: toastId,
-          text: '解析失败：未从当前页面匹配到有效的文件名或文件链接',
+          text: `解析失败：未从页面匹配到有效的文件名或文件链接${shortLabel ? ` (${shortLabel})` : ''}`,
           type: 'error',
           duration: 2500
         });
@@ -465,7 +507,7 @@ const executeMatchedRulesForDomain = async (
 
       showMessage({
         id: toastId,
-        text: '解析成功',
+        text: `解析成功${shortLabel ? `: ${shortLabel}` : ''}`,
         type: 'success',
         duration: 1500
       });
@@ -485,7 +527,7 @@ const executeMatchedRulesForDomain = async (
         await navigator.clipboard.writeText(jsonString);
         showMessage({
           id: toastId,
-          text: '解析成功，数据已复制到剪切板！',
+          text: `解析成功，数据已复制到剪切板！${shortLabel ? ` (${shortLabel})` : ''}`,
           type: 'success',
           duration: 1500
         });
@@ -503,41 +545,101 @@ const executeMatchedRulesForDomain = async (
   if (!hasExec) {
     showMessage({
       id: toastId,
-      text: '所选规则暂无配置解析项',
+      text: `所选规则暂无配置解析项${shortLabel ? ` (${shortLabel})` : ''}`,
       type: 'error',
       duration: 2000
     });
   }
 };
 
-const triggerSilentParse = async () => {
-  const isLink = isContextMenuTargetLink.value;
-  contextMenuVisible.value = false;
-  const targetUrl = contextMenuTargetUrl.value || activeTab.value?.url;
-  if (!targetUrl) {
-    showMessage({ text: '未找到可解析的目标链接', type: 'error' });
-    return;
+// 规则选择排队调度管理
+const requestRuleSelection = (item: PendingRuleSelectItem) => {
+  if (ruleSelectModalVisible.value) {
+    pendingRuleSelectQueue.push(item);
+  } else {
+    openNextRuleSelection(item);
+  }
+};
+
+const openNextRuleSelection = (item: PendingRuleSelectItem) => {
+  currentRuleSelectItem = item;
+  pendingMatchingRules.value = item.matchedRules;
+  ruleSelectModalVisible.value = true;
+};
+
+const onRuleSelected = async (selectedDomain: string) => {
+  const current = currentRuleSelectItem;
+  currentRuleSelectItem = null;
+  ruleSelectModalVisible.value = false;
+
+  if (current) {
+    showMessage({
+      id: current.toastId,
+      text: `正在执行选定的解析规则 (${current.shortLabel})`,
+      type: 'loading',
+      duration: 0
+    });
+    executeMatchedRulesForDomain(
+      current.targetUrl,
+      current.htmlText,
+      selectedDomain,
+      current.toastId,
+      current.evaluator,
+      current.shortLabel
+    ).catch(err => {
+      logger.error('BrowserWorkspace', `执行选定规则失败: ${err}`);
+    });
   }
 
-  const toastId = `silent-parse-${props.resourceId}`;
-  const labelText = isLink ? '链接' : '页面';
+  // 若队列中还有待确认任务，继续弹出下一个
+  if (pendingRuleSelectQueue.length > 0) {
+    const nextItem = pendingRuleSelectQueue.shift()!;
+    nextTick(() => {
+      openNextRuleSelection(nextItem);
+    });
+  }
+};
 
-  showMessage({
-    id: toastId,
-    text: `正在解析${labelText}`,
-    type: 'loading',
-    duration: 0
-  });
+const onRuleSelectCancelled = () => {
+  const current = currentRuleSelectItem;
+  currentRuleSelectItem = null;
+  ruleSelectModalVisible.value = false;
 
-  isParsingHtml.value = true;
+  if (current) {
+    showMessage({
+      id: current.toastId,
+      text: `已取消规则选择 (${current.shortLabel})`,
+      type: 'info',
+      duration: 1500
+    });
+  }
+
+  // 若队列中还有待确认任务，继续弹出下一个
+  if (pendingRuleSelectQueue.length > 0) {
+    const nextItem = pendingRuleSelectQueue.shift()!;
+    nextTick(() => {
+      openNextRuleSelection(nextItem);
+    });
+  }
+};
+
+// 单个任务的独立执行逻辑
+const executeSingleParseTask = async (task: {
+  parseId: string;
+  toastId: string;
+  targetUrl: string;
+  isLink: boolean;
+  tabId: string;
+  shortLabel: string;
+}) => {
+  const { parseId, toastId, targetUrl, isLink, tabId, shortLabel } = task;
   try {
     let htmlText = '';
     let evaluator: ((expr: string) => Promise<any>) | undefined;
 
     if (isLink) {
-      // 解析超链接：在后台静默挂载一个完全隐藏的独立 webview 容器（标签栏完全不展示）
-      const parseId = Math.random().toString(36).substring(2, 9);
-      silentParseTarget.value = { url: targetUrl, id: parseId };
+      // 解析超链接：在后台挂载独立静默 webview 容器
+      silentParseTargets.value.push({ url: targetUrl, id: parseId });
       await nextTick();
 
       const hiddenWebview = document.getElementById(`silent-webview-${parseId}`) as any;
@@ -584,7 +686,7 @@ const triggerSilentParse = async () => {
       // 等待 600ms 以便动态 JS 渲染与 DOM 更新
       await new Promise(r => setTimeout(r, 600));
 
-      // 收集可能需要求值的全局变量表达式 (既非 /.../ 正则也非引号字符串)
+      // 收集可能需要求值的全局变量表达式
       const allRules = settingsState.customParseRules[props.resourceId] || [];
       const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
       const evalExprs: string[] = [];
@@ -622,10 +724,9 @@ const triggerSilentParse = async () => {
       };
 
       // 解析数据读取完毕，立即关闭销毁后台临时 webview
-      silentParseTarget.value = null;
+      silentParseTargets.value = silentParseTargets.value.filter(t => t.id !== parseId);
     } else {
       // 解析当前页面：直接获取当前活动 webview 的 DOM HTML，并在网页内部执行 JS 读取全局变量
-      const tabId = contextMenuTabId.value || workspace.value?.activeTabId;
       const webview = document.getElementById(`webview-${tabId}`) as any;
       if (webview && typeof webview.executeJavaScript === 'function') {
         try {
@@ -648,65 +749,96 @@ const triggerSilentParse = async () => {
     }
 
     const allRules = settingsState.customParseRules[props.resourceId] || [];
-
-    // 根据 URL 匹配该 workspace 下的解析规则
     const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
 
     if (matchedRules.length === 0) {
       showMessage({
         id: toastId,
-        text: '当前页面 URL 未匹配到任何解析规则，请先配置解析规则',
+        text: `未匹配到任何解析规则 (${shortLabel})`,
         type: 'error',
         duration: 2500
       });
       return;
     }
 
-    // 按域名规则匹配项分组
     const matchedDomainSet = new Set<string>();
     matchedRules.forEach(r => matchedDomainSet.add(r.domain));
     const uniqueMatchedDomains = Array.from(matchedDomainSet);
 
     if (uniqueMatchedDomains.length === 1) {
       // 单个匹配规则：直接执行规则
-      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator);
+      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator, shortLabel);
     } else {
-      // 多个匹配规则：弹窗让用户手动选择执行哪个规则
-      pendingMatchingRules.value = matchedRules;
-      pendingParseContext.value = { targetUrl, htmlText, toastId, evaluator };
-      ruleSelectModalVisible.value = true;
+      // 多个匹配规则：加入选择排队队列
       showMessage({
         id: toastId,
-        text: '页面匹配到多个解析规则，请在弹窗中选择',
+        text: `匹配到多个解析规则，请在弹窗中选择 (${shortLabel})`,
         type: 'info',
         duration: 2000
+      });
+      requestRuleSelection({
+        targetUrl,
+        htmlText,
+        toastId,
+        shortLabel,
+        matchedRules,
+        evaluator
       });
     }
   } catch (err: any) {
     showMessage({
       id: toastId,
-      text: `解析发生异常: ${err.message || err}`,
+      text: `解析发生异常 (${shortLabel}): ${err.message || err}`,
       type: 'error',
       duration: 2500
     });
   } finally {
-    isParsingHtml.value = false;
-    silentParseTarget.value = null;
+    if (isLink) {
+      silentParseTargets.value = silentParseTargets.value.filter(t => t.id !== parseId);
+    }
   }
 };
 
-const onRuleSelected = async (selectedDomain: string) => {
-  if (pendingParseContext.value) {
-    const { targetUrl, htmlText, toastId, evaluator } = pendingParseContext.value;
-    showMessage({
-      id: toastId,
-      text: '正在执行选定的解析规则',
-      type: 'loading',
-      duration: 0
-    });
-    await executeMatchedRulesForDomain(targetUrl, htmlText, selectedDomain, toastId, evaluator);
-    pendingParseContext.value = null;
+// 触发静默解析入口：支持多任务并发与队列调度
+const triggerSilentParse = () => {
+  const isLink = isContextMenuTargetLink.value;
+  const targetUrl = contextMenuTargetUrl.value || activeTab.value?.url;
+  const tabId = contextMenuTabId.value || workspace.value?.activeTabId || '';
+  contextMenuVisible.value = false;
+
+  if (!targetUrl) {
+    showMessage({ text: '未找到可解析的目标链接', type: 'error' });
+    return;
   }
+
+  const parseId = Math.random().toString(36).substring(2, 9);
+  const toastId = `silent-parse-${props.resourceId}-${parseId}`;
+
+  let shortLabel = '';
+  try {
+    const u = new URL(targetUrl);
+    shortLabel = u.hostname + (u.pathname.length > 1 ? (u.pathname.slice(0, 15) + (u.pathname.length > 15 ? '...' : '')) : '');
+  } catch {
+    shortLabel = isLink ? '链接' : '页面';
+  }
+
+  showMessage({
+    id: toastId,
+    text: `正在解析: ${shortLabel}`,
+    type: 'loading',
+    duration: 0
+  });
+
+  enqueueParseTask(async () => {
+    await executeSingleParseTask({
+      parseId,
+      toastId,
+      targetUrl,
+      isLink,
+      tabId,
+      shortLabel
+    });
+  });
 };
 const workspace = computed(() => getWorkspace(props.resourceId));
 const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId));

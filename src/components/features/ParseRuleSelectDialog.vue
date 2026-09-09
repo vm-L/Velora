@@ -47,7 +47,7 @@ const props = defineProps<{
   rules: ParseRule[];
 }>();
 
-const emit = defineEmits(['update:visible', 'select']);
+const emit = defineEmits(['update:visible', 'select', 'cancel']);
 
 const selectedDomain = ref('');
 
@@ -67,13 +67,14 @@ watch(() => props.visible, (val) => {
 });
 
 const close = () => {
+  emit('cancel');
   emit('update:visible', false);
 };
 
 const confirmSelect = () => {
   if (!selectedDomain.value) return;
   emit('select', selectedDomain.value);
-  close();
+  emit('update:visible', false);
 };
 </script>
 

@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import type { ConfigBackupSectionKey } from '../types/backup'
 
 export interface ResourceItem {
   id: string
@@ -340,92 +341,251 @@ export const useSettings = () => {
     return totalSynced;
   }
 
-  const exportResourceBackup = async () => {
-    const payload = {
-      type: 'velora-resource-backup',
-      version: '1.2.1',
+  const exportConfigBackup = async (selectedKeys: ConfigBackupSectionKey[]) => {
+    const payload: any = {
+      type: 'velora-config-backup',
+      version: '1.3.2',
       timestamp: Date.now(),
-      data: {
-        webResources: JSON.parse(JSON.stringify(state.externalSites || [])),
-        customParseRules: JSON.parse(JSON.stringify(state.customParseRules || {})),
-        customScripts: JSON.parse(JSON.stringify(state.customScripts || {})),
-        localResources: JSON.parse(JSON.stringify(state.localResources || [])),
-        cmsResources: JSON.parse(JSON.stringify(state.cmsResources || []))
-      }
+      data: {}
     };
+
+    if (selectedKeys.includes('general')) {
+      payload.data.general = {
+        theme: state.theme,
+        closeBehavior: state.closeBehavior
+      };
+    }
+
+    if (selectedKeys.includes('download')) {
+      payload.data.download = {
+        imageDirectory: state.imageDirectory,
+        audioDirectory: state.audioDirectory,
+        videoDirectory: state.videoDirectory,
+        fileDirectory: state.fileDirectory,
+        maxConcurrentDownloads: state.maxConcurrentDownloads,
+        maxMemoryBufferMB: state.maxMemoryBufferMB,
+        autoMatchDownloadSubdir: state.autoMatchDownloadSubdir
+      };
+    }
+
+    if (selectedKeys.includes('videoCompress')) {
+      payload.data.videoCompress = {
+        enableVideoCompress: state.enableVideoCompress,
+        videoCompressTargetGB: state.videoCompressTargetGB,
+        videoCompressMinBitrateKbps: state.videoCompressMinBitrateKbps
+      };
+    }
+
+    if (selectedKeys.includes('lanShare')) {
+      payload.data.lanShare = {
+        lanShareEnabled: state.lanShareEnabled,
+        lanSharePort: state.lanSharePort,
+        lanSharePassword: state.lanSharePassword,
+        lanShareAllowEdit: state.lanShareAllowEdit
+      };
+    }
+
+    if (selectedKeys.includes('externalSites')) {
+      const sites = JSON.parse(JSON.stringify(state.externalSites || []));
+      payload.data.externalSites = sites;
+      // 保持与旧版字段名 webResources 的兼容
+      payload.data.webResources = sites;
+    }
+
+    if (selectedKeys.includes('localResources')) {
+      payload.data.localResources = JSON.parse(JSON.stringify(state.localResources || []));
+    }
+
+    if (selectedKeys.includes('cmsResources')) {
+      payload.data.cmsResources = JSON.parse(JSON.stringify(state.cmsResources || []));
+    }
+
+    if (selectedKeys.includes('customParseRules')) {
+      payload.data.customParseRules = JSON.parse(JSON.stringify(state.customParseRules || {}));
+    }
+
+    if (selectedKeys.includes('customScripts')) {
+      payload.data.customScripts = JSON.parse(JSON.stringify(state.customScripts || {}));
+      payload.data.customStyles = JSON.parse(JSON.stringify(state.customStyles || {}));
+    }
+
+    if (selectedKeys.includes('adBlockSources')) {
+      payload.data.adBlockSources = JSON.parse(JSON.stringify(state.adBlockSources || []));
+    }
+
     return await window.electronAPI.exportResourcesJson(payload);
   };
 
-  const importResourceBackup = async (backupData: any, mode: 'overwrite' | 'merge') => {
+  const importConfigBackup = async (
+    backupData: any,
+    selectedKeys: ConfigBackupSectionKey[],
+    mode: 'merge' | 'overwrite'
+  ) => {
     const data = backupData?.data || {};
-    const newWebResources: ResourceItem[] = data.webResources || [];
-    const newParseRules: Record<string, ParseRule[]> = data.customParseRules || {};
-    const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
-    const newLocalResources: ResourceItem[] = data.localResources || [];
-    const newCmsResources: ResourceItem[] = data.cmsResources || [];
 
-    if (mode === 'overwrite') {
-      await saveExternalSites(newWebResources);
-      await saveCustomParseRules(newParseRules);
-      await saveCustomScripts(newScripts);
-      await saveLocalResources(newLocalResources);
-      await saveCmsResources(newCmsResources);
-    } else {
-      // 增量合并模式
-      const currentWebMap = new Map((state.externalSites || []).map(r => [r.id, r]));
-      for (const item of newWebResources) {
-        if (!currentWebMap.has(item.id)) {
-          currentWebMap.set(item.id, item);
-        }
-      }
-      await saveExternalSites(Array.from(currentWebMap.values()));
-
-      const mergedRules: Record<string, ParseRule[]> = { ...(state.customParseRules || {}) };
-      for (const [resId, rules] of Object.entries(newParseRules)) {
-        if (!mergedRules[resId]) {
-          mergedRules[resId] = rules;
-        } else {
-          const existingIds = new Set(mergedRules[resId].map(r => r.id));
-          for (const rule of rules) {
-            if (!existingIds.has(rule.id)) {
-              mergedRules[resId].push(rule);
-            }
-          }
-        }
-      }
-      await saveCustomParseRules(mergedRules);
-
-      const mergedScripts: Record<string, CustomScript[]> = { ...(state.customScripts || {}) };
-      for (const [resId, scripts] of Object.entries(newScripts)) {
-        if (!mergedScripts[resId]) {
-          mergedScripts[resId] = scripts;
-        } else {
-          const existingIds = new Set(mergedScripts[resId].map(s => s.id));
-          for (const script of scripts) {
-            if (!existingIds.has(script.id)) {
-              mergedScripts[resId].push(script);
-            }
-          }
-        }
-      }
-      await saveCustomScripts(mergedScripts);
-
-      const currentLocalMap = new Map((state.localResources || []).map(r => [r.id, r]));
-      for (const item of newLocalResources) {
-        if (!currentLocalMap.has(item.id)) {
-          currentLocalMap.set(item.id, item);
-        }
-      }
-      await saveLocalResources(Array.from(currentLocalMap.values()));
-
-      const currentCmsMap = new Map((state.cmsResources || []).map(r => [r.id, r]));
-      for (const item of newCmsResources) {
-        if (!currentCmsMap.has(item.id)) {
-          currentCmsMap.set(item.id, item);
-        }
-      }
-      await saveCmsResources(Array.from(currentCmsMap.values()));
+    // 1. 常规与外观
+    if (selectedKeys.includes('general') && data.general) {
+      if (data.general.theme) await setTheme(data.general.theme);
+      if (data.general.closeBehavior) await setCloseBehavior(data.general.closeBehavior);
     }
+
+    // 2. 下载与存储
+    if (selectedKeys.includes('download') && data.download) {
+      const d = data.download;
+      if (d.imageDirectory) await saveImageDirectory(d.imageDirectory);
+      if (d.audioDirectory) await saveAudioDirectory(d.audioDirectory);
+      if (d.videoDirectory) await saveVideoDirectory(d.videoDirectory);
+      if (d.fileDirectory) await saveFileDirectory(d.fileDirectory);
+      if (typeof d.maxConcurrentDownloads === 'number') await saveMaxConcurrentDownloads(d.maxConcurrentDownloads);
+      if (typeof d.maxMemoryBufferMB === 'number') await saveMaxMemoryBufferMB(d.maxMemoryBufferMB);
+      if (typeof d.autoMatchDownloadSubdir === 'boolean') await saveAutoMatchDownloadSubdir(d.autoMatchDownloadSubdir);
+    }
+
+    // 3. 视频自动压缩
+    if (selectedKeys.includes('videoCompress') && data.videoCompress) {
+      const v = data.videoCompress;
+      if (typeof v.enableVideoCompress === 'boolean') await saveEnableVideoCompress(v.enableVideoCompress);
+      if (typeof v.videoCompressTargetGB === 'number') await saveVideoCompressTargetGB(v.videoCompressTargetGB);
+      if (typeof v.videoCompressMinBitrateKbps === 'number') await saveVideoCompressMinBitrateKbps(v.videoCompressMinBitrateKbps);
+    }
+
+    // 4. 局域网服务
+    if (selectedKeys.includes('lanShare') && data.lanShare) {
+      const l = data.lanShare;
+      await saveLanShareSettings({
+        enabled: typeof l.lanShareEnabled === 'boolean' ? l.lanShareEnabled : state.lanShareEnabled,
+        port: typeof l.lanSharePort === 'number' ? l.lanSharePort : state.lanSharePort,
+        password: typeof l.lanSharePassword === 'string' ? l.lanSharePassword : state.lanSharePassword,
+        allowEdit: typeof l.lanShareAllowEdit === 'boolean' ? l.lanShareAllowEdit : state.lanShareAllowEdit
+      });
+    }
+
+    // 5. 网页资源站点 (兼容新旧字段名 externalSites / webResources)
+    const newWebResources: ResourceItem[] = data.externalSites || data.webResources || [];
+    if (selectedKeys.includes('externalSites') && newWebResources.length > 0) {
+      if (mode === 'overwrite') {
+        await saveExternalSites(newWebResources);
+      } else {
+        const currentWebMap = new Map((state.externalSites || []).map(r => [r.id, r]));
+        for (const item of newWebResources) {
+          if (!currentWebMap.has(item.id)) {
+            currentWebMap.set(item.id, item);
+          }
+        }
+        await saveExternalSites(Array.from(currentWebMap.values()));
+      }
+    }
+
+    // 6. 本地资源挂载
+    const newLocalResources: ResourceItem[] = data.localResources || [];
+    if (selectedKeys.includes('localResources') && newLocalResources.length > 0) {
+      if (mode === 'overwrite') {
+        await saveLocalResources(newLocalResources);
+      } else {
+        const currentLocalMap = new Map((state.localResources || []).map(r => [r.id, r]));
+        for (const item of newLocalResources) {
+          if (!currentLocalMap.has(item.id)) {
+            currentLocalMap.set(item.id, item);
+          }
+        }
+        await saveLocalResources(Array.from(currentLocalMap.values()));
+      }
+    }
+
+    // 7. CMS 资源站
+    const newCmsResources: ResourceItem[] = data.cmsResources || [];
+    if (selectedKeys.includes('cmsResources') && newCmsResources.length > 0) {
+      if (mode === 'overwrite') {
+        await saveCmsResources(newCmsResources);
+      } else {
+        const currentCmsMap = new Map((state.cmsResources || []).map(r => [r.id, r]));
+        for (const item of newCmsResources) {
+          if (!currentCmsMap.has(item.id)) {
+            currentCmsMap.set(item.id, item);
+          }
+        }
+        await saveCmsResources(Array.from(currentCmsMap.values()));
+      }
+    }
+
+    // 8. 域名解析规则
+    const newParseRules: Record<string, ParseRule[]> = data.customParseRules || {};
+    if (selectedKeys.includes('customParseRules') && Object.keys(newParseRules).length > 0) {
+      if (mode === 'overwrite') {
+        await saveCustomParseRules(newParseRules);
+      } else {
+        const mergedRules: Record<string, ParseRule[]> = { ...(state.customParseRules || {}) };
+        for (const [resId, rules] of Object.entries(newParseRules)) {
+          if (!mergedRules[resId]) {
+            mergedRules[resId] = rules;
+          } else {
+            const existingIds = new Set(mergedRules[resId].map(r => r.id));
+            for (const rule of rules) {
+              if (!existingIds.has(rule.id)) {
+                mergedRules[resId].push(rule);
+              }
+            }
+          }
+        }
+        await saveCustomParseRules(mergedRules);
+      }
+    }
+
+    // 9. 自定义注入脚本与样式
+    const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
+    const newStyles: Record<string, Record<string, string>> = data.customStyles || {};
+    if (selectedKeys.includes('customScripts')) {
+      if (mode === 'overwrite') {
+        if (data.customScripts) await saveCustomScripts(newScripts);
+        if (data.customStyles) await saveCustomStyles(newStyles);
+      } else {
+        if (data.customScripts) {
+          const mergedScripts: Record<string, CustomScript[]> = { ...(state.customScripts || {}) };
+          for (const [resId, scripts] of Object.entries(newScripts)) {
+            if (!mergedScripts[resId]) {
+              mergedScripts[resId] = scripts;
+            } else {
+              const existingIds = new Set(mergedScripts[resId].map(s => s.id));
+              for (const script of scripts) {
+                if (!existingIds.has(script.id)) {
+                  mergedScripts[resId].push(script);
+                }
+              }
+            }
+          }
+          await saveCustomScripts(mergedScripts);
+        }
+        if (data.customStyles) {
+          const mergedStyles = { ...(state.customStyles || {}), ...newStyles };
+          await saveCustomStyles(mergedStyles);
+        }
+      }
+    }
+
+    // 10. 广告过滤规则源
+    const newAdSources: AdBlockSource[] = data.adBlockSources || [];
+    if (selectedKeys.includes('adBlockSources') && newAdSources.length > 0) {
+      if (mode === 'overwrite') {
+        await saveAdBlockSources(newAdSources);
+      } else {
+        const currentSourcesMap = new Map(state.adBlockSources.map(s => [s.id, s]));
+        for (const s of newAdSources) {
+          if (!currentSourcesMap.has(s.id)) {
+            currentSourcesMap.set(s.id, s);
+          }
+        }
+        await saveAdBlockSources(Array.from(currentSourcesMap.values()));
+      }
+      await recompileRules();
+    }
+  };
+
+  const exportResourceBackup = async () => {
+    return await exportConfigBackup(['externalSites', 'localResources', 'cmsResources', 'customParseRules', 'customScripts']);
+  };
+
+  const importResourceBackup = async (backupData: any, mode: 'overwrite' | 'merge') => {
+    await importConfigBackup(backupData, ['externalSites', 'localResources', 'cmsResources', 'customParseRules', 'customScripts'], mode);
   };
 
   const saveLanShareEnabled = async (enabled: boolean) => {
@@ -506,6 +666,8 @@ export const useSettings = () => {
     recompileRules,
     exportResourceBackup,
     importResourceBackup,
+    exportConfigBackup,
+    importConfigBackup,
     saveLanShareEnabled,
     saveLanSharePort,
     saveLanSharePassword,
