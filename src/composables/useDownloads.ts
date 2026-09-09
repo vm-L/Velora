@@ -58,6 +58,23 @@ export const useDownloads = () => {
     // 5秒滑动统计窗口采样计算，平滑瞬时波动，消除分片交替时的 0B/s 抖动
     const SPEED_WINDOW_MS = 5000;
     setInterval(() => {
+      if (tasks.value.length === 0) return;
+      const hasDownloading = tasks.value.some(t => t.status === 'downloading');
+      if (!hasDownloading) {
+        // 当没有下载中任务时，仅在存在残留测速样本或速度不为 0 时做一次清理重置，随后空闲跳过
+        let hadDirtyState = false;
+        for (let i = 0; i < tasks.value.length; i++) {
+          const t = tasks.value[i];
+          if ((t as any)._speedSamples || t.speed > 0) {
+            t.speed = 0;
+            delete (t as any)._speedSamples;
+            delete (t as any)._lastReceivedBytes;
+            hadDirtyState = true;
+          }
+        }
+        if (!hadDirtyState) return;
+      }
+
       const now = Date.now();
       tasks.value.forEach(t => {
         if (t.status === 'downloading') {

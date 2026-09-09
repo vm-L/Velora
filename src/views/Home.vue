@@ -267,6 +267,7 @@ import { useNotification } from '../composables/useNotification';
 import { useSettings } from '../composables/useSettings';
 import { useSaveMediaDialog } from '../composables/useSaveMediaDialog';
 import { logger } from '../services/logger';
+import { formatBytes } from '../utils/format';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
@@ -656,14 +657,6 @@ const getStatusText = (status: string) => {
     case 'file_corrupted': return '本地文件已损坏';
     default: return '未知状态';
   }
-};
-
-const formatBytes = (bytes: number) => {
-  if (bytes === 0 || !bytes) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
 const getDirectory = (savePath: string) => {

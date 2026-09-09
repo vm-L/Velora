@@ -1,4 +1,4 @@
-export function getSplashHtml(theme: string, iconDataUrl: string, version: string = "1.3.0"): string {
+export function getSplashHtml(theme: string, iconDataUrl: string, version: string = "1.3.1"): string {
   const isDark = theme === "dark";
 
   return `<!DOCTYPE html>

@@ -126,6 +126,7 @@ import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 import { useSettings, type ParseRule } from '../../composables/useSettings';
 import { useMessage } from '../../composables/useMessage';
+import { useDraggableDialog } from '../../composables/useDraggableDialog';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -139,28 +140,12 @@ const emit = defineEmits(['update:modelValue', 'save']);
 const { state: settingsState, saveCustomParseRules } = useSettings();
 const { showMessage } = useMessage();
 
-const position = reactive({ x: 300, y: 100 });
-let isDraggingModal = false;
-let dragOffset = { x: 0, y: 0 };
-
-const startDrag = (e: MouseEvent) => {
-  isDraggingModal = true;
-  dragOffset = { x: e.clientX - position.x, y: e.clientY - position.y };
-  window.addEventListener('mousemove', onDrag);
-  window.addEventListener('mouseup', stopDrag);
-};
-
-const onDrag = (e: MouseEvent) => {
-  if (!isDraggingModal) return;
-  position.x = e.clientX - dragOffset.x;
-  position.y = e.clientY - dragOffset.y;
-};
-
-const stopDrag = () => {
-  isDraggingModal = false;
-  window.removeEventListener('mousemove', onDrag);
-  window.removeEventListener('mouseup', stopDrag);
-};
+const { position, startDrag } = useDraggableDialog({
+  initialX: 300,
+  initialY: 100,
+  dialogWidth: 420,
+  dialogHeight: 520
+});
 
 const actionTypeOptions: InputSelectOption[] = [
   { label: '下载', value: 'download' },

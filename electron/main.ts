@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
+import { scanDirectory, resolveAppIconPath } from './utils/fileSystem'
 
 // 启动渲染与图形硬件加速配置
 app.commandLine.appendSwitch('disable-http-cache', 'false');
@@ -124,20 +125,12 @@ let isFirstScreenReady = false
 
 // 获取应用图标 Base64 Data URL (供 Splash 与 Tray 备用)
 const getIconDataUrl = (): string => {
-  const iconPaths = [
-    path.join(__dirname, '../public/icon.png'),
-    path.join(__dirname, '../../public/icon.png'),
-    path.join(process.cwd(), 'public/icon.png'),
-    path.join(process.resourcesPath || '', 'public/icon.png'),
-    path.join(process.resourcesPath || '', 'app.asar/public/icon.png')
-  ];
-  for (const p of iconPaths) {
-    if (p && fs.existsSync(p)) {
-      try {
-        const buf = fs.readFileSync(p);
-        return `data:image/png;base64,${buf.toString('base64')}`;
-      } catch {}
-    }
+  const iconPath = resolveAppIconPath();
+  if (iconPath) {
+    try {
+      const buf = fs.readFileSync(iconPath);
+      return `data:image/png;base64,${buf.toString('base64')}`;
+    } catch {}
   }
   return '';
 };
@@ -150,25 +143,24 @@ if (process.platform === 'win32') {
 }
 
 const getAppIcon = () => {
-  const iconPaths = [
+  const icoCandidates = [
     path.join(__dirname, '../public/icon.ico'),
-    path.join(__dirname, '../public/icon.png'),
     path.join(__dirname, '../../public/icon.ico'),
-    path.join(__dirname, '../../public/icon.png'),
     path.join(process.resourcesPath || '', 'public/icon.ico'),
-    path.join(process.resourcesPath || '', 'public/icon.png'),
     path.join(process.resourcesPath || '', 'app.asar/public/icon.ico'),
-    path.join(process.resourcesPath || '', 'app.asar/public/icon.png'),
     path.join(process.cwd(), 'build/icon.ico'),
-    path.join(process.cwd(), 'public/icon.ico'),
-    path.join(process.cwd(), 'public/icon.png'),
-    path.join(process.cwd(), 'build/icon.png')
+    path.join(process.cwd(), 'public/icon.ico')
   ];
-  for (const p of iconPaths) {
+  for (const p of icoCandidates) {
     if (p && fs.existsSync(p)) {
       const img = nativeImage.createFromPath(p);
       if (!img.isEmpty()) return img;
     }
+  }
+  const pngPath = resolveAppIconPath();
+  if (pngPath) {
+    const img = nativeImage.createFromPath(pngPath);
+    if (!img.isEmpty()) return img;
   }
   return iconBase64 ? nativeImage.createFromDataURL(iconBase64) : nativeImage.createEmpty();
 };
@@ -196,7 +188,7 @@ function createSplashWindow(theme: string = 'light') {
   });
 
   const iconDataUrl = getIconDataUrl();
-  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.0';
+  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.1';
   const html = getSplashHtml(theme, iconDataUrl, version);
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
@@ -263,6 +255,7 @@ const clearPrivacyData = async () => {
 export const globalMediaPageMap = new Map<string, string>();
 export const globalHostPageMap = new Map<string, string>();
 export const webContentsUrlMap = new Map<number, string>();
+const MAX_REFERER_CACHE_SIZE = 1000;
 
 export function isLocalUrl(urlStr?: string): boolean {
   if (!urlStr) return true;
@@ -282,11 +275,21 @@ export function registerMediaReferer(mediaUrl: string, pageUrl: string) {
     const u = new URL(pageUrl);
     if (u.origin && u.origin !== 'null') targetOrigin = u.origin;
   } catch {}
+
+  if (globalMediaPageMap.size >= MAX_REFERER_CACHE_SIZE) {
+    const oldestKey = globalMediaPageMap.keys().next().value;
+    if (oldestKey) globalMediaPageMap.delete(oldestKey);
+  }
   globalMediaPageMap.set(mediaUrl, targetOrigin);
+
   try {
     const u = new URL(mediaUrl);
     const host = u.hostname.toLowerCase();
     if (host) {
+      if (globalHostPageMap.size >= MAX_REFERER_CACHE_SIZE) {
+        const oldestHost = globalHostPageMap.keys().next().value;
+        if (oldestHost) globalHostPageMap.delete(oldestHost);
+      }
       globalHostPageMap.set(host, targetOrigin);
     }
   } catch {}
@@ -373,17 +376,7 @@ function createWindow() {
     },
   })
 
-  ipcMain.on('window-minimize', () => {
-    mainWindow?.minimize()
-  })
-
-  ipcMain.on('window-maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize()
-    } else {
-      mainWindow?.maximize()
-    }
-  })
+  downloader.setWindow(mainWindow)
 
   mainWindow.on('maximize', () => {
     mainWindow?.webContents.send('window-maximized')
@@ -403,6 +396,39 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    downloader.setWindow(null)
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+  } else {
+    mainWindow.loadFile(path.join(process.env.DIST, 'index.html'))
+  }
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools()
+  }
+
+  mainWindow.once('ready-to-show', () => {
+    updateSplash(85, '正在装载应用数据与首屏...');
+  })
+}
+
+let isIpcInitialized = false;
+
+function setupIpcHandlers() {
+  if (isIpcInitialized) return;
+  isIpcInitialized = true;
+
+  ipcMain.on('window-minimize', () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow?.maximize()
+    }
   })
 
   ipcMain.on('window-close', async () => {
@@ -412,6 +438,10 @@ function createWindow() {
     } else {
       app.quit()
     }
+  })
+
+  ipcMain.on('app-first-screen-ready', () => {
+    finishStartupAndShowMain();
   })
 
   ipcMain.on('open-external', (_, url) => {
@@ -658,23 +688,13 @@ function createWindow() {
       return { success: false, error: `读取解析备份文件失败: ${err.message || String(err)}` };
     }
   });
+}
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-  } else {
-    mainWindow.loadFile(path.join(process.env.DIST, 'index.html'))
-  }
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools()
-  }
+let isInterceptorsInitialized = false;
 
-  mainWindow.once('ready-to-show', () => {
-    updateSplash(85, '正在装载应用数据与首屏...');
-  })
-
-  ipcMain.on('app-first-screen-ready', () => {
-    finishStartupAndShowMain();
-  })
+function setupNetworkInterceptors() {
+  if (isInterceptorsInitialized) return;
+  isInterceptorsInitialized = true;
 
   // Network Sniffer & AdBlock Interceptor
   session.defaultSession.webRequest.onBeforeRequest(
@@ -921,6 +941,8 @@ ipcMain.handle('stop-lan-server', async () => {
 
 app.whenReady().then(async () => {
   setupStoreHandlers();
+  setupIpcHandlers();
+  setupNetworkInterceptors();
 
   // 立即创建并展示冷启动 Splash 悬浮卡片（极速渲染）
   const theme = (await storeManager.getSetting('theme')) || 'light';
@@ -989,6 +1011,10 @@ app.on('before-quit', (e) => {
 })
 
 app.on('web-contents-created', (event, contents) => {
+  contents.once('destroyed', () => {
+    webContentsUrlMap.delete(contents.id);
+  });
+
   contents.on('did-navigate', (_, url) => {
     if (url && !isLocalUrl(url)) {
       webContentsUrlMap.set(contents.id, url);
@@ -1122,47 +1148,11 @@ ipcMain.handle('get-directory-tree', async (_event, rootDir: string, maxDepth: n
 });
 
 ipcMain.handle('read-local-directory', async (_event, dirPath: string) => {
-  try {
-    if (!dirPath || !fs.existsSync(dirPath)) {
-      return { success: false, error: '目录不存在', items: [] };
-    }
-    const stat = await fs.promises.stat(dirPath);
-    if (!stat.isDirectory()) {
-      return { success: false, error: '路径不是有效目录', items: [] };
-    }
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    const items = await Promise.all(
-      entries.map(async (entry) => {
-        const fullPath = path.join(dirPath, entry.name);
-        try {
-          const itemStat = await fs.promises.stat(fullPath);
-          const isDir = itemStat.isDirectory();
-          const ext = isDir ? '' : path.extname(entry.name).toLowerCase().replace(/^\./, '');
-          return {
-            name: entry.name,
-            path: fullPath,
-            isDirectory: isDir,
-            size: isDir ? 0 : itemStat.size,
-            mtime: itemStat.mtimeMs,
-            ext
-          };
-        } catch {
-          return {
-            name: entry.name,
-            path: fullPath,
-            isDirectory: entry.isDirectory(),
-            size: 0,
-            mtime: 0,
-            ext: ''
-          };
-        }
-      })
-    );
-    return { success: true, items };
-  } catch (err: any) {
-    logger.error('Main', `Failed to read directory ${dirPath}: ${err.message}`);
-    return { success: false, error: err.message, items: [] };
+  const res = await scanDirectory(dirPath);
+  if (!res.success) {
+    logger.error('Main', `Failed to read directory ${dirPath}: ${res.error}`);
   }
+  return res;
 });
 
 ipcMain.handle('create-local-folder', async (_event, folderPath: string) => {

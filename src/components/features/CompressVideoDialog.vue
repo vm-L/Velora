@@ -98,6 +98,7 @@ import VInput from '../base/VInput.vue';
 import { logger } from '../../services/logger';
 import { useSettings } from '../../composables/useSettings';
 import type { DownloadTask } from '../../db';
+import { formatBytes } from '../../utils/format';
 
 const props = defineProps<{
   visible: boolean;
@@ -120,14 +121,6 @@ const originalBitrate = ref(0);
 
 const targetSizeGB = ref<number>(1.5);
 const targetBitrateKbps = ref<number>(1500);
-
-const formatBytes = (bytes: number) => {
-  if (!bytes || bytes <= 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
 
 const formattedDuration = computed(() => {
   const d = Math.round(durationSeconds.value);

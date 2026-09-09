@@ -476,6 +476,7 @@ import BatchCompressVideoDialog from '../features/BatchCompressVideoDialog.vue';
 import { useMessage } from '../../composables/useMessage';
 import { useConfirm } from '../../composables/useConfirm';
 import { logger } from '../../services/logger';
+import { formatBytes } from '../../utils/format';
 
 export interface LocalFileItem {
   name: string;
@@ -1040,14 +1041,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
       handleDelete(singleSelectedItem.value);
     }
   }
-};
-
-const formatBytes = (bytes: number): string => {
-  if (!bytes || bytes <= 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
 const formatTime = (ts: number): string => {

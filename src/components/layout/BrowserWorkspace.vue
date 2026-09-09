@@ -183,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue';
+import { ref, watch, onMounted, onUnmounted, computed, nextTick, defineAsyncComponent } from 'vue';
 import { useWorkspaces } from '../../composables/useWorkspaces';
 import { useSettings, type ParseRule, type ParseRuleItem } from '../../composables/useSettings';
 import { logger } from '../../services/logger';
@@ -191,8 +191,8 @@ import { sanitizeFilename } from '../../utils/filename';
 
 import VButton from '../base/VButton.vue';
 import VIcon from '../base/VIcon.vue';
-import InspectorDialog from '../features/InspectorDialog.vue';
-import ScriptInjectorDialog from '../features/ScriptInjectorDialog.vue';
+const InspectorDialog = defineAsyncComponent(() => import('../features/InspectorDialog.vue'));
+const ScriptInjectorDialog = defineAsyncComponent(() => import('../features/ScriptInjectorDialog.vue'));
 import ParseRuleDialog from '../features/ParseRuleDialog.vue';
 import ParseRuleSelectDialog from '../features/ParseRuleSelectDialog.vue';
 import SnifferDropdown from '../features/SnifferDropdown.vue';

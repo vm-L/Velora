@@ -466,7 +466,7 @@ const confirmSave = async () => {
 .save-modal-window.is-highlighted {
   animation: save-dialog-shake 0.5s ease-in-out;
   border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 12px 28px -5px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent), 0 12px 28px -5px rgba(0, 0, 0, 0.3) !important;
 }
 
 @keyframes save-dialog-shake {
@@ -554,8 +554,8 @@ const confirmSave = async () => {
   align-items: center;
   gap: 4px;
   padding: 1px 6px;
-  background: rgba(var(--color-accent-rgb, 59, 130, 246), 0.12);
-  color: var(--color-accent, #3b82f6);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;

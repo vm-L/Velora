@@ -1,5 +1,10 @@
+let cachedLanWebHtml: string | null = null;
+
 export function getLanWebHtml(): string {
-  return `<!DOCTYPE html>
+  if (cachedLanWebHtml) {
+    return cachedLanWebHtml;
+  }
+  cachedLanWebHtml = `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8">
@@ -1713,4 +1718,5 @@ export function getLanWebHtml(): string {
   </script>
 </body>
 </html>`;
+  return cachedLanWebHtml;
 }

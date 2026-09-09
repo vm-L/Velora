@@ -59,6 +59,8 @@ import { keymap } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
 
+import { useDraggableDialog } from '../../composables/useDraggableDialog';
+
 const props = defineProps<{
   modelValue: boolean;
   url?: string;
@@ -68,9 +70,14 @@ const props = defineProps<{
 const emit = defineEmits(['update:modelValue', 'applyPreview', 'save', 'interaction-start', 'interaction-end']);
 
 const domain = ref('');
-const position = ref({ x: 100, y: 100 });
-let isDragging = false;
-let dragOffset = { x: 0, y: 0 };
+const { position, startDrag } = useDraggableDialog({
+  initialX: 100,
+  initialY: 100,
+  dialogWidth: 420,
+  dialogHeight: 480,
+  onInteractionStart: () => emit('interaction-start'),
+  onInteractionEnd: () => emit('interaction-end')
+});
 
 const editorContainer = ref<HTMLElement | null>(null);
 let editorView: EditorView | null = null;
@@ -254,36 +261,6 @@ const save = () => {
 const close = () => {
   emit('applyPreview', '');
   emit('update:modelValue', false);
-};
-
-const startDrag = (e: MouseEvent) => {
-  if ((e.target as HTMLElement).closest('.action-btn')) return;
-  isDragging = true;
-  dragOffset.x = e.clientX - position.value.x;
-  dragOffset.y = e.clientY - position.value.y;
-  emit('interaction-start');
-  document.addEventListener('mousemove', onDrag);
-  document.addEventListener('mouseup', stopDrag);
-};
-
-const onDrag = (e: MouseEvent) => {
-  if (!isDragging) return;
-  let newX = e.clientX - dragOffset.x;
-  let newY = e.clientY - dragOffset.y;
-  const dialogW = 420;
-  const dialogH = 480;
-  if (newX < 0) newX = 0;
-  if (newY < 0) newY = 0;
-  if (newX + dialogW > window.innerWidth) newX = window.innerWidth - dialogW;
-  if (newY + dialogH > window.innerHeight) newY = window.innerHeight - dialogH;
-  position.value = { x: newX, y: newY };
-};
-
-const stopDrag = () => {
-  isDragging = false;
-  emit('interaction-end');
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', stopDrag);
 };
 </script>
 

@@ -5,6 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { logger } from './logger';
 import { getLanWebHtml } from './lanWebTemplate';
+import { scanDirectory, resolveAppIconPath } from './utils/fileSystem';
 
 export interface LanServerConfig {
   enabled: boolean;
@@ -177,18 +178,10 @@ export class LanServer {
 
       // Static assets: App Icon / Favicon
       if (pathname === '/icon.png' || pathname === '/favicon.ico') {
-        const iconPaths = [
-          path.join(__dirname, '../public/icon.png'),
-          path.join(__dirname, '../../public/icon.png'),
-          path.join(process.cwd(), 'public/icon.png'),
-          path.join(process.resourcesPath || '', 'public/icon.png'),
-          path.join(process.resourcesPath || '', 'app.asar/public/icon.png')
-        ];
-        for (const p of iconPaths) {
-          if (p && fs.existsSync(p)) {
-            res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
-            return fs.createReadStream(p).pipe(res);
-          }
+        const iconPath = resolveAppIconPath();
+        if (iconPath) {
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+          return fs.createReadStream(iconPath).pipe(res);
         }
         res.writeHead(404);
         return res.end();
@@ -254,45 +247,12 @@ export class LanServer {
           return this.sendJson(res, 403, { success: false, error: '拒绝访问非挂载资源目录' });
         }
 
-        if (!fs.existsSync(targetPath)) {
-          return this.sendJson(res, 404, { success: false, error: '目录不存在' });
+        const scanRes = await scanDirectory(targetPath);
+        if (!scanRes.success) {
+          return this.sendJson(res, 400, { success: false, error: scanRes.error });
         }
 
-        const stat = await fs.promises.stat(targetPath);
-        if (!stat.isDirectory()) {
-          return this.sendJson(res, 400, { success: false, error: '目标非目录' });
-        }
-
-        const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
-        const items = await Promise.all(
-          entries.map(async (entry) => {
-            const fullPath = path.join(targetPath, entry.name).replace(/\\/g, '/');
-            try {
-              const itemStat = await fs.promises.stat(fullPath);
-              const isDir = itemStat.isDirectory();
-              const ext = isDir ? '' : path.extname(entry.name).toLowerCase().replace(/^\./, '');
-              return {
-                name: entry.name,
-                path: fullPath,
-                isDirectory: isDir,
-                size: isDir ? 0 : itemStat.size,
-                mtime: itemStat.mtimeMs,
-                ext
-              };
-            } catch {
-              return {
-                name: entry.name,
-                path: fullPath,
-                isDirectory: entry.isDirectory(),
-                size: 0,
-                mtime: 0,
-                ext: ''
-              };
-            }
-          })
-        );
-
-        return this.sendJson(res, 200, { success: true, items });
+        return this.sendJson(res, 200, { success: true, items: scanRes.items });
       }
 
       // Stream Range Stream (Video / Audio / Image / Static Files)
