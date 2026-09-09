@@ -22,6 +22,7 @@ class StoreManager {
         fileDirectory: app.getPath('downloads'),
         maxConcurrentDownloads: 3,
         maxMemoryBufferMB: 128,
+        autoMatchDownloadSubdir: true,
         lanShareEnabled: false,
         lanSharePort: 8899,
         lanSharePassword: '',

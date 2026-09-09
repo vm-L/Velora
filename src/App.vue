@@ -25,6 +25,7 @@
   <v-confirm-dialog />
   <v-message-bar />
   <v-notification-bar />
+  <SaveMediaContainer />
 </template>
 
 <script setup lang="ts">
@@ -35,6 +36,7 @@ import Sidebar from './components/layout/Sidebar.vue';
 import VConfirmDialog from './components/feedback/VConfirmDialog.vue';
 import VMessageBar from './components/feedback/VMessageBar.vue';
 import VNotificationBar from './components/feedback/VNotificationBar.vue';
+import SaveMediaContainer from './components/features/SaveMediaContainer.vue';
 const BrowserWorkspace = defineAsyncComponent(() => import('./components/layout/BrowserWorkspace.vue'));
 const CMSWorkspace = defineAsyncComponent(() => import('./components/layout/CMSWorkspace.vue'));
 const LocalWorkspace = defineAsyncComponent(() => import('./components/layout/LocalWorkspace.vue'));
@@ -66,6 +68,11 @@ onMounted(async () => {
   if (!isInitialized.value) {
     await loadTasks();
     initListeners();
+  }
+
+  // 通知主进程首屏已就绪，可以安全平滑地淡出 Splash 悬浮窗并展示主窗口
+  if (window.electronAPI && window.electronAPI.notifyFirstScreenReady) {
+    window.electronAPI.notifyFirstScreenReady();
   }
 
   // 延迟在首屏渲染完成后的空闲时间执行磁盘审计与后台资源预加载，避免启动风暴

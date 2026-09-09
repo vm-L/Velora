@@ -319,17 +319,16 @@ const confirmMove = () => {
     }
 
     &.active {
-      background: var(--accent-light, rgba(59, 130, 246, 0.12));
-      color: var(--accent-color, #3b82f6);
+      background: var(--bg-surface-active);
+      color: var(--color-accent);
 
       .folder-icon {
-        stroke: var(--accent-color, #3b82f6);
-        fill: var(--accent-light, rgba(59, 130, 246, 0.12));
+        stroke: var(--color-accent);
       }
 
       .node-name {
         font-weight: 600;
-        color: var(--accent-color, #3b82f6);
+        color: var(--color-accent);
       }
     }
 
@@ -360,7 +359,7 @@ const confirmMove = () => {
   width: 20px;
   height: 20px;
   border: 2px solid var(--border-light);
-  border-top-color: var(--accent-color, #3b82f6);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

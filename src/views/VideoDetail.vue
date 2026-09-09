@@ -178,15 +178,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 保存视频弹窗 -->
-    <save-media-dialog 
-      v-model:visible="saveDialogVisible"
-      :url="saveTargetUrl"
-      :default-name="saveDefaultName"
-      :default-dir="saveDefaultDir"
-      type="video"
-    />
   </div>
 </template>
 
@@ -199,13 +190,9 @@ import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
 import { logger } from '../services/logger'
 import VButton from '../components/base/VButton.vue'
-import SaveMediaDialog from '../components/features/SaveMediaDialog.vue'
+import { useSaveMediaDialog } from '../composables/useSaveMediaDialog'
 
-// 弹窗保存媒体控制
-const saveDialogVisible = ref(false)
-const saveTargetUrl = ref('')
-const saveDefaultName = ref('')
-const saveDefaultDir = ref('')
+const { openSaveMediaDialog } = useSaveMediaDialog()
 
 // Hls.js 库的动态加载
 const loadHlsScript = (): Promise<void> => {
@@ -363,10 +350,12 @@ const handleDownloadVideo = () => {
   // 弹窗默认推荐规范的 mp4 合并后文件后缀名 (如 example.mp4)
   const defaultFilename = `${rawName}.mp4`
 
-  saveTargetUrl.value = targetUrl
-  saveDefaultName.value = defaultFilename
-  saveDefaultDir.value = state.videoDirectory || ''
-  saveDialogVisible.value = true
+  openSaveMediaDialog({
+    url: targetUrl,
+    defaultName: defaultFilename,
+    defaultDir: state.videoDirectory || '',
+    type: 'video'
+  })
 }
 
 // 映射友好的播放源名称

@@ -5,7 +5,7 @@ export function getLanWebHtml(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Velora - 本地资源</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2'><path d='M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z'/></svg>">
+  <link rel="icon" type="image/png" href="/icon.png">
   <style>
     /* Pristine Elegance OKLCH Theme Variables - 1:1 with Velora App */
     :root {
@@ -22,9 +22,10 @@ export function getLanWebHtml(): string {
 
       --color-accent: oklch(30% 0.01 90);
       --color-accent-hover: oklch(20% 0.01 90);
-      --accent-color: #3b82f6;
-      --accent-hover: #2563eb;
-      --accent-light: rgba(59, 130, 246, 0.12);
+      --color-accent-text: #ffffff;
+      --accent-color: var(--color-accent);
+      --accent-hover: var(--color-accent-hover);
+      --accent-light: oklch(92% 0.01 90);
 
       --border-color: oklch(93% 0.01 90);
       --border-light: oklch(96% 0.006 90);
@@ -51,15 +52,22 @@ export function getLanWebHtml(): string {
 
       --color-accent: oklch(90% 0.01 90);
       --color-accent-hover: oklch(98.5% 0.01 90);
-      --accent-color: #3b82f6;
-      --accent-hover: #60a5fa;
-      --accent-light: rgba(59, 130, 246, 0.2);
+      --color-accent-text: oklch(15% 0.005 90);
+      --accent-color: var(--color-accent);
+      --accent-hover: var(--color-accent-hover);
+      --accent-light: oklch(26% 0.005 90);
 
       --border-color: oklch(28% 0.005 90);
       --border-light: oklch(24% 0.005 90);
 
       --shadow-soft: 0 12px 36px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
       --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation: none;
+      mix-blend-mode: normal;
     }
 
     * {
@@ -121,7 +129,15 @@ export function getLanWebHtml(): string {
     }
 
     .brand-logo svg {
-      color: var(--accent-color);
+      color: var(--color-accent);
+    }
+
+    .brand-logo-img {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      object-fit: contain;
+      box-shadow: var(--shadow-sm);
     }
 
     .header-actions {
@@ -255,10 +271,15 @@ export function getLanWebHtml(): string {
     }
 
     .resource-tab-item.active {
-      background: var(--accent-color);
-      border-color: var(--accent-color);
-      color: #ffffff;
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: var(--color-accent-text);
+      box-shadow: var(--shadow-sm);
+      font-weight: 600;
+    }
+
+    .resource-tab-item.active svg {
+      stroke: var(--color-accent-text);
     }
 
     /* Workspace Toolbar */
@@ -275,6 +296,42 @@ export function getLanWebHtml(): string {
       box-shadow: var(--shadow-sm);
     }
 
+    .toolbar-nav-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .nav-back-btn {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      flex-shrink: 0;
+      border-radius: 6px;
+      background: var(--border-light);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      outline: none;
+    }
+
+    .nav-back-btn:hover:not(:disabled) {
+      background: var(--border-color);
+      color: var(--color-accent);
+    }
+
+    .nav-back-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     .breadcrumb-container {
       display: flex;
       align-items: center;
@@ -286,10 +343,12 @@ export function getLanWebHtml(): string {
       border-radius: 6px;
       border: 1px solid var(--border-light);
       font-size: 13px;
+      flex: 1;
+      min-width: 0;
     }
 
     .breadcrumb-item {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 6px;
       cursor: pointer;
@@ -297,6 +356,7 @@ export function getLanWebHtml(): string {
       padding: 2px 6px;
       border-radius: 4px;
       transition: all 0.15s ease;
+      flex-shrink: 0;
     }
 
     .breadcrumb-item:hover {
@@ -313,13 +373,13 @@ export function getLanWebHtml(): string {
     .breadcrumb-sep {
       color: var(--text-muted);
       font-size: 12px;
+      flex-shrink: 0;
     }
 
     .toolbar-tools {
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     .search-wrap {
@@ -358,7 +418,7 @@ export function getLanWebHtml(): string {
     }
 
     .sort-select:focus {
-      border-color: var(--accent-color);
+      border-color: var(--color-accent);
     }
 
     /* File Grid Layout - 1:1 with LocalWorkspace.vue */
@@ -369,13 +429,53 @@ export function getLanWebHtml(): string {
     }
 
     @media (max-width: 640px) {
+      .workspace-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 10px;
+      }
+
+      .toolbar-nav-group {
+        width: 100%;
+      }
+
+      .toolbar-tools {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: nowrap;
+      }
+
+      .search-wrap {
+        flex: 1;
+        min-width: 0;
+        width: auto !important;
+      }
+
+      .sort-select {
+        flex-shrink: 0;
+        max-width: 110px;
+        padding: 0 4px;
+        font-size: 11px;
+      }
+
+      .toolbar-tools .btn-text {
+        display: none;
+      }
+
+      .toolbar-tools .v-btn {
+        padding: 0 8px;
+        min-width: 32px;
+        height: 32px;
+      }
+
       .file-grid {
         grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
         gap: 12px;
       }
-      .search-wrap {
-        width: 130px;
-      }
+
       .file-card {
         padding: 14px 10px;
       }
@@ -730,8 +830,11 @@ export function getLanWebHtml(): string {
     <!-- Header -->
     <header>
       <a href="/" class="brand-logo">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <img src="/icon.png" class="brand-logo-img" alt="Velora" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='block';">
+        <svg class="brand-logo-svg" style="display:none;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
         </svg>
         <span>Velora</span>
       </a>
@@ -763,7 +866,14 @@ export function getLanWebHtml(): string {
 
       <!-- Workspace Toolbar -->
       <div class="workspace-toolbar">
-        <div id="breadcrumbs" class="breadcrumb-container"></div>
+        <div class="toolbar-nav-group">
+          <button id="nav-back-btn" class="v-btn v-btn-icon nav-back-btn" title="返回上一级" disabled onclick="navigateUp()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <div id="breadcrumbs" class="breadcrumb-container"></div>
+        </div>
 
         <div class="toolbar-tools">
           <div class="search-wrap">
@@ -781,12 +891,12 @@ export function getLanWebHtml(): string {
             <option value="size-desc">按大小 (从大到小)</option>
             <option value="size-asc">按大小 (从小到大)</option>
           </select>
-          <button id="new-folder-btn" class="v-btn v-btn-primary" style="display:none;">
+          <button id="new-folder-btn" class="v-btn v-btn-secondary" style="display:none;" title="新建文件夹">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
-            新建文件夹
+            <span class="btn-text">新建文件夹</span>
           </button>
           <button id="refresh-btn" class="v-btn v-btn-secondary" title="刷新列表">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -794,7 +904,7 @@ export function getLanWebHtml(): string {
               <polyline points="1 20 1 14 7 14"></polyline>
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
             </svg>
-            刷新
+            <span class="btn-text">刷新</span>
           </button>
         </div>
       </div>
@@ -886,6 +996,7 @@ export function getLanWebHtml(): string {
     var fileGrid = document.getElementById('file-grid');
     var resourceTabs = document.getElementById('resource-tabs');
     var breadcrumbs = document.getElementById('breadcrumbs');
+    var navBackBtn = document.getElementById('nav-back-btn');
     var searchInput = document.getElementById('search-input');
     var sortSelect = document.getElementById('sort-select');
     var newFolderBtn = document.getElementById('new-folder-btn');
@@ -894,6 +1005,12 @@ export function getLanWebHtml(): string {
     var authPassword = document.getElementById('auth-password');
     var authSubmitBtn = document.getElementById('auth-submit-btn');
     var logoutBtn = document.getElementById('logout-btn');
+
+    if (navBackBtn) {
+      navBackBtn.addEventListener('click', function() {
+        window.navigateUp();
+      });
+    }
 
     // Theme Setup
     function applyTheme(theme) {
@@ -904,8 +1021,46 @@ export function getLanWebHtml(): string {
       document.getElementById('theme-icon-dark').style.display = theme === 'dark' ? 'block' : 'none';
     }
     applyTheme(state.theme);
-    document.getElementById('theme-btn').addEventListener('click', function() {
-      applyTheme(state.theme === 'light' ? 'dark' : 'light');
+    document.getElementById('theme-btn').addEventListener('click', function(event) {
+      var newTheme = state.theme === 'light' ? 'dark' : 'light';
+      if (!document.startViewTransition) {
+        applyTheme(newTheme);
+        return;
+      }
+
+      var x = event.clientX;
+      var y = event.clientY;
+      if (typeof x !== 'number' || typeof y !== 'number' || (x === 0 && y === 0)) {
+        var rect = this.getBoundingClientRect();
+        x = rect.left + rect.width / 2;
+        y = rect.top + rect.height / 2;
+      }
+
+      var endRadius = Math.hypot(
+        Math.max(x, window.innerWidth - x),
+        Math.max(y, window.innerHeight - y)
+      );
+
+      var transition = document.startViewTransition(function() {
+        applyTheme(newTheme);
+      });
+
+      transition.ready.then(function() {
+        var clipPath = [
+          'circle(0px at ' + x + 'px ' + y + 'px)',
+          'circle(' + endRadius + 'px at ' + x + 'px ' + y + 'px)'
+        ];
+
+        document.documentElement.animate(
+          { clipPath: clipPath },
+          {
+            duration: 400,
+            easing: 'ease-in-out',
+            pseudoElement: '::view-transition-new(root)',
+            fill: 'forwards'
+          }
+        );
+      });
     });
 
     // Toast
@@ -1073,6 +1228,17 @@ export function getLanWebHtml(): string {
       }
     }
 
+    window.navigateUp = function() {
+      if (!state.breadcrumbPaths || state.breadcrumbPaths.length === 0) {
+        return;
+      }
+      if (state.breadcrumbPaths.length === 1) {
+        goToResourceRoot();
+      } else {
+        goToBreadcrumb(state.breadcrumbPaths.length - 2);
+      }
+    };
+
     function renderBreadcrumbs() {
       var res = state.resources.find(function(r) { return r.id === state.currentResourceId; });
       if (!res) return;
@@ -1082,7 +1248,13 @@ export function getLanWebHtml(): string {
 
       state.breadcrumbPaths = [];
 
-      var isRootActive = normCurrent === normRoot ? 'active' : '';
+      var isAtRoot = normCurrent === normRoot;
+      var navBackBtn = document.getElementById('nav-back-btn');
+      if (navBackBtn) {
+        navBackBtn.disabled = isAtRoot;
+      }
+
+      var isRootActive = isAtRoot ? 'active' : '';
       var html = '<span class="breadcrumb-item ' + isRootActive + '" onclick="goToResourceRoot()">' +
         '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' +
         '<span>' + escapeHtml(res.name) + '</span>' +
@@ -1107,6 +1279,7 @@ export function getLanWebHtml(): string {
         }
       }
       breadcrumbs.innerHTML = html;
+      breadcrumbs.scrollLeft = breadcrumbs.scrollWidth;
     }
 
     function getFileCategory(item) {

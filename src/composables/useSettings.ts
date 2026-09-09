@@ -85,6 +85,7 @@ export interface SettingsState {
   fileDirectory: string
   maxConcurrentDownloads: number
   maxMemoryBufferMB: number
+  autoMatchDownloadSubdir: boolean
   enableVideoCompress: boolean
   videoCompressTargetGB: number
   videoCompressMinBitrateKbps: number
@@ -111,6 +112,7 @@ export const state = reactive<SettingsState>({
   fileDirectory: '',
   maxConcurrentDownloads: 3,
   maxMemoryBufferMB: 128,
+  autoMatchDownloadSubdir: true,
   enableVideoCompress: false,
   videoCompressTargetGB: 1.5,
   videoCompressMinBitrateKbps: 1500,
@@ -143,6 +145,7 @@ export const useSettings = () => {
     state.fileDirectory = all['fileDirectory'] || ''
     state.maxConcurrentDownloads = all['maxConcurrentDownloads'] || 3
     state.maxMemoryBufferMB = all['maxMemoryBufferMB'] || 128
+    state.autoMatchDownloadSubdir = all['autoMatchDownloadSubdir'] !== undefined ? all['autoMatchDownloadSubdir'] : true
     state.enableVideoCompress = all['enableVideoCompress'] || false
     const savedTarget = all['videoCompressTargetGB'] ?? all['videoCompressThresholdGB']
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
@@ -228,6 +231,11 @@ export const useSettings = () => {
   const saveMaxMemoryBufferMB = async (mb: number) => {
     state.maxMemoryBufferMB = mb
     await window.electronAPI.setSetting('maxMemoryBufferMB', mb)
+  }
+
+  const saveAutoMatchDownloadSubdir = async (enabled: boolean) => {
+    state.autoMatchDownloadSubdir = enabled
+    await window.electronAPI.setSetting('autoMatchDownloadSubdir', enabled)
   }
 
   const saveEnableVideoCompress = async (enabled: boolean) => {
@@ -482,6 +490,7 @@ export const useSettings = () => {
     saveFileDirectory,
     saveMaxConcurrentDownloads,
     saveMaxMemoryBufferMB,
+    saveAutoMatchDownloadSubdir,
     saveEnableVideoCompress,
     saveVideoCompressTargetGB,
     saveVideoCompressMinBitrateKbps,

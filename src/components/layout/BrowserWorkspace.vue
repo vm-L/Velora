@@ -113,7 +113,7 @@
     </div>
 
     <!-- Webviews -->
-    <div class="webview-container" :class="{ 'pointer-disabled': isInteracting }">
+    <div class="webview-container" :class="{ 'pointer-disabled': isInteracting || isDraggingAnyDialog }">
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
         :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
         @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
@@ -157,18 +157,6 @@
       :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" :page-url="getCurrentPageOrigin()" @close="onClosePreview" @focus="onFocusPreview"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
-    <SaveMediaDialog
-      :visible="saveDialogVisible"
-      @update:visible="saveDialogVisible = $event"
-      :url="saveTargetUrl"
-      :default-name="saveDefaultName"
-      :default-dir="saveDefaultDir"
-      :type="saveType"
-      :name-options="saveNameOptions"
-      :url-options="saveUrlOptions"
-      :page-url="getCurrentPageOrigin()"
-    />
-
     <ParseRuleSelectDialog
       v-model:visible="ruleSelectModalVisible"
       :rules="pendingMatchingRules"
@@ -211,12 +199,12 @@ import SnifferDropdown from '../features/SnifferDropdown.vue';
 import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
 import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
 import VideoPlayerDialog from '../features/VideoPlayerDialog.vue';
-import SaveMediaDialog from '../features/SaveMediaDialog.vue';
 import { APP_PREFIX } from '../../constants';
 import { getPickerScript, getPickerCancelScript } from '../../utils/elementPicker';
 
 
 import { useMessage } from '../../composables/useMessage';
+import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
 
 const props = defineProps<{
   resourceId: string;
@@ -229,6 +217,7 @@ const toggleParseRule = () => {
 };
 
 const { showMessage } = useMessage();
+const { openSaveMediaDialog, isDraggingAnyDialog } = useSaveMediaDialog();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
 const { state: settingsState, saveCustomStyles, saveCustomScripts, saveExternalSites, saveCmsResources } = useSettings();
 
@@ -310,8 +299,6 @@ const triggerCopyText = () => {
   pickElementText();
 };
 
-const saveNameOptions = ref<string[]>([]);
-const saveUrlOptions = ref<string[]>([]);
 
 const ruleSelectModalVisible = ref(false);
 const pendingMatchingRules = ref<ParseRule[]>([]);
@@ -465,14 +452,16 @@ const executeMatchedRulesForDomain = async (
         return;
       }
 
-      // 配置并弹出下载保存弹窗
-      saveTargetUrl.value = urlOptions[0];
-      saveDefaultName.value = nameOptions[0];
-      saveDefaultDir.value = settingsState.videoDirectory || settingsState.fileDirectory || '';
-      saveType.value = 'video';
-      saveNameOptions.value = nameOptions;
-      saveUrlOptions.value = urlOptions;
-      saveDialogVisible.value = true;
+      // 配置并弹出全局下载保存弹窗
+      openSaveMediaDialog({
+        url: urlOptions[0],
+        defaultName: nameOptions[0],
+        defaultDir: settingsState.videoDirectory || settingsState.fileDirectory || '',
+        type: 'video',
+        nameOptions,
+        urlOptions,
+        pageUrl: getCurrentPageOrigin()
+      });
 
       showMessage({
         id: toastId,
@@ -1225,12 +1214,6 @@ const onPreviewSniffedVideo = (url: string) => {
   activeVideoPreview.value = url;
 };
 
-const saveDialogVisible = ref(false);
-const saveTargetUrl = ref('');
-const saveDefaultName = ref('');
-const saveDefaultDir = ref('');
-const saveType = ref<'audio' | 'video'>('audio');
-
 const onDownloadAudio = (url: string) => {
   let name = '';
   try {
@@ -1240,11 +1223,13 @@ const onDownloadAudio = (url: string) => {
   } catch {
     name = 'audio.mp3';
   }
-  saveTargetUrl.value = url;
-  saveDefaultName.value = name;
-  saveDefaultDir.value = settingsState.audioDirectory;
-  saveType.value = 'audio';
-  saveDialogVisible.value = true;
+  openSaveMediaDialog({
+    url,
+    defaultName: name,
+    defaultDir: settingsState.audioDirectory,
+    type: 'audio',
+    pageUrl: getCurrentPageOrigin()
+  });
 };
 
 const onDownloadVideo = (url: string) => {
@@ -1256,11 +1241,13 @@ const onDownloadVideo = (url: string) => {
   } catch {
     name = 'video.mp4';
   }
-  saveTargetUrl.value = url;
-  saveDefaultName.value = name;
-  saveDefaultDir.value = settingsState.videoDirectory;
-  saveType.value = 'video';
-  saveDialogVisible.value = true;
+  openSaveMediaDialog({
+    url,
+    defaultName: name,
+    defaultDir: settingsState.videoDirectory,
+    type: 'video',
+    pageUrl: getCurrentPageOrigin()
+  });
 };
 
 // Element Picker Logic

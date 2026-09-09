@@ -1136,7 +1136,7 @@ const formatTime = (ts: number): string => {
     }
 
     .root-icon {
-      stroke: var(--accent-color, #3b82f6);
+      stroke: var(--color-accent);
     }
 
     .crumb-text {
@@ -1206,7 +1206,7 @@ const formatTime = (ts: number): string => {
     outline: none;
 
     &:focus {
-      border-color: var(--accent-color, #3b82f6);
+      border-color: var(--color-accent);
     }
   }
 }
@@ -1282,8 +1282,8 @@ const formatTime = (ts: number): string => {
   }
 
   &.selected {
-    background: var(--accent-light, rgba(59, 130, 246, 0.12));
-    border-color: var(--accent-color, #3b82f6);
+    background: var(--bg-surface-active);
+    border-color: var(--color-accent);
   }
 
   .card-icon-wrap {
@@ -1482,7 +1482,7 @@ const formatTime = (ts: number): string => {
   width: 24px;
   height: 24px;
   border: 2px solid var(--border-light);
-  border-top-color: var(--accent-color, #3b82f6);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

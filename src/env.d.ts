@@ -55,6 +55,7 @@ interface Window {
     getLanShareStatus: () => Promise<{ running: boolean; port: number; ip: string; url: string; hasPassword: boolean; allowEdit: boolean }>
     restartLanServer: () => Promise<{ success: boolean; port?: number; error?: string; running?: boolean }>
     stopLanServer: () => Promise<{ success: boolean }>
+    notifyFirstScreenReady: () => void
     log: (level: 'info' | 'warn' | 'error' | 'perf', scope: string, message: string) => void
   }
 }

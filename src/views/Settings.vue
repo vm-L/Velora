@@ -109,6 +109,20 @@
             <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
           </div>
         </div>
+
+        <!-- 自动匹配目录 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>自动匹配目录</h3>
+            <p>下载时自动选择匹配度最高的子目录</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-switch
+              :model-value="state.autoMatchDownloadSubdir"
+              @change="handleAutoMatchSubdirToggle"
+            />
+          </div>
+        </div>
       </div>
 
       <!-- Compression Settings -->
@@ -704,6 +718,7 @@ const {
   saveFileDirectory,
   saveMaxConcurrentDownloads,
   saveMaxMemoryBufferMB,
+  saveAutoMatchDownloadSubdir,
   saveEnableVideoCompress,
   saveVideoCompressTargetGB,
   saveVideoCompressMinBitrateKbps,
@@ -722,6 +737,11 @@ const {
 } = useSettings();
 const { confirm } = useConfirm();
 const { showMessage } = useMessage();
+
+const handleAutoMatchSubdirToggle = (val: boolean) => {
+  saveAutoMatchDownloadSubdir(val);
+  showMessage(val ? '已开启下载自动匹配子目录' : '已关闭下载自动匹配子目录', 'info');
+};
 
 const handleCompressToggle = (val: boolean) => {
   saveEnableVideoCompress(val);

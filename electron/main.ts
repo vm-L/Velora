@@ -114,9 +114,35 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
 import { storeManager, setupStoreHandlers } from './store'
 import { downloader } from './downloader'
 import { lanServer } from './lanServer'
+import { getSplashHtml } from './splash'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
+let splashWindow: BrowserWindow | null = null
+let splashStartTime = 0
+let isFirstScreenReady = false
+
+// 获取应用图标 Base64 Data URL (供 Splash 与 Tray 备用)
+const getIconDataUrl = (): string => {
+  const iconPaths = [
+    path.join(__dirname, '../public/icon.png'),
+    path.join(__dirname, '../../public/icon.png'),
+    path.join(process.cwd(), 'public/icon.png'),
+    path.join(process.resourcesPath || '', 'public/icon.png'),
+    path.join(process.resourcesPath || '', 'app.asar/public/icon.png')
+  ];
+  for (const p of iconPaths) {
+    if (p && fs.existsSync(p)) {
+      try {
+        const buf = fs.readFileSync(p);
+        return `data:image/png;base64,${buf.toString('base64')}`;
+      } catch {}
+    }
+  }
+  return '';
+};
+
+const iconBase64 = getIconDataUrl();
 
 // 设置 Windows 任务栏应用唯一 AppUserModelId，确保任务栏图标与主程序图标统一关联
 if (process.platform === 'win32') {
@@ -144,8 +170,84 @@ const getAppIcon = () => {
       if (!img.isEmpty()) return img;
     }
   }
-  return nativeImage.createFromDataURL(iconBase64);
+  return iconBase64 ? nativeImage.createFromDataURL(iconBase64) : nativeImage.createEmpty();
 };
+
+function createSplashWindow(theme: string = 'light') {
+  splashStartTime = Date.now();
+  const appIcon = getAppIcon();
+  splashWindow = new BrowserWindow({
+    width: 380,
+    height: 240,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    center: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    hasShadow: true,
+    backgroundColor: '#00000000',
+    icon: appIcon,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  const iconDataUrl = getIconDataUrl();
+  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.0';
+  const html = getSplashHtml(theme, iconDataUrl, version);
+  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+  splashWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed() && !isFirstScreenReady) {
+      splashWindow.show();
+    }
+  });
+}
+
+function updateSplash(percent: number, text: string) {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  splashWindow.webContents.executeJavaScript(`
+    window.setProgress && window.setProgress(${percent}, ${JSON.stringify(text)});
+  `).catch(() => {});
+}
+
+function finishStartupAndShowMain() {
+  if (isFirstScreenReady) return;
+  isFirstScreenReady = true;
+
+  updateSplash(100, '准备就绪，正在进入...');
+
+  const elapsed = Date.now() - splashStartTime;
+  const minDisplayTime = 300; // 保底展示 300ms
+  const remainingWait = Math.max(0, minDisplayTime - elapsed);
+
+  setTimeout(() => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.webContents.executeJavaScript(`
+        document.body.classList.add('fade-out');
+      `).catch(() => {});
+
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.destroy();
+          splashWindow = null;
+        }
+      }, 250); // 淡出动画过渡时长
+    } else {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  }, remainingWait);
+}
 
 const clearPrivacyData = async () => {
   try {
@@ -567,7 +669,11 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
+    updateSplash(85, '正在装载应用数据与首屏...');
+  })
+
+  ipcMain.on('app-first-screen-ready', () => {
+    finishStartupAndShowMain();
   })
 
   // Network Sniffer & AdBlock Interceptor
@@ -813,10 +919,16 @@ ipcMain.handle('stop-lan-server', async () => {
   return { success: true };
 });
 
-app.whenReady().then(() => {
-  setupStoreHandlers()
-  createWindow()
+app.whenReady().then(async () => {
+  setupStoreHandlers();
 
+  // 立即创建并展示冷启动 Splash 悬浮卡片（极速渲染）
+  const theme = (await storeManager.getSetting('theme')) || 'light';
+  createSplashWindow(theme);
+
+  updateSplash(20, '正在初始化核心配置与存储...');
+
+  updateSplash(40, '正在检测运行环境与网络服务...');
   // Background non-blocking initializations
   initOrRestartLanServer().catch((err) => {
     logger.error('Main', `Failed to initialize LAN server: ${err.message}`);
@@ -834,6 +946,17 @@ app.whenReady().then(() => {
     }
   });
 
+  updateSplash(65, '正在装载应用主窗口与工作区...');
+  createWindow();
+
+  // 安全熔断保底：若渲染进程因异常未在 5 秒内通知就绪，强制淡出 Splash 展示主窗口
+  setTimeout(() => {
+    if (!isFirstScreenReady) {
+      logger.warn('Main', '首屏就绪通知超时，触发安全熔断保底显示主窗口');
+      finishStartupAndShowMain();
+    }
+  }, 5000);
+
   const appIcon = getAppIcon();
   const trayIcon = appIcon.isEmpty() ? nativeImage.createFromDataURL(iconBase64) : appIcon.resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
@@ -841,12 +964,12 @@ app.whenReady().then(() => {
     { label: '显示应用', click: () => { if (mainWindow) mainWindow.show() } },
     { type: 'separator' },
     { label: '完全退出', click: () => { app.quit() } }
-  ])
-  tray.setToolTip('Velora')
-  tray.setContextMenu(contextMenu)
+  ]);
+  tray.setToolTip('Velora');
+  tray.setContextMenu(contextMenu);
   
-  tray.on('click', () => { if (mainWindow) mainWindow.show() })
-})
+  tray.on('click', () => { if (mainWindow) mainWindow.show() });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

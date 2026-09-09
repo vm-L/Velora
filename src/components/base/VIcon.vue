@@ -55,7 +55,8 @@ export type IconName =
   | 'warning'
   | 'error'
   | 'loading'
-  | 'external-link';
+  | 'external-link'
+  | 'bot';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -64,6 +65,15 @@ const iconStyle = computed(() => {
 });
 
 const iconsMap: Record<string, string> = {
+  // 机器人 / 自动匹配
+  'bot': `
+    <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+    <circle cx="12" cy="5" r="2"></circle>
+    <path d="M12 7v4"></path>
+    <line x1="8" y1="16" x2="8.01" y2="16"></line>
+    <line x1="16" y1="16" x2="16.01" y2="16"></line>
+  `,
+
   // 新标签页 / 外部链接
   'external-link': `
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>

@@ -51,21 +51,12 @@
         </div>
       </div>
     </div>
-    <SaveMediaDialog
-      :visible="saveDialogVisible"
-      @update:visible="saveDialogVisible = $event"
-      :url="saveTargetUrl"
-      :default-name="saveDefaultName"
-      :default-dir="saveDefaultDir"
-      :type="type"
-      :page-url="pageUrl"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import SaveMediaDialog from './SaveMediaDialog.vue';
+import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
 import { useMessage } from '../../composables/useMessage';
 
 const props = defineProps<{
@@ -182,11 +173,7 @@ const copyData = async (url: string) => {
 import { useSettings } from '../../composables/useSettings';
 
 const { state } = useSettings();
-
-const saveDialogVisible = ref(false);
-const saveTargetUrl = ref('');
-const saveDefaultName = ref('');
-const saveDefaultDir = ref('');
+const { openSaveMediaDialog } = useSaveMediaDialog();
 
 const saveLocal = (url: string) => {
   const name = getBasename(url);
@@ -195,14 +182,17 @@ const saveLocal = (url: string) => {
   else if (props.type === 'video') dir = state.videoDirectory;
   else if (props.type === 'audio') dir = state.audioDirectory;
 
-  saveTargetUrl.value = url;
-  saveDefaultName.value = name;
-  saveDefaultDir.value = dir;
-  saveDialogVisible.value = true;
-  
+  openSaveMediaDialog({
+    url,
+    defaultName: name,
+    defaultDir: dir || '',
+    type: props.type,
+    pageUrl: props.pageUrl
+  });
+
   // Close the dropdown when opening dialog
   close();
-}
+};
 </script>
 
 <style scoped lang="less">

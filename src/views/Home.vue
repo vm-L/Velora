@@ -232,14 +232,6 @@
     <VideoPlayerDialog v-if="activeVideoPreviewUrl" :url="activeVideoPreviewUrl"
       @close="activeVideoPreviewUrl = null" :hideDownload="true" />
 
-    <SaveMediaDialog
-      :visible="saveDialogVisible"
-      @update:visible="saveDialogVisible = $event"
-      :url="saveTargetUrl"
-      :default-name="saveDefaultName"
-      :default-dir="saveDefaultDir"
-      :type="'audio'"
-    />
     <EditTaskDialog
       v-model:visible="editTaskDialogVisible"
       :task="editingTask"
@@ -268,12 +260,12 @@ import VCheckbox from '../components/base/VCheckbox.vue';
 const ImagePreviewDialog = defineAsyncComponent(() => import('../components/features/ImagePreviewDialog.vue'));
 const AudioPlayerDialog = defineAsyncComponent(() => import('../components/features/AudioPlayerDialog.vue'));
 const VideoPlayerDialog = defineAsyncComponent(() => import('../components/features/VideoPlayerDialog.vue'));
-const SaveMediaDialog = defineAsyncComponent(() => import('../components/features/SaveMediaDialog.vue'));
 const EditTaskDialog = defineAsyncComponent(() => import('../components/features/EditTaskDialog.vue'));
 const CompressVideoDialog = defineAsyncComponent(() => import('../components/features/CompressVideoDialog.vue'));
 const BatchCompressVideoDialog = defineAsyncComponent(() => import('../components/features/BatchCompressVideoDialog.vue'));
 import { useNotification } from '../composables/useNotification';
 import { useSettings } from '../composables/useSettings';
+import { useSaveMediaDialog } from '../composables/useSaveMediaDialog';
 import { logger } from '../services/logger';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
@@ -281,12 +273,11 @@ const { showMessage } = useMessage();
 const { showNotification } = useNotification();
 const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
+const { openSaveMediaDialog } = useSaveMediaDialog();
 
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);
 const activeVideoPreviewUrl = ref<string | null>(null);
-
-const saveDialogVisible = ref(false);
 
 const editTaskDialogVisible = ref(false);
 const editingTask = ref<any>(null);
@@ -382,10 +373,6 @@ const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any, t
     });
   }
 };
-const saveTargetUrl = ref('');
-const saveDefaultName = ref('');
-const saveDefaultDir = ref('');
-
 const onDownloadAudio = (url: string) => {
   let name = '';
   try {
@@ -395,11 +382,13 @@ const onDownloadAudio = (url: string) => {
   } catch {
     name = 'audio.mp3';
   }
-  
-  saveTargetUrl.value = url;
-  saveDefaultName.value = name;
-  saveDefaultDir.value = settingsState.audioDirectory;
-  saveDialogVisible.value = true;
+
+  openSaveMediaDialog({
+    url,
+    defaultName: name,
+    defaultDir: settingsState.audioDirectory,
+    type: 'audio'
+  });
 };
 
 const handleMouseUp = () => {

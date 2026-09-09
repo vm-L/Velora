@@ -57,5 +57,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLanShareStatus: () => ipcRenderer.invoke('get-lan-share-status'),
   restartLanServer: () => ipcRenderer.invoke('restart-lan-server'),
   stopLanServer: () => ipcRenderer.invoke('stop-lan-server'),
+  notifyFirstScreenReady: () => ipcRenderer.send('app-first-screen-ready'),
   log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
 })

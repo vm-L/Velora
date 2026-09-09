@@ -175,6 +175,25 @@ export class LanServer {
         return res.end(getLanWebHtml());
       }
 
+      // Static assets: App Icon / Favicon
+      if (pathname === '/icon.png' || pathname === '/favicon.ico') {
+        const iconPaths = [
+          path.join(__dirname, '../public/icon.png'),
+          path.join(__dirname, '../../public/icon.png'),
+          path.join(process.cwd(), 'public/icon.png'),
+          path.join(process.resourcesPath || '', 'public/icon.png'),
+          path.join(process.resourcesPath || '', 'app.asar/public/icon.png')
+        ];
+        for (const p of iconPaths) {
+          if (p && fs.existsSync(p)) {
+            res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+            return fs.createReadStream(p).pipe(res);
+          }
+        }
+        res.writeHead(404);
+        return res.end();
+      }
+
       // API: info
       if (pathname === '/api/info') {
         return this.sendJson(res, 200, {
