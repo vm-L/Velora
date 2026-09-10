@@ -2,8 +2,6 @@
   <div 
     class="message-container" 
     :class="{ 'is-expanded': isHovered }"
-    @mouseenter="handleMouseEnter" 
-    @mouseleave="handleMouseLeave"
   >
     <TransitionGroup name="message-list">
       <div 
@@ -46,23 +44,54 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { useMessage } from '../../composables/useMessage'
 import VIcon from '../base/VIcon.vue'
 import VButton from '../base/VButton.vue'
 
 const { messages, removeMessage, pauseTimer, resumeTimer } = useMessage()
 const isHovered = ref(false)
+let hoverLeaveTimer: any = null
+
+watch(
+  () => messages.value.length,
+  (len) => {
+    if (len === 0) {
+      isHovered.value = false
+      if (hoverLeaveTimer) {
+        clearTimeout(hoverLeaveTimer)
+        hoverLeaveTimer = null
+      }
+    }
+  }
+)
 
 const handleMouseEnter = () => {
-  isHovered.value = true
-  pauseTimer()
+  if (hoverLeaveTimer) {
+    clearTimeout(hoverLeaveTimer)
+    hoverLeaveTimer = null
+  }
+  if (!isHovered.value) {
+    isHovered.value = true
+    pauseTimer()
+  }
 }
 
 const handleMouseLeave = () => {
-  isHovered.value = false
-  resumeTimer()
+  if (hoverLeaveTimer) clearTimeout(hoverLeaveTimer)
+  hoverLeaveTimer = setTimeout(() => {
+    isHovered.value = false
+    resumeTimer()
+    hoverLeaveTimer = null
+  }, 150)
 }
+
+onBeforeUnmount(() => {
+  if (hoverLeaveTimer) {
+    clearTimeout(hoverLeaveTimer)
+    hoverLeaveTimer = null
+  }
+})
 
 const getStyle = (index: number): any => {
   const total = messages.value.length
@@ -239,17 +268,19 @@ const getStyle = (index: number): any => {
 .message-list-move,
 .message-list-enter-active,
 .message-list-leave-active {
-  transition: all 0.4s cubic-bezier(0.2, 1, 0.2, 1);
+  transition: all 0.35s cubic-bezier(0.2, 1, 0.2, 1);
 }
 .message-list-leave-active {
   position: absolute !important;
+  pointer-events: none !important;
+  z-index: 990 !important;
 }
 .message-list-enter-from {
   opacity: 0;
   transform: translate3d(0, -20px, 0) scale(0.9) !important;
 }
 .message-list-leave-to {
-  opacity: 0;
-  transform: translate3d(0, -10px, 0) scale(0.95) !important;
+  opacity: 0 !important;
+  transform: translate3d(0, -16px, 0) scale(0.96) !important;
 }
 </style>

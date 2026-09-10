@@ -132,7 +132,7 @@ export const useDownloads = () => {
           if (data.totalSegments !== undefined) t.totalSegments = data.totalSegments
           if (data.speedText !== undefined) {
             t.speedText = data.speedText
-          } else if (t.status !== 'compressing' && t.status !== 'processing') {
+          } else if (t.status !== 'compressing' && t.status !== 'processing' && t.status !== 'waiting') {
             delete t.speedText
           }
           if (data.etaSeconds !== undefined) {
@@ -146,7 +146,7 @@ export const useDownloads = () => {
             delete t.errorMsg
           }
 
-          if (data.progress !== undefined && (t.status === 'compressing' || t.status === 'converting' || t.status === 'processing')) {
+          if (data.progress !== undefined && (t.status === 'compressing' || t.status === 'converting' || t.status === 'processing' || t.status === 'waiting')) {
             t.progress = data.progress
           } else if (t.totalSegments && t.totalSegments > 0) {
             t.progress = Math.min(100, Math.round((t.downloadedSegments! / t.totalSegments!) * 100))

@@ -276,8 +276,9 @@ interface CompressQueueItem {
   taskId: string
   filePath: string
   targetBitrateKbps: number
-  resolve: (res: { success: boolean; newSize?: number; error?: string; skipped?: boolean }) => void
-  reject: (err: any) => void
+  totalSegments?: number
+  resolve?: (res: { success: boolean; newSize?: number; error?: string; skipped?: boolean }) => void
+  reject?: (err: any) => void
 }
 
 class Downloader {
@@ -286,6 +287,8 @@ class Downloader {
   private isCompressingActive = false
   private compressQueue: CompressQueueItem[] = []
   private activeCompressTaskId: string | null = null
+  private activeCompressController: AbortController | null = null
+  private activeCompressTempPath: string | null = null
   private mainWindow: any = null
 
   setWindow(window: any) {
@@ -306,6 +309,11 @@ class Downloader {
 
     if (this.activeDownloads.has(cmd.id) || this.pendingQueue.some(c => c.id === cmd.id)) {
       logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
+      return
+    }
+
+    if (this.activeCompressTaskId === cmd.id || this.compressQueue.some(c => c.taskId === cmd.id)) {
+      logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在压缩队列或压缩中，跳过重复添加。`)
       return
     }
 
@@ -356,13 +364,15 @@ class Downloader {
     this.activeDownloads.set(cmd.id, { abortController })
     this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
+    let downloadResult: { filePath: string; fileSize: number; totalSegments?: number } | null = null
+
     try {
       const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id)
       const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal)
       if (isM3U8) {
-        await this.downloadM3U8Task(cmd, abortController)
+        downloadResult = await this.downloadM3U8Task(cmd, abortController)
       } else {
-        await this.downloadDirectFileTask(cmd, abortController)
+        downloadResult = await this.downloadDirectFileTask(cmd, abortController)
       }
     } catch (err: any) {
       logger.error('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
@@ -371,17 +381,22 @@ class Downloader {
       } else {
         this.sendProgress({ id: cmd.id, status: 'error', errorMsg: err.message })
       }
+      return
     } finally {
       clientManager.unregisterClient(cmd.id)
       this.activeDownloads.delete(cmd.id)
       this.checkQueue()
+    }
+
+    if (downloadResult) {
+      await this.handlePostDownload(cmd.id, downloadResult.filePath, downloadResult.fileSize, downloadResult.totalSegments)
     }
   }
 
   /**
    * M3U8 断点续传、多分片并发下载、内存缓冲池 (Memory Buffer Flush) 顺序追加合并
    */
-  private async downloadM3U8Task(cmd: DownloadCommand, abortController: AbortController) {
+  private async downloadM3U8Task(cmd: DownloadCommand, abortController: AbortController): Promise<{ filePath: string; fileSize: number; totalSegments: number }> {
     const { id, url, savePath } = cmd
     logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
 
@@ -416,6 +431,26 @@ class Downloader {
     }
     const isTargetMp4 = true
     const workSavePath = finalSavePath + '.temp.ts'
+
+    // 检查是否已有完整封装的目标 MP4（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
+    if (fs.existsSync(finalSavePath) && !fs.existsSync(workSavePath)) {
+      try {
+        const stat = fs.statSync(finalSavePath)
+        if (stat.size > 0) {
+          const info = await this.getVideoDurationAndBitrate(finalSavePath)
+          if (info.duration > 0) {
+            logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标 MP4 已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
+            return {
+              filePath: finalSavePath,
+              fileSize: stat.size,
+              totalSegments: segments.length
+            }
+          }
+        }
+      } catch (e: any) {
+        logger.warn('Downloader', `[M3U8Downloader] 检查已存在目标文件异常: ${e.message}`)
+      }
+    }
 
     // 检查断点续传：目标文件是否已存在及大小
     let existingBytes = 0
@@ -599,18 +634,14 @@ class Downloader {
       }
 
       const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
-      const finalFileSize = await this.compressVideoIfNeeded(targetVideoFile, id, abortController)
+      const finalFileSize = fs.existsSync(targetVideoFile) ? fs.statSync(targetVideoFile).size : totalReceivedBytes
 
-      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片下载处理成功。文件最终大小: ${finalFileSize}`)
-      this.sendProgress({
-        id,
-        totalBytes: finalFileSize,
-        receivedBytes: finalFileSize,
-        downloadedSegments: segments.length,
-        totalSegments: segments.length,
-        status: 'completed',
-        speed: 0
-      })
+      logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 全部 ${segments.length} 个分片下载及封装完成。文件大小: ${finalFileSize}`)
+      return {
+        filePath: targetVideoFile,
+        fileSize: finalFileSize,
+        totalSegments: segments.length
+      }
     } catch (err: any) {
       try {
         flushMemoryToDisk(false)
@@ -635,7 +666,7 @@ class Downloader {
   /**
    * 通用视频 (MP4 / AVI 等) 的断点续传、HTTP Range 分块多线程加速与内存缓冲
    */
-  private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController) {
+  private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController): Promise<{ filePath: string; fileSize: number }> {
     const { id, url, savePath, startBytes = 0 } = cmd
 
     const chunkSize = 4 * 1024 * 1024 // 4MB
@@ -686,6 +717,16 @@ class Downloader {
       }
     } catch (e: any) {
       logger.info('Downloader', `[DirectDownloader] Range 探测未响应: ${e.message}`)
+    }
+
+    if (fs.existsSync(savePath) && !fs.existsSync(progressPath) && totalBytes > 0) {
+      try {
+        const stat = fs.statSync(savePath)
+        if (stat.size >= totalBytes) {
+          logger.info('Downloader', `[DirectDownloader] 目标文件已完整存在 (${stat.size} >= ${totalBytes})，直接跳过下载`)
+          return { filePath: savePath, fileSize: stat.size }
+        }
+      } catch {}
     }
 
     const totalChunksCount = Math.ceil(totalBytes / chunkSize)
@@ -869,17 +910,13 @@ class Downloader {
           fs.unlinkSync(progressPath)
         }
 
-        const finalFileSize = await this.compressVideoIfNeeded(savePath, id, abortController)
+        const finalFileSize = fs.existsSync(savePath) ? fs.statSync(savePath).size : totalBytes
 
         logger.info('Downloader', `[DirectDownloader] 单文件 Range 断点续传/下载完成: ${savePath}，大小: ${finalFileSize}`)
-        this.sendProgress({
-          id,
-          totalBytes: finalFileSize,
-          receivedBytes: finalFileSize,
-          status: 'completed',
-          speed: 0
-        })
-        return
+        return {
+          filePath: savePath,
+          fileSize: finalFileSize
+        }
       } catch (err) {
         try { fs.closeSync(fd) } catch {}
         throw err
@@ -972,13 +1009,12 @@ class Downloader {
       })
     })
 
-    this.sendProgress({
-      id,
-      receivedBytes,
-      totalBytes: finalTotalBytes,
-      status: 'completed',
-      speed: 0
-    })
+    const finalFileSize = fs.existsSync(savePath) ? fs.statSync(savePath).size : receivedBytes
+    logger.info('Downloader', `[DirectDownloader] 单文件流式下载完成: ${savePath}，大小: ${finalFileSize}`)
+    return {
+      filePath: savePath,
+      fileSize: finalFileSize
+    }
   }
 
   private async checkQueue() {
@@ -996,23 +1032,43 @@ class Downloader {
   }
 
   pauseDownload(id: string) {
+    // 1. 如果在待下载队列中
     const queueIndex = this.pendingQueue.findIndex(c => c.id === id)
     if (queueIndex !== -1) {
       this.pendingQueue.splice(queueIndex, 1)
-      this.sendProgress({ id, status: 'paused' })
+      this.sendProgress({ id, status: 'paused', speed: 0 })
       this.checkQueue()
       return
     }
 
+    // 2. 如果在待压缩队列中
     const compressQueueIndex = this.compressQueue.findIndex(c => c.taskId === id)
     if (compressQueueIndex !== -1) {
       const removed = this.compressQueue.splice(compressQueueIndex, 1)[0]
-      this.sendProgress({ id, status: 'completed' })
-      removed.resolve({ success: false, error: '压缩排队已取消' })
-      logger.info('Downloader', `[CompressQueue] 任务 ${id} 已从压缩排队队列中移除`)
+      this.sendProgress({ id, status: 'paused', speed: 0 })
+      if (removed.resolve) {
+        removed.resolve({ success: false, error: '压缩排队已取消' })
+      }
+      logger.info('Downloader', `[CompressQueue] 任务 ${id} 已从压缩排队队列中移除并暂停`)
       return
     }
 
+    // 3. 如果当前正在压缩中
+    if (this.activeCompressTaskId === id && this.activeCompressController) {
+      logger.info('Downloader', `[CompressQueue] 正在压缩的任务 ${id} 被暂停，中断压缩进程`)
+      this.activeCompressController.abort()
+      if (this.activeCompressTempPath) {
+        try {
+          if (fs.existsSync(this.activeCompressTempPath)) {
+            fs.unlinkSync(this.activeCompressTempPath)
+          }
+        } catch {}
+      }
+      this.sendProgress({ id, status: 'paused', speed: 0 })
+      return
+    }
+
+    // 4. 如果当前正在下载中
     if (this.activeDownloads.has(id)) {
       const entry = this.activeDownloads.get(id)!
       entry.abortController.abort()
@@ -1029,6 +1085,7 @@ class Downloader {
         }
       }
       this.activeDownloads.delete(id)
+      this.checkQueue()
     }
   }
 
@@ -1049,6 +1106,141 @@ class Downloader {
     return { duration: info.duration, bitrate, size }
   }
 
+  /**
+   * 评估视频文件是否符合自动压缩条件并计算目标码率
+   */
+  private async evaluateAutoCompress(filePath: string, taskId: string): Promise<{ needCompress: boolean; targetBitrateKbps: number }> {
+    try {
+      const ext = path.extname(filePath).toLowerCase()
+      const videoExts = ['.mp4', '.mkv', '.webm', '.ts', '.avi', '.mov', '.flv']
+      if (!videoExts.includes(ext)) {
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      const isCompressEnabled = (await storeManager.getSetting('enableVideoCompress')) || false
+      if (!isCompressEnabled) {
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      const targetGB = (await storeManager.getSetting('videoCompressTargetGB')) ?? (await storeManager.getSetting('videoCompressThresholdGB')) ?? 1.5
+      const targetSizeBytes = targetGB * 1024 * 1024 * 1024
+      const triggerSizeBytes = targetSizeBytes * 1.5
+
+      const minBitrateKbps = (await storeManager.getSetting('videoCompressMinBitrateKbps')) ?? 1500
+      const minBitrateBps = minBitrateKbps * 1000
+
+      if (!fs.existsSync(filePath)) {
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+      const currentSize = fs.statSync(filePath).size
+
+      // 1. 体积触发条件：下载的视频文件大小 ≥ 目标文件大小的 1.5 倍
+      if (currentSize < triggerSizeBytes) {
+        logger.info('Downloader', `[AutoCompress] 任务 ${taskId} 文件体积 (${(currentSize / 1024 / 1024).toFixed(1)}MB) 未达到触发条件 (目标大小 ${targetGB}GB 的 1.5倍即 ${(triggerSizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB)，跳过压缩`)
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      // 2. 读取视频时长与实际码率
+      const videoInfo = await this.getVideoDurationAndBitrate(filePath)
+      let actualBitrateBps = 0
+      if (videoInfo.bitrate > 0) {
+        actualBitrateBps = videoInfo.bitrate
+      } else if (videoInfo.duration > 0) {
+        actualBitrateBps = (currentSize * 8) / videoInfo.duration
+      }
+      const actualBitrateKbps = Math.round(actualBitrateBps / 1000)
+
+      // 3. 文件码率需大于最小码率
+      if (actualBitrateBps > 0 && actualBitrateBps <= minBitrateBps) {
+        logger.info('Downloader', `[AutoCompress] 任务 ${taskId} 实际码率 (${actualBitrateKbps} kbps) 未大于设置的最小码率 (${minBitrateKbps} kbps)，保持原画质无需压缩`)
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      // 4. 读取视频时长，计算目标压缩大小所需的码率
+      if (!videoInfo.duration || videoInfo.duration <= 0) {
+        logger.warn('Downloader', `[AutoCompress] 任务 ${taskId} 无法获取有效视频时长，跳过压缩`)
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      const calculatedTargetBps = (targetSizeBytes * 8) / videoInfo.duration
+      let targetBitrateKbps = Math.round(calculatedTargetBps / 1000)
+
+      // 当计算得到的压缩码率小于设置的最小码率时，使用最小码率
+      if (targetBitrateKbps < minBitrateKbps) {
+        logger.info('Downloader', `[AutoCompress] 任务 ${taskId} 计算出的目标码率 (${targetBitrateKbps} kbps) 小于设置的最小码率 (${minBitrateKbps} kbps)，保底使用最小码率 (${minBitrateKbps} kbps)`)
+        targetBitrateKbps = minBitrateKbps
+      }
+
+      // 5. 限制：仅当目标码率小于等于原始码率时可以进行压缩
+      if (actualBitrateKbps > 0 && targetBitrateKbps > actualBitrateKbps) {
+        logger.info('Downloader', `[AutoCompress] 任务 ${taskId} 目标码率 (${targetBitrateKbps} kbps) 大于原始码率 (${actualBitrateKbps} kbps)，无需压缩`)
+        return { needCompress: false, targetBitrateKbps: 0 }
+      }
+
+      logger.info('Downloader', `[AutoCompress] 任务 ${taskId} 满足自动压缩条件 (体积 ${(currentSize / 1024 / 1024).toFixed(2)}MB, 目标码率 ${targetBitrateKbps}kbps)`)
+      return { needCompress: true, targetBitrateKbps }
+    } catch (e: any) {
+      logger.error('Downloader', `[AutoCompress] 评估压缩条件失败: ${e.message}`)
+      return { needCompress: false, targetBitrateKbps: 0 }
+    }
+  }
+
+  /**
+   * 下载完成后的收尾工作：无需压缩则标记完成；需压缩则加入单一压缩队列排队
+   */
+  private async handlePostDownload(taskId: string, filePath: string, fileSize: number, totalSegments?: number) {
+    const { needCompress, targetBitrateKbps } = await this.evaluateAutoCompress(filePath, taskId)
+
+    if (!needCompress) {
+      logger.info('Downloader', `[Downloader] 任务 ${taskId} 无需压缩，直接标记完成。最终大小: ${fileSize}`)
+      this.sendProgress({
+        id: taskId,
+        totalBytes: fileSize,
+        receivedBytes: fileSize,
+        downloadedSegments: totalSegments,
+        totalSegments: totalSegments,
+        status: 'completed',
+        progress: 100,
+        speed: 0
+      })
+      return
+    }
+
+    // 加入全局单一压缩队列排队调度
+    this.enqueueCompressTask({
+      taskId,
+      filePath,
+      targetBitrateKbps,
+      totalSegments
+    })
+  }
+
+  /**
+   * 统一将压缩任务压入队列（单并发调度，完全不占用下载并发槽位）
+   */
+  private enqueueCompressTask(item: CompressQueueItem) {
+    if (this.isCompressingActive) {
+      logger.info('Downloader', `[CompressQueue] 当前已有压缩任务进行中，任务 ${item.taskId} 进入排队 (队列位置: ${this.compressQueue.length + 1})`)
+      this.sendProgress({
+        id: item.taskId,
+        status: 'waiting',
+        speedText: '等待压缩',
+        progress: 100,
+        downloadedSegments: item.totalSegments,
+        totalSegments: item.totalSegments,
+        speed: 0
+      })
+      this.compressQueue.push(item)
+    } else {
+      this.isCompressingActive = true
+      this.activeCompressTaskId = item.taskId
+      this.executeCompressQueueItem(item)
+    }
+  }
+
+  /**
+   * 手动压缩视频接口（由用户或右键菜单触发）
+   */
   async compressVideoTask(taskId: string, filePath: string, targetBitrateKbps: number): Promise<{ success: boolean; newSize?: number; error?: string; skipped?: boolean }> {
     if (!fs.existsSync(filePath)) {
       return { success: false, error: '文件不存在' }
@@ -1066,42 +1258,43 @@ class Downloader {
     }
 
     return new Promise<{ success: boolean; newSize?: number; error?: string; skipped?: boolean }>((resolve, reject) => {
-      const item: CompressQueueItem = {
+      this.enqueueCompressTask({
         taskId,
         filePath,
         targetBitrateKbps,
         resolve,
         reject
-      }
-
-      if (this.isCompressingActive) {
-        logger.info('Downloader', `[CompressQueue] 当前已有压缩任务进行中，任务 ${taskId} 进入排队 (队列位置: ${this.compressQueue.length + 1})`)
-        this.sendProgress({ id: taskId, status: 'waiting', progress: 0, speed: 0 })
-        this.compressQueue.push(item)
-      } else {
-        this.isCompressingActive = true
-        this.activeCompressTaskId = taskId
-        this.executeCompressQueueItem(item)
-      }
+      })
     })
   }
 
+  /**
+   * 执行单个压缩任务（同一时刻仅有且仅能有一个任务处于执行中）
+   */
   private async executeCompressQueueItem(item: CompressQueueItem) {
-    const { taskId, filePath, targetBitrateKbps, resolve } = item
+    const { taskId, filePath, targetBitrateKbps, totalSegments, resolve } = item
     this.activeCompressTaskId = taskId
+    this.activeCompressController = new AbortController()
 
     const dir = path.dirname(filePath)
     const parsed = path.parse(filePath)
     const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
+    this.activeCompressTempPath = tempCompressedPath
 
-    const abortController = new AbortController()
-    this.activeDownloads.set(taskId, { abortController, tempPaths: [tempCompressedPath] })
+    // 注意：绝对不能将 taskId 放入 this.activeDownloads！压缩任务完全不占用下载并发槽位！
 
     try {
       const currentSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
       const info = await this.getVideoDurationAndBitrate(filePath)
 
-      this.sendProgress({ id: taskId, status: 'compressing', progress: 0, speed: 0 })
+      this.sendProgress({
+        id: taskId,
+        status: 'compressing',
+        progress: 0,
+        speed: 0,
+        downloadedSegments: totalSegments,
+        totalSegments: totalSegments
+      })
 
       const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
       let compressSuccess = false
@@ -1109,8 +1302,8 @@ class Downloader {
       let lastCompressError = ''
 
       for (const encoder of encoders) {
-        if (abortController.signal.aborted) break
-        logger.info('Downloader', `[ManualCompress] 任务 ${taskId} 尝试使用编码器 [${encoder}] 压缩 (${targetBitrateKbps} kbps)`)
+        if (this.activeCompressController.signal.aborted) break
+        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 尝试使用编码器 [${encoder}] 压缩 (${targetBitrateKbps} kbps)`)
         const result = await this.executeFfmpegCompress(
           filePath,
           tempCompressedPath,
@@ -1119,7 +1312,7 @@ class Downloader {
           info.duration,
           currentSize,
           taskId,
-          abortController
+          this.activeCompressController
         )
         if (result.success && fs.existsSync(tempCompressedPath)) {
           const compSize = fs.statSync(tempCompressedPath).size
@@ -1135,9 +1328,16 @@ class Downloader {
         try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
       }
 
+      if (this.activeCompressController.signal.aborted) {
+        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 压缩已被中断取消`)
+        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
+        if (resolve) resolve({ success: false, error: '压缩已取消' })
+        return
+      }
+
       if (compressSuccess && fs.existsSync(tempCompressedPath)) {
         const compressedSize = fs.statSync(tempCompressedPath).size
-        logger.info('Downloader', `[ManualCompress] 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
+        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
         
         const replaced = await safeAtomicReplace(tempCompressedPath, filePath)
         if (replaced) {
@@ -1147,24 +1347,28 @@ class Downloader {
             progress: 100,
             receivedBytes: compressedSize,
             totalBytes: compressedSize,
+            downloadedSegments: totalSegments,
+            totalSegments: totalSegments,
             speed: 0
           })
 
-          resolve({ success: true, newSize: compressedSize })
+          if (resolve) resolve({ success: true, newSize: compressedSize })
         } else {
-          logger.error('Downloader', `[ManualCompress] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
+          logger.error('Downloader', `[CompressTask] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
           this.sendProgress({
             id: taskId,
             status: 'completed',
             progress: 100,
             receivedBytes: currentSize,
             totalBytes: currentSize,
+            downloadedSegments: totalSegments,
+            totalSegments: totalSegments,
             speed: 0
           })
-          resolve({ success: false, error: '文件替换失败（文件可能被其他程序占用），原视频已安全保留' })
+          if (resolve) resolve({ success: false, error: '文件替换失败（文件可能被其他程序占用），原视频已安全保留' })
         }
       } else {
-        logger.warn('Downloader', `[ManualCompress] 任务 ${taskId} 压缩未成功或已取消，保留原始文件`)
+        logger.warn('Downloader', `[CompressTask] 任务 ${taskId} 压缩未成功，保留原始文件`)
         try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
         
         this.sendProgress({
@@ -1173,13 +1377,15 @@ class Downloader {
           progress: 100,
           receivedBytes: currentSize,
           totalBytes: currentSize,
+          downloadedSegments: totalSegments,
+          totalSegments: totalSegments,
           speed: 0
         })
 
-        resolve({ success: false, error: abortController.signal.aborted ? '压缩已取消' : (lastCompressError || '压缩未能完成') })
+        if (resolve) resolve({ success: false, error: lastCompressError || '压缩未能完成' })
       }
     } catch (err: any) {
-      logger.error('Downloader', `[ManualCompress] 任务 ${taskId} 异常: ${err.message}`)
+      logger.error('Downloader', `[CompressTask] 任务 ${taskId} 异常: ${err.message}`)
       try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
       this.sendProgress({
         id: taskId,
@@ -1187,18 +1393,22 @@ class Downloader {
         progress: 100,
         receivedBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
         totalBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
+        downloadedSegments: totalSegments,
+        totalSegments: totalSegments,
         speed: 0
       })
-      resolve({ success: false, error: err.message })
+      if (resolve) resolve({ success: false, error: err.message })
     } finally {
-      this.activeDownloads.delete(taskId)
       this.activeCompressTaskId = null
+      this.activeCompressController = null
+      this.activeCompressTempPath = null
       try {
         if (fs.existsSync(tempCompressedPath)) {
           fs.unlinkSync(tempCompressedPath)
         }
       } catch {}
 
+      // 启动队列中的下一个压缩任务
       this.processNextCompressQueue()
     }
   }
@@ -1213,146 +1423,8 @@ class Downloader {
     } else {
       this.isCompressingActive = false
       this.activeCompressTaskId = null
-    }
-  }
-
-  private async compressVideoIfNeeded(filePath: string, taskId: string, abortController: AbortController): Promise<number> {
-    const dir = path.dirname(filePath)
-    const parsed = path.parse(filePath)
-    const tempCompressedPath = path.join(dir, `${parsed.name}.compress_tmp.mp4`)
-
-    if (this.activeDownloads.has(taskId)) {
-      const entry = this.activeDownloads.get(taskId)!
-      if (!entry.tempPaths) entry.tempPaths = []
-      entry.tempPaths.push(tempCompressedPath)
-    }
-
-    try {
-      const ext = path.extname(filePath).toLowerCase()
-      const videoExts = ['.mp4', '.mkv', '.webm', '.ts', '.avi', '.mov', '.flv']
-      if (!videoExts.includes(ext)) {
-        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
-      }
-
-      const isCompressEnabled = (await storeManager.getSetting('enableVideoCompress')) || false
-      if (!isCompressEnabled) {
-        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
-      }
-
-      const targetGB = (await storeManager.getSetting('videoCompressTargetGB')) ?? (await storeManager.getSetting('videoCompressThresholdGB')) ?? 1.5
-      const targetSizeBytes = targetGB * 1024 * 1024 * 1024
-      const triggerSizeBytes = targetSizeBytes * 1.5
-
-      const minBitrateKbps = (await storeManager.getSetting('videoCompressMinBitrateKbps')) ?? 1500
-      const minBitrateBps = minBitrateKbps * 1000
-
-      if (!fs.existsSync(filePath)) return 0
-      const currentSize = fs.statSync(filePath).size
-
-      // 1. 体积触发条件：下载的视频文件大小 ≥ 目标文件大小的 1.5 倍
-      if (currentSize < triggerSizeBytes) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 文件体积 (${(currentSize / 1024 / 1024).toFixed(1)}MB) 未达到触发条件 (目标大小 ${targetGB}GB 的 1.5倍即 ${(triggerSizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB)，跳过压缩`)
-        return currentSize
-      }
-
-      // 2. 读取视频时长与实际码率
-      const videoInfo = await this.getVideoDurationAndBitrate(filePath)
-      let actualBitrateBps = 0
-      if (videoInfo.bitrate > 0) {
-        actualBitrateBps = videoInfo.bitrate
-      } else if (videoInfo.duration > 0) {
-        actualBitrateBps = (currentSize * 8) / videoInfo.duration
-      }
-      const actualBitrateKbps = Math.round(actualBitrateBps / 1000)
-
-      // 3. 文件码率需大于最小码率
-      if (actualBitrateBps > 0 && actualBitrateBps <= minBitrateBps) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 实际码率 (${actualBitrateKbps} kbps) 未大于设置的最小码率 (${minBitrateKbps} kbps)，保持原画质无需压缩`)
-        return currentSize
-      }
-
-      // 4. 读取视频时长，计算目标压缩大小所需的码率
-      if (!videoInfo.duration || videoInfo.duration <= 0) {
-        logger.warn('Downloader', `[VideoCompress] 任务 ${taskId} 无法获取有效视频时长，跳过压缩`)
-        return currentSize
-      }
-
-      const calculatedTargetBps = (targetSizeBytes * 8) / videoInfo.duration
-      let targetBitrateKbps = Math.round(calculatedTargetBps / 1000)
-
-      // 当计算得到的压缩码率小于设置的最小码率时，使用最小码率
-      if (targetBitrateKbps < minBitrateKbps) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 计算出的目标码率 (${targetBitrateKbps} kbps) 小于设置的最小码率 (${minBitrateKbps} kbps)，保底使用最小码率 (${minBitrateKbps} kbps)`)
-        targetBitrateKbps = minBitrateKbps
-      }
-
-      // 5. 限制：仅当目标码率小于等于原始码率时可以进行压缩
-      if (actualBitrateKbps > 0 && targetBitrateKbps > actualBitrateKbps) {
-        logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 目标码率 (${targetBitrateKbps} kbps) 大于原始码率 (${actualBitrateKbps} kbps)，无需压缩`)
-        return currentSize
-      }
-
-      logger.info('Downloader', `[VideoCompress] 任务 ${taskId} 满足压缩条件 (体积 ${(currentSize / 1024 / 1024).toFixed(2)}GB >= ${(triggerSizeBytes / 1024 / 1024).toFixed(2)}GB, 实际码率 ${actualBitrateKbps}kbps > ${minBitrateKbps}kbps, 目标码率 ${targetBitrateKbps}kbps <= ${actualBitrateKbps}kbps)，开始压缩`)
-      this.sendProgress({ id: taskId, status: 'compressing', progress: 0, speed: 0 })
-
-      const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
-      let compressSuccess = false
-      let usedEncoder = ''
-      let lastCompressError = ''
-
-      for (const encoder of encoders) {
-        if (abortController.signal.aborted) break
-        logger.info('Downloader', `[VideoCompress] 尝试使用编码器 [${encoder}] 压缩`)
-        const result = await this.executeFfmpegCompress(
-          filePath,
-          tempCompressedPath,
-          encoder,
-          targetBitrateKbps,
-          videoInfo.duration,
-          currentSize,
-          taskId,
-          abortController
-        )
-        if (result.success && fs.existsSync(tempCompressedPath)) {
-          const compSize = fs.statSync(tempCompressedPath).size
-          if (compSize > 0) {
-            compressSuccess = true
-            usedEncoder = encoder
-            break
-          }
-        }
-        if (result.error) {
-          lastCompressError = result.error
-        }
-        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
-      }
-
-      if (compressSuccess && fs.existsSync(tempCompressedPath)) {
-        const compressedSize = fs.statSync(tempCompressedPath).size
-        logger.info('Downloader', `[VideoCompress] 使用 [${usedEncoder}] 压缩成功: ${(currentSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
-        
-        // 安全原子替换原文件
-        const replaced = await safeAtomicReplace(tempCompressedPath, filePath)
-        if (replaced) {
-          return compressedSize
-        } else {
-          logger.error('Downloader', `[VideoCompress] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
-          return currentSize
-        }
-      } else {
-        logger.warn('Downloader', `[VideoCompress] 任务 ${taskId} 压缩未成功或已取消，保留原始文件`)
-        try { if (fs.existsSync(tempCompressedPath)) fs.unlinkSync(tempCompressedPath) } catch {}
-        return currentSize
-      }
-    } catch (err: any) {
-      logger.error('Downloader', `[VideoCompress] 压缩处理异常: ${err.message}`)
-      return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
-    } finally {
-      try {
-        if (fs.existsSync(tempCompressedPath)) {
-          fs.unlinkSync(tempCompressedPath)
-        }
-      } catch {}
+      this.activeCompressController = null
+      this.activeCompressTempPath = null
     }
   }
 

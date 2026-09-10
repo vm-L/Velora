@@ -70,14 +70,33 @@ defineEmits(['click']);
 
 /* Primary Button */
 .v-btn-primary {
-  background: var(--bg-surface);
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--border-light) 100%);
   color: var(--color-accent);
-  border-color: var(--color-accent);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  font-weight: 600;
 }
 .v-btn-primary:hover:not(:disabled) {
-  background: var(--bg-surface-hover);
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-hover) 100%);
   color: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  border-color: var(--border-color);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+.v-btn-primary:active:not(:disabled),
+.v-btn-primary.active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='dark'] .v-btn-primary,
+[data-theme='dark'] .v-btn-primary {
+  background: linear-gradient(180deg, var(--border-color) 0%, var(--border-light) 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+:root[data-theme='dark'] .v-btn-primary:hover:not(:disabled),
+[data-theme='dark'] .v-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--bg-surface-active) 0%, var(--border-color) 100%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 /* Secondary Button */

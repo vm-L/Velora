@@ -190,7 +190,7 @@
             </div>
 
             <div class="task-meta">
-              <span class="status-text" :class="task.status">{{ getStatusText(task.status) }}</span>
+              <span class="status-text" :class="task.status">{{ getStatusText(task.status, task) }}</span>
               <span v-if="task.status === 'error' && task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
               <span class="meta-divider">•</span>
               <span class="size-text">{{ formatBytes(task.receivedBytes) }} {{ task.totalBytes > 0 ? '/ ' + formatBytes(task.totalBytes) : '' }}</span>
@@ -642,14 +642,16 @@ const sortedTasks = computed(() => {
   });
 });
 
-const getStatusText = (status: string) => {
+const getStatusText = (status: string, task?: any) => {
+  if (status === 'waiting') {
+    return task?.speedText === '等待压缩' ? '等待压缩' : '排队中';
+  }
   switch (status) {
     case 'resolving': return '解析中';
     case 'downloading': return '下载中';
     case 'converting': return '格式转换中';
     case 'compressing': return '压缩中';
     case 'processing': return '处理中';
-    case 'waiting': return '排队中';
     case 'paused': return '已暂停';
     case 'completed': return '已完成';
     case 'error': return '下载失败';

@@ -173,15 +173,33 @@ export function getLanWebHtml(): string {
     }
 
     .v-btn-primary {
-      background: var(--bg-surface);
+      background: linear-gradient(180deg, var(--bg-surface) 0%, var(--border-light) 100%);
       color: var(--color-accent);
-      border-color: var(--color-accent);
+      border-color: var(--border-color);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      font-weight: 600;
     }
 
     .v-btn-primary:hover {
-      background: var(--bg-surface-hover);
+      background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-hover) 100%);
       color: var(--color-accent-hover);
-      border-color: var(--color-accent-hover);
+      border-color: var(--border-color);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    }
+
+    .v-btn-primary:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    [data-theme='dark'] .v-btn-primary {
+      background: linear-gradient(180deg, var(--border-color) 0%, var(--border-light) 100%);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme='dark'] .v-btn-primary:hover {
+      background: linear-gradient(180deg, var(--bg-surface-active) 0%, var(--border-color) 100%);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     .v-btn-secondary {
@@ -944,10 +962,6 @@ export function getLanWebHtml(): string {
         <div class="player-video-wrap">
           <video id="main-video" controls playsinline></video>
         </div>
-        <div style="padding:10px 16px; background:var(--bg-surface); border-top:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
-          <button class="v-btn v-btn-secondary" id="copy-stream-btn" style="font-size:12px;">复制播放链接 (第三方播放器)</button>
-          <a id="video-download-btn" class="v-btn v-btn-primary" style="font-size:12px;" download>下载原文件</a>
-        </div>
       </div>
     </div>
 
@@ -1010,6 +1024,14 @@ export function getLanWebHtml(): string {
     var authPassword = document.getElementById('auth-password');
     var authSubmitBtn = document.getElementById('auth-submit-btn');
     var logoutBtn = document.getElementById('logout-btn');
+    var actionModal = document.getElementById('action-modal');
+    var actionModalTitle = document.getElementById('action-modal-title');
+    var actionModalBody = document.getElementById('action-modal-body');
+    var actionModalFooter = document.getElementById('action-modal-footer');
+
+    window.closeActionModal = function() {
+      if (actionModal) actionModal.style.display = 'none';
+    };
 
     if (navBackBtn) {
       navBackBtn.addEventListener('click', function() {
@@ -1419,26 +1441,53 @@ export function getLanWebHtml(): string {
         } else if (cat === 'image') {
           openImageModal(item);
         } else {
-          // Direct download
-          window.location.href = '/download?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+          openUnsupportedPreviewModal(item);
         }
       }
+    };
+
+    // 不支持在线预览的文件提醒与下载确认
+    function openUnsupportedPreviewModal(item) {
+      var extText = item.ext ? '.' + item.ext.toLowerCase() : '未知格式';
+      actionModalTitle.innerText = '文件提示';
+      actionModalBody.innerHTML = '<div style="display:flex; flex-direction:column; gap:12px;">' +
+        '<p style="font-size:14px; color:var(--text-primary); line-height:1.6; margin:0;">' +
+        '该文件格式 (<strong style="color:var(--color-accent);">' + escapeHtml(extText) + '</strong>) 暂不支持在线预览，是否下载该文件？' +
+        '</p>' +
+        '<div style="font-size:12px; color:var(--text-secondary); background:var(--bg-secondary); padding:10px 12px; border-radius:8px; border:1px solid var(--border-light); word-break:break-all;">' +
+        '<div style="line-height:1.5;"><strong style="color:var(--text-primary);">文件名：</strong>' + escapeHtml(item.name) + '</div>' +
+        '<div style="margin-top:6px; line-height:1.5;"><strong style="color:var(--text-primary);">文件大小：</strong>' + formatBytes(item.size) + '</div>' +
+        '</div>' +
+        '</div>';
+
+      var encodedPath = encodeURIComponent(item.path);
+      actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
+        '<button class="v-btn v-btn-primary" onclick="confirmDownloadFile(\\'' + encodedPath + '\\')">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>' +
+        '<polyline points="7 10 12 15 17 10"></polyline>' +
+        '<line x1="12" y1="15" x2="12" y2="3"></line>' +
+        '</svg>' +
+        '<span class="btn-text">下载文件</span>' +
+        '</button>';
+
+      actionModal.style.display = 'flex';
+    }
+
+    window.confirmDownloadFile = function(encodedPath) {
+      closeActionModal();
+      var itemPath = decodeURIComponent(encodedPath);
+      window.location.href = '/download?path=' + encodeURIComponent(itemPath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
     };
 
     // Video Player
     function openVideoModal(item) {
       var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
-      var downloadUrl = window.location.origin + '/download?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
       
       document.getElementById('video-modal-title').innerText = item.name;
       var video = document.getElementById('main-video');
       video.src = streamUrl;
       video.play().catch(function() {});
-      
-      document.getElementById('copy-stream-btn').onclick = function() {
-        navigator.clipboard.writeText(streamUrl).then(function() { showToast('已复制流媒体链接到剪贴板'); });
-      };
-      document.getElementById('video-download-btn').href = downloadUrl;
       document.getElementById('video-modal').style.display = 'flex';
     }
 
@@ -1476,15 +1525,7 @@ export function getLanWebHtml(): string {
       loadDirectory(state.currentPath);
     });
 
-    // Action Modal for Editing
-    var actionModal = document.getElementById('action-modal');
-    var actionModalTitle = document.getElementById('action-modal-title');
-    var actionModalBody = document.getElementById('action-modal-body');
-    var actionModalFooter = document.getElementById('action-modal-footer');
 
-    window.closeActionModal = function() {
-      actionModal.style.display = 'none';
-    };
 
     newFolderBtn.addEventListener('click', function() {
       actionModalTitle.innerText = '新建文件夹';
