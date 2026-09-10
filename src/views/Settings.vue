@@ -405,10 +405,12 @@
           </div>
           <div class="action-buttons" style="display: flex; gap: 8px;">
             <v-button variant="secondary" @click="handleImportResources">
-              导入
+              <v-icon name="import" :size="14" />
+              <span>导入</span>
             </v-button>
             <v-button variant="secondary" @click="handleExportResources">
-              导出
+              <v-icon name="export" :size="14" />
+              <span>导出</span>
             </v-button>
           </div>
         </div>
@@ -661,6 +663,7 @@ import { useOpenedCMS } from '../composables/useOpenedCMS';
 import { logger } from '../services/logger';
 import { generateQrCodeSvg } from '../utils/qrcode';
 import VButton from '../components/base/VButton.vue';
+import VIcon from '../components/base/VIcon.vue';
 
 import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
 import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue';

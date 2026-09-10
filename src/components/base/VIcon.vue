@@ -56,7 +56,11 @@ export type IconName =
   | 'error'
   | 'loading'
   | 'external-link'
-  | 'bot';
+  | 'bot'
+  | 'import'
+  | 'export'
+  | 'globe'
+  | 'shield';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -235,16 +239,12 @@ const iconsMap: Record<string, string> = {
     <line x1="5" y1="12" x2="19" y2="12"></line>
   `,
 
-  // 压缩 (左右对向挤压箭头 + 中间电影胶卷: → [ 🎬 ] ←)
+  // 压缩 (极简内缩折线箭头 + 视频播放视窗)
   'compress': `
-    <line x1="1.5" y1="12" x2="5.5" y2="12"></line>
-    <polyline points="3.5 10 5.5 12 3.5 14"></polyline>
-    <line x1="22.5" y1="12" x2="18.5" y2="12"></line>
-    <polyline points="20.5 10 18.5 12 20.5 14"></polyline>
-    <rect x="7.5" y="4" width="9" height="16" rx="1.5"></rect>
-    <line x1="7.5" y1="8" x2="16.5" y2="8"></line>
-    <line x1="7.5" y1="16" x2="16.5" y2="16"></line>
-    <polygon points="10.5 10 14 12 10.5 14" fill="currentColor"></polygon>
+    <polyline points="4 9 7 12 4 15"></polyline>
+    <polyline points="20 9 17 12 20 15"></polyline>
+    <rect x="9" y="5" width="6" height="14" rx="1.5"></rect>
+    <polygon points="11 10.5 13.5 12 11 13.5" fill="currentColor"></polygon>
   `,
 
   // 提示信息 (Info - 居中信息圆标)
@@ -284,6 +284,32 @@ const iconsMap: Record<string, string> = {
     <line x1="18" y1="12" x2="22" y2="12"></line>
     <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
     <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+  `,
+
+  // 导入 / 入口 (向下注入托盘)
+  'import': `
+    <polyline points="4 14 4 20 20 20 20 14"></polyline>
+    <line x1="12" y1="3" x2="12" y2="15"></line>
+    <polyline points="8 11 12 15 16 11"></polyline>
+  `,
+
+  // 导出 / 出口 (向上抽离托盘)
+  'export': `
+    <polyline points="4 14 4 20 20 20 20 14"></polyline>
+    <line x1="12" y1="15" x2="12" y2="3"></line>
+    <polyline points="8 7 12 3 16 7"></polyline>
+  `,
+
+  // 万维网 / 网页资源站点
+  'globe': `
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="2" y1="12" x2="22" y2="12"></line>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+  `,
+
+  // 防护盾牌 / 广告拦截规则
+  'shield': `
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
   `
 };
 

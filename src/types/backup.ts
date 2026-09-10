@@ -87,6 +87,6 @@ export const BACKUP_SECTIONS: ConfigBackupSectionMeta[] = [
     title: '广告拦截规则源',
     category: '安全防护',
     description: '自定义订阅或内置启用的广告过滤拦截规则源',
-    icon: 'settings'
+    icon: 'shield'
   }
 ];

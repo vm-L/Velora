@@ -1,104 +1,108 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="handleCancel">
-    <div class="modal-content config-backup-modal">
-      <div class="modal-header">
-        <div class="header-title-group">
-          <v-icon :name="mode === 'export' ? 'download' : 'folder'" :size="18" class="header-icon" />
-          <h3>{{ mode === 'export' ? '导出配置备份' : '导入配置备份' }}</h3>
-        </div>
-        <v-button variant="icon" class="modal-close-btn" @click="handleCancel" title="关闭">
-          <v-icon name="close" :size="16" />
-        </v-button>
-      </div>
-
-      <div class="modal-body">
-        <!-- 提示与全选工具栏 -->
-        <div class="toolbar-row">
-          <div class="summary-text">
-            <span>{{ mode === 'export' ? '请勾选需要导出的设置与资源项' : '请勾选需要恢复的设置与资源项' }}</span>
-            <span class="count-badge">已选 {{ selectedKeys.length }} / {{ availableSections.length }} 项</span>
-          </div>
-          <div class="quick-actions">
-            <button type="button" class="text-btn" @click="selectAll">全选</button>
-            <span class="divider">/</span>
-            <button type="button" class="text-btn" @click="toggleInvert">反选</button>
-          </div>
-        </div>
-
-        <!-- 选项列表 -->
-        <div class="section-list custom-scroll">
-          <div
-            v-for="item in availableSections"
-            :key="item.key"
-            class="section-item"
-            :class="{ 'is-selected': isSelected(item.key) }"
-            @click="toggleSelect(item.key)"
-          >
-            <div class="item-checkbox" @click.stop>
-              <v-checkbox
-                :model-value="isSelected(item.key)"
-                @change="toggleSelect(item.key)"
-              />
+  <Teleport to="body">
+    <transition name="dialog-fade">
+      <div v-if="visible" class="modal-overlay" @click.self="handleCancel">
+        <div class="modal-content config-backup-modal">
+          <div class="modal-header">
+            <div class="header-title-group">
+              <v-icon :name="mode === 'export' ? 'export' : 'import'" :size="18" class="header-icon" />
+              <h3>{{ mode === 'export' ? '导出配置备份' : '导入配置备份' }}</h3>
             </div>
-            <div class="item-icon-wrapper">
-              <v-icon :name="item.icon as any" :size="18" />
-            </div>
-            <div class="item-info">
-              <div class="item-title-row">
-                <span class="item-title">{{ item.title }}</span>
-                <span class="item-category-tag">{{ item.category }}</span>
+            <v-button variant="icon" class="modal-close-btn" @click="handleCancel" title="关闭">
+              <v-icon name="close" :size="16" />
+            </v-button>
+          </div>
+
+          <div class="modal-body">
+            <!-- 提示与全选工具栏 -->
+            <div class="toolbar-row">
+              <div class="summary-text">
+                <span>{{ mode === 'export' ? '请勾选需要导出的设置与资源项' : '请勾选需要恢复的设置与资源项' }}</span>
+                <span class="count-badge">已选 {{ selectedKeys.length }} / {{ availableSections.length }} 项</span>
               </div>
-              <div class="item-desc">{{ item.description }}</div>
+              <div class="quick-actions">
+                <button type="button" class="text-btn" @click="selectAll">全选</button>
+                <span class="divider">/</span>
+                <button type="button" class="text-btn" @click="toggleInvert">反选</button>
+              </div>
             </div>
-            <div class="item-stat-badge">
-              {{ getItemStatText(item.key) }}
+
+            <!-- 选项列表 -->
+            <div class="section-list custom-scroll">
+              <div
+                v-for="item in availableSections"
+                :key="item.key"
+                class="section-item"
+                :class="{ 'is-selected': isSelected(item.key) }"
+                @click="toggleSelect(item.key)"
+              >
+                <div class="item-checkbox" @click.stop>
+                  <v-checkbox
+                    :model-value="isSelected(item.key)"
+                    @change="toggleSelect(item.key)"
+                  />
+                </div>
+                <div class="item-icon-wrapper">
+                  <v-icon :name="item.icon as any" :size="18" />
+                </div>
+                <div class="item-info">
+                  <div class="item-title-row">
+                    <span class="item-title">{{ item.title }}</span>
+                    <span class="item-category-tag">{{ item.category }}</span>
+                  </div>
+                  <div class="item-desc">{{ item.description }}</div>
+                </div>
+                <div class="item-stat-badge">
+                  {{ getItemStatText(item.key) }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 导入模式下的冲突合并策略选择 -->
+            <div v-if="mode === 'import'" class="import-strategy-section">
+              <div class="strategy-title">遇到重复条目时的冲突策略</div>
+              <div class="strategy-options">
+                <div
+                  class="strategy-card"
+                  :class="{ active: importMode === 'merge' }"
+                  @click="importMode = 'merge'"
+                >
+                  <div class="strategy-header">
+                    <span class="strategy-radio"></span>
+                    <span class="strategy-name">增量合并（推荐）</span>
+                  </div>
+                  <div class="strategy-desc">保持当前已有数据，仅追加备份中不存在的新站点、规则与脚本</div>
+                </div>
+
+                <div
+                  class="strategy-card"
+                  :class="{ active: importMode === 'overwrite' }"
+                  @click="importMode = 'overwrite'"
+                >
+                  <div class="strategy-header">
+                    <span class="strategy-radio"></span>
+                    <span class="strategy-name text-danger">覆盖重置</span>
+                  </div>
+                  <div class="strategy-desc">使用备份文件直接覆盖当前系统对应模块的所有已有数据</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 导入模式下的冲突合并策略选择 -->
-        <div v-if="mode === 'import'" class="import-strategy-section">
-          <div class="strategy-title">遇到重复条目时的冲突策略</div>
-          <div class="strategy-options">
-            <div
-              class="strategy-card"
-              :class="{ active: importMode === 'merge' }"
-              @click="importMode = 'merge'"
+          <div class="modal-footer">
+            <v-button variant="secondary" @click="handleCancel">取消</v-button>
+            <v-button
+              variant="primary"
+              :disabled="selectedKeys.length === 0"
+              @click="handleConfirm"
             >
-              <div class="strategy-header">
-                <span class="strategy-radio"></span>
-                <span class="strategy-name">增量合并（推荐）</span>
-              </div>
-              <div class="strategy-desc">保持当前已有数据，仅追加备份中不存在的新站点、规则与脚本</div>
-            </div>
-
-            <div
-              class="strategy-card"
-              :class="{ active: importMode === 'overwrite' }"
-              @click="importMode = 'overwrite'"
-            >
-              <div class="strategy-header">
-                <span class="strategy-radio"></span>
-                <span class="strategy-name text-danger">覆盖重置</span>
-              </div>
-              <div class="strategy-desc">使用备份文件直接覆盖当前系统对应模块的所有已有数据</div>
-            </div>
+              {{ mode === 'export' ? `确认导出 (${selectedKeys.length})` : `确认导入 (${selectedKeys.length})` }}
+            </v-button>
           </div>
         </div>
       </div>
-
-      <div class="modal-footer">
-        <v-button variant="secondary" @click="handleCancel">取消</v-button>
-        <v-button
-          variant="primary"
-          :disabled="selectedKeys.length === 0"
-          @click="handleConfirm"
-        >
-          {{ mode === 'export' ? `确认导出 (${selectedKeys.length})` : `确认导入 (${selectedKeys.length})` }}
-        </v-button>
-      </div>
-    </div>
-  </div>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -300,12 +304,42 @@ const handleConfirm = () => {
 </script>
 
 <style scoped>
-.config-backup-modal {
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100000;
+}
+
+.modal-content.config-backup-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.24);
   max-width: 620px;
   width: 90vw;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
-  max-height: 85vh;
+  overflow: hidden;
+  color: var(--text-primary);
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .header-title-group {
@@ -314,17 +348,41 @@ const handleConfirm = () => {
   gap: 8px;
 }
 
+.header-title-group h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .header-icon {
   color: var(--color-accent);
+}
+
+.modal-close-btn {
+  color: var(--text-secondary) !important;
+}
+
+.modal-close-btn:hover {
+  color: var(--text-primary) !important;
+}
+
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .toolbar-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 2px 12px 2px;
+  padding: 0 0 10px 0;
   border-bottom: 1px solid var(--border-light);
-  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
 .summary-text {
@@ -336,9 +394,10 @@ const handleConfirm = () => {
 }
 
 .count-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 8px;
-  background-color: var(--bg-hover);
+  background-color: var(--border-light);
   color: var(--color-accent);
   border-radius: 12px;
   font-size: 12px;
@@ -359,16 +418,17 @@ const handleConfirm = () => {
   cursor: pointer;
   padding: 2px 6px;
   font-size: 13px;
+  font-weight: 500;
   border-radius: 4px;
   transition: background-color 0.15s ease;
 }
 
 .text-btn:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--border-light);
 }
 
 .divider {
-  color: var(--border-light);
+  color: var(--border-color);
   user-select: none;
 }
 
@@ -376,49 +436,56 @@ const handleConfirm = () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 320px;
+  max-height: 330px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
 .section-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid var(--border-light);
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
 }
 
 .section-item:hover {
-  border-color: var(--color-accent);
-  background-color: var(--bg-hover);
+  border-color: var(--border-color);
+  background-color: var(--bg-surface-hover);
 }
 
 .section-item.is-selected {
   border-color: var(--color-accent);
-  background-color: color-mix(in srgb, var(--color-accent) 5%, var(--bg-card));
+  background-color: color-mix(in srgb, var(--color-accent) 4%, var(--bg-surface));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .item-checkbox {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .item-icon-wrapper {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  background-color: var(--bg-hover);
+  border-radius: 8px;
+  background-color: var(--border-light);
   color: var(--color-accent);
   flex-shrink: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.section-item.is-selected .item-icon-wrapper {
+  background-color: color-mix(in srgb, var(--color-accent) 12%, var(--bg-surface));
 }
 
 .item-info {
@@ -442,9 +509,10 @@ const handleConfirm = () => {
 .item-category-tag {
   font-size: 11px;
   color: var(--text-secondary);
-  background-color: var(--bg-hover);
+  background-color: var(--border-light);
   padding: 1px 6px;
   border-radius: 4px;
+  font-weight: 400;
 }
 
 .item-desc {
@@ -458,17 +526,25 @@ const handleConfirm = () => {
 .item-stat-badge {
   font-size: 12px;
   color: var(--text-secondary);
-  background-color: var(--bg-hover);
-  padding: 4px 10px;
+  background-color: var(--border-light);
+  padding: 3px 9px;
   border-radius: 12px;
   white-space: nowrap;
   font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.section-item.is-selected .item-stat-badge {
+  color: var(--color-accent);
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--color-accent) 8%, var(--bg-surface));
 }
 
 .import-strategy-section {
-  margin-top: 14px;
+  margin-top: 4px;
   padding-top: 12px;
   border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 
 .strategy-title {
@@ -485,27 +561,29 @@ const handleConfirm = () => {
 }
 
 .strategy-card {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 8px;
-  border: 1px solid var(--border-light);
-  background-color: var(--bg-card);
+  border: 1.5px solid var(--border-light);
+  background-color: var(--bg-surface);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
+  user-select: none;
 }
 
 .strategy-card:hover {
-  border-color: var(--color-accent);
+  border-color: var(--border-color);
+  background-color: var(--bg-surface-hover);
 }
 
 .strategy-card.active {
   border-color: var(--color-accent);
-  background-color: color-mix(in srgb, var(--color-accent) 8%, var(--bg-card));
+  background-color: color-mix(in srgb, var(--color-accent) 5%, var(--bg-surface));
 }
 
 .strategy-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 4px;
 }
 
@@ -513,10 +591,11 @@ const handleConfirm = () => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid var(--text-secondary);
+  border: 1.5px solid var(--text-tertiary);
   position: relative;
   display: inline-block;
   flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
 .strategy-card.active .strategy-radio {
@@ -528,8 +607,8 @@ const handleConfirm = () => {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background-color: var(--color-accent);
 }
@@ -544,9 +623,46 @@ const handleConfirm = () => {
   font-size: 11px;
   color: var(--text-secondary);
   line-height: 1.4;
+  padding-left: 22px;
 }
 
 .text-danger {
   color: var(--color-error, #ef4444);
+}
+
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-surface);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Transitions */
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.dialog-fade-enter-active .modal-content,
+.dialog-fade-leave-active .modal-content {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+}
+
+.dialog-fade-enter-from .modal-content {
+  opacity: 0;
+  transform: scale(0.96) translateY(8px);
+}
+
+.dialog-fade-leave-to .modal-content {
+  opacity: 0;
+  transform: scale(0.96);
 }
 </style>

@@ -5,7 +5,7 @@
         <!-- Modal Header -->
         <div class="modal-header">
           <div class="header-title">
-            <VIcon name="settings" :size="18" style="margin-right: 6px;" />
+            <VIcon name="shield" :size="18" style="margin-right: 6px;" />
             <span>广告过滤规则源管理</span>
           </div>
           <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" @click="close" title="关闭">
