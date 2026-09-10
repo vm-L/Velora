@@ -192,28 +192,28 @@ const toggleSourceEnable = async (source: AdBlockSource) => {
 const handleSyncSource = async (source: AdBlockSource) => {
   if (syncingIds.value.includes(source.id)) return;
   syncingIds.value.push(source.id);
-  showMessage(`正在同步 ${source.name}`, 'info');
+  const msgId = showMessage(`正在同步 ${source.name}`, 'loading', 0);
 
   const res = await syncAdBlockSourceItem(source.id);
   syncingIds.value = syncingIds.value.filter(id => id !== source.id);
 
   if (res.success) {
-    showMessage(`成功同步 ${source.name} (${res.count} 条规则)`, 'success');
+    showMessage(`成功同步 ${source.name} (${res.count} 条规则)`, 'success', 2000, undefined, msgId);
   } else {
-    showMessage(`同步失败: ${res.error}`, 'error');
+    showMessage(`同步失败: ${res.error}`, 'error', 2500, undefined, msgId);
   }
 };
 
 const handleSyncAll = async () => {
   if (isSyncingAll.value) return;
   isSyncingAll.value = true;
-  showMessage('正在同步所有已启用的过滤规则源', 'info');
+  const msgId = showMessage('正在同步所有已启用的过滤规则源', 'loading', 0);
 
   try {
     const count = await syncAllAdBlockSources();
-    showMessage(`成功完成 ${count} 个规则源的更新`, 'success');
+    showMessage(`成功完成 ${count} 个规则源的更新`, 'success', 2000, undefined, msgId);
   } catch (err: any) {
-    showMessage(`同步异常: ${err.message}`, 'error');
+    showMessage(`同步异常: ${err.message}`, 'error', 2500, undefined, msgId);
   } finally {
     isSyncingAll.value = false;
   }

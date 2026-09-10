@@ -920,13 +920,13 @@ const totalActiveRulesCount = computed(() => {
 const handleUpdateAllRules = async () => {
   if (isUpdatingAllRules.value) return;
   isUpdatingAllRules.value = true;
-  showMessage('正在同步更新所有启用的广告过滤规则', 'info');
+  const msgId = showMessage('正在同步更新所有启用的广告过滤规则', 'loading', 0);
 
   try {
     await syncAllAdBlockSources();
-    showMessage(`规则同步完成，当前已生效 ${totalActiveRulesCount.value.toLocaleString()} 条过滤规则`, 'success');
+    showMessage(`规则同步完成，当前已生效 ${totalActiveRulesCount.value.toLocaleString()} 条过滤规则`, 'success', 2500, undefined, msgId);
   } catch (err: any) {
-    showMessage(`更新失败: ${err.message}`, 'error');
+    showMessage(`更新失败: ${err.message}`, 'error', 3000, undefined, msgId);
   } finally {
     isUpdatingAllRules.value = false;
   }

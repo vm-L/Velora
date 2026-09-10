@@ -27,45 +27,12 @@ export interface MessageOptions {
   action?: MessageAction
 }
 
-const MAX_MESSAGES = 3
 const messages = ref<MessageData[]>([])
 
 // 确保页面可见性变化监听只绑定一次
 let visibilityListenerRegistered = false
 
 export const useMessage = () => {
-  const updateTopTimer = () => {
-    // 清理所有非栈顶消息的定时器，确保仅最顶层可见消息在计时
-    for (let i = 0; i < messages.value.length - 1; i++) {
-      const msg = messages.value[i]
-      if (msg.timer) {
-        clearTimeout(msg.timer)
-        msg.timer = null
-      }
-    }
-
-    if (messages.value.length === 0) return
-
-    // 栈顶消息（数组末尾，视觉最顶层）
-    const topMsg = messages.value[messages.value.length - 1]
-
-    // 若页面处于后台隐藏状态，或处于暂停状态，不启动计时器
-    if (typeof document !== 'undefined' && document.hidden) {
-      topMsg.isPaused = true
-      return
-    }
-
-    if (topMsg.isPaused) return
-
-    if (topMsg.duration > 0 && !topMsg.timer) {
-      topMsg.startTime = Date.now()
-      const delay = Math.max(300, topMsg.remainingDuration || topMsg.duration)
-      topMsg.timer = setTimeout(() => {
-        removeMessage(topMsg.id)
-      }, delay)
-    }
-  }
-
   const clearAllMessages = () => {
     messages.value.forEach(msg => {
       if (msg.timer) {
@@ -76,7 +43,7 @@ export const useMessage = () => {
     messages.value = []
   }
 
-  // 绑定可见性监听：当窗口不可见时立即清除所有 message 实例
+  // 绑定可见性监听：当窗口不可见时立即清除所有 message 实例，禁止后台累积
   if (typeof document !== 'undefined' && !visibilityListenerRegistered) {
     visibilityListenerRegistered = true
     document.addEventListener('visibilitychange', () => {
@@ -97,8 +64,6 @@ export const useMessage = () => {
         messages.value[idx].timer = null
       }
       messages.value.splice(idx, 1)
-      // 移除当前消息后，为新晋升到栈顶的消息开启倒计时
-      updateTopTimer()
     }
   }
 
@@ -120,18 +85,21 @@ export const useMessage = () => {
     messages.value.forEach(msg => {
       if (!id || msg.id === id) {
         msg.isPaused = false
-        if (msg.remainingDuration <= 0) {
-          msg.remainingDuration = msg.duration > 0 ? msg.duration : 1500
+        if (msg.duration > 0 && !msg.timer) {
+          const delay = Math.max(800, msg.remainingDuration > 0 ? msg.remainingDuration : msg.duration)
+          msg.startTime = Date.now()
+          msg.timer = setTimeout(() => {
+            removeMessage(msg.id)
+          }, delay)
         }
       }
     })
-    updateTopTimer()
   }
 
   const showMessage = (
     textOrOptions: string | MessageOptions,
     type: MessageType = 'info',
-    duration = 1500,
+    duration = 2000,
     action?: MessageAction,
     id?: string
   ): string => {
@@ -142,14 +110,14 @@ export const useMessage = () => {
 
     let msgText = ''
     let msgType: MessageType = 'info'
-    let msgDuration = 1500
+    let msgDuration = 2000
     let msgAction: MessageAction | undefined = undefined
     let msgId = id
 
     if (typeof textOrOptions === 'object') {
       msgText = textOrOptions.text
       msgType = textOrOptions.type || 'info'
-      msgDuration = textOrOptions.duration !== undefined ? textOrOptions.duration : 1500
+      msgDuration = textOrOptions.duration !== undefined ? textOrOptions.duration : 2000
       msgAction = textOrOptions.action
       msgId = textOrOptions.id || id
     } else {
@@ -161,7 +129,7 @@ export const useMessage = () => {
 
     const finalId = msgId || Math.random().toString(36).substring(2, 11)
 
-    // 若已存在同名 ID 消息，直接原位更新
+    // 1. 若指定了相同 ID 且该消息当前存在，直接原位更新（如 loading -> success/error 顺滑流转）
     const existingIndex = messages.value.findIndex(m => m.id === finalId)
     if (existingIndex !== -1) {
       const existing = messages.value[existingIndex]
@@ -176,16 +144,27 @@ export const useMessage = () => {
       existing.startTime = Date.now()
       existing.action = msgAction
       existing.isPaused = false
-      updateTopTimer()
+      if (msgDuration > 0) {
+        existing.timer = setTimeout(() => {
+          removeMessage(finalId)
+        }, msgDuration)
+      }
       return finalId
     }
 
-    // 控制消息队列上限：超出 MAX_MESSAGES 时，优雅淘汰最老的消息
-    while (messages.value.length >= MAX_MESSAGES) {
-      const oldest = messages.value.shift()
-      if (oldest?.timer) {
-        clearTimeout(oldest.timer)
+    // 2. 若为新消息，立即清理并淘汰所有旧消息定时器，杜绝后进先出栈式倒挂与旧消息“死而复生”
+    messages.value.forEach(m => {
+      if (m.timer) {
+        clearTimeout(m.timer)
+        m.timer = null
       }
+    })
+
+    let timer: any = null
+    if (msgDuration > 0) {
+      timer = setTimeout(() => {
+        removeMessage(finalId)
+      }, msgDuration)
     }
 
     const newMsgObj: MessageData = {
@@ -196,13 +175,12 @@ export const useMessage = () => {
       remainingDuration: msgDuration,
       startTime: Date.now(),
       action: msgAction,
-      timer: null,
+      timer,
       isPaused: false
     }
 
-    // 推入消息队列末尾（栈顶显示）
-    messages.value.push(newMsgObj)
-    updateTopTimer()
+    // 单实例精准展示：确保当前仅展示最新有效反馈，绝不堆叠冲突
+    messages.value = [newMsgObj]
 
     return finalId
   }

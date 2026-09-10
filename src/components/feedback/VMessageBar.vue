@@ -1,15 +1,11 @@
 <template>
-  <div 
-    class="message-container" 
-    :class="{ 'is-expanded': isHovered }"
-  >
+  <div class="message-container">
     <TransitionGroup name="message-list">
       <div 
-        v-for="(msg, index) in messages" 
+        v-for="msg in messages" 
         :key="msg.id" 
         class="message-item" 
-        :class="[`message-${msg.type}`, { 'is-front': index === messages.length - 1 }]"
-        :style="getStyle(index)"
+        :class="`message-${msg.type}`"
         @mouseenter="handleMouseEnter"
         @mouseleave="handleMouseLeave"
       >
@@ -21,7 +17,7 @@
           />
         </div>
         <div class="message-content">
-          <span class="message-text">{{ msg.text }}</span>
+          <span class="message-text" :title="msg.text">{{ msg.text }}</span>
           <VButton
             v-if="msg.action"
             variant="text"
@@ -34,7 +30,8 @@
         <VButton
           variant="icon"
           class="message-close-btn"
-          @click="removeMessage(msg.id)"
+          @click.stop="removeMessage(msg.id)"
+          title="关闭"
         >
           <VIcon name="close" :size="12" />
         </VButton>
@@ -44,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { useMessage } from '../../composables/useMessage'
 import VIcon from '../base/VIcon.vue'
 import VButton from '../base/VButton.vue'
@@ -53,28 +50,13 @@ const { messages, removeMessage, pauseTimer, resumeTimer } = useMessage()
 const isHovered = ref(false)
 let hoverLeaveTimer: any = null
 
-watch(
-  () => messages.value.length,
-  (len) => {
-    if (len === 0) {
-      isHovered.value = false
-      if (hoverLeaveTimer) {
-        clearTimeout(hoverLeaveTimer)
-        hoverLeaveTimer = null
-      }
-    }
-  }
-)
-
 const handleMouseEnter = () => {
   if (hoverLeaveTimer) {
     clearTimeout(hoverLeaveTimer)
     hoverLeaveTimer = null
   }
-  if (!isHovered.value) {
-    isHovered.value = true
-    pauseTimer()
-  }
+  isHovered.value = true
+  pauseTimer()
 }
 
 const handleMouseLeave = () => {
@@ -83,7 +65,7 @@ const handleMouseLeave = () => {
     isHovered.value = false
     resumeTimer()
     hoverLeaveTimer = null
-  }, 150)
+  }, 100)
 }
 
 onBeforeUnmount(() => {
@@ -92,29 +74,12 @@ onBeforeUnmount(() => {
     hoverLeaveTimer = null
   }
 })
-
-const getStyle = (index: number): any => {
-  const total = messages.value.length
-  // reverseIndex: 0 is the newest (visually in the front/top)
-  const reverseIndex = total - 1 - index
-  
-  const isActive = reverseIndex < 3
-  const yOffset = isActive ? reverseIndex * -12 : -12 * 3
-  const scale = isActive ? 1 - reverseIndex * 0.04 : 1 - 3 * 0.04
-  
-  return {
-    transform: `translate3d(0, ${yOffset}px, 0) scale(${scale})`,
-    zIndex: 1000 - reverseIndex,
-    opacity: isActive ? 1 - reverseIndex * 0.15 : 0,
-    pointerEvents: reverseIndex === 0 ? 'auto' : 'none'
-  }
-}
 </script>
 
 <style scoped lang="less">
 .message-container {
   position: fixed;
-  top: 40px;
+  top: 36px;
   left: 0;
   right: 0;
   z-index: 10000;
@@ -132,32 +97,25 @@ const getStyle = (index: number): any => {
   margin-left: auto;
   margin-right: auto;
   width: max-content;
-  min-width: 320px;
-  max-width: 440px;
-  height: 52px;
+  min-width: 280px;
+  max-width: min(85vw, 620px);
+  min-height: 48px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
+  padding: 10px 16px;
   background: var(--bg-surface);
+  border: 1px solid var(--border-light);
   border-radius: 12px;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-soft), 0 8px 24px rgba(0, 0, 0, 0.08);
   pointer-events: auto;
   font-size: 14px;
   font-weight: 500;
-  transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1), max-width 0.3s cubic-bezier(0.2, 1, 0.2, 1), opacity 0.3s ease, padding 0.2s ease;
+  color: var(--text-primary);
   transform-origin: top center;
-  overflow: hidden;
-
-  .is-expanded & {
-    height: auto;
-    min-height: 52px;
-    max-width: min(88vw, 780px);
-    padding: 14px 16px;
-    align-items: flex-start;
-    overflow: visible;
-  }
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  user-select: none;
 }
 
 .message-content {
@@ -165,29 +123,20 @@ const getStyle = (index: number): any => {
   align-items: center;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-
-  .is-expanded & {
-    align-items: flex-start;
-    overflow: visible;
-  }
 }
 
 .message-text {
   color: var(--text-primary);
   line-height: 1.45;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
-
-  .is-expanded & {
-    white-space: normal;
-    word-break: break-word;
-    overflow: visible;
-    text-overflow: clip;
-  }
 }
 
 .message-action-btn {
@@ -215,10 +164,6 @@ const getStyle = (index: number): any => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-
-  .is-expanded & {
-    margin-top: 2px;
-  }
 }
 
 .message-info .message-icon { color: var(--color-accent); }
@@ -254,10 +199,6 @@ const getStyle = (index: number): any => {
   box-shadow: none !important;
   flex-shrink: 0;
 
-  .is-expanded & {
-    margin-top: -2px;
-  }
-
   &:hover {
     background: transparent !important;
     color: var(--text-primary) !important;
@@ -268,7 +209,7 @@ const getStyle = (index: number): any => {
 .message-list-move,
 .message-list-enter-active,
 .message-list-leave-active {
-  transition: all 0.35s cubic-bezier(0.2, 1, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .message-list-leave-active {
   position: absolute !important;
@@ -277,10 +218,10 @@ const getStyle = (index: number): any => {
 }
 .message-list-enter-from {
   opacity: 0;
-  transform: translate3d(0, -20px, 0) scale(0.9) !important;
+  transform: translate3d(0, -16px, 0) scale(0.95) !important;
 }
 .message-list-leave-to {
   opacity: 0 !important;
-  transform: translate3d(0, -16px, 0) scale(0.96) !important;
+  transform: translate3d(0, -12px, 0) scale(0.96) !important;
 }
 </style>

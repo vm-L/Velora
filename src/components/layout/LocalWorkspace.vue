@@ -495,7 +495,7 @@ const props = defineProps<{
 
 const route = useRoute();
 
-const { showMessage } = useMessage();
+const { showMessage, removeMessage } = useMessage();
 const { confirm } = useConfirm();
 
 const currentPath = ref<string>(props.resourcePath);
@@ -915,10 +915,11 @@ const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any; t
 const handleCompressDirectory = async (item: LocalFileItem) => {
   closeContextMenu();
   if (!item || !window.electronAPI) return;
-  showMessage(`正在扫描目录 "${item.name}" 中的视频文件`, 'info');
+  const msgId = showMessage(`正在扫描目录 "${item.name}" 中的视频文件`, 'loading', 0);
   try {
     const res = await window.electronAPI.scanLocalVideos([item.path]);
     if (res && res.success && res.videos && res.videos.length > 0) {
+      removeMessage(msgId);
       batchCompressTasks.value = res.videos.map(v => ({
         id: `local-${Math.random().toString(36).substr(2, 8)}`,
         name: v.name,
@@ -927,10 +928,10 @@ const handleCompressDirectory = async (item: LocalFileItem) => {
       }));
       isBatchCompressDialogVisible.value = true;
     } else {
-      showMessage(`目录 "${item.name}" 及其子目录中未发现可压缩的视频文件`, 'warning');
+      showMessage(`目录 "${item.name}" 及其子目录中未发现可压缩的视频文件`, 'warning', 2500, undefined, msgId);
     }
   } catch (err: any) {
-    showMessage(`扫描视频文件失败: ${err?.message}`, 'error');
+    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
   }
 };
 
@@ -938,11 +939,12 @@ const handleCompressDirectory = async (item: LocalFileItem) => {
 const openBatchCompressModal = async () => {
   closeContextMenu();
   if (!window.electronAPI || selectedPaths.value.size === 0) return;
-  showMessage('正在扫描所选项目中的视频文件', 'info');
+  const msgId = showMessage('正在扫描所选项目中的视频文件', 'loading', 0);
   try {
     const paths = Array.from(selectedPaths.value);
     const res = await window.electronAPI.scanLocalVideos(paths);
     if (res && res.success && res.videos && res.videos.length > 0) {
+      removeMessage(msgId);
       batchCompressTasks.value = res.videos.map(v => ({
         id: `local-${Math.random().toString(36).substr(2, 8)}`,
         name: v.name,
@@ -951,10 +953,10 @@ const openBatchCompressModal = async () => {
       }));
       isBatchCompressDialogVisible.value = true;
     } else {
-      showMessage('所选项目及子目录中未发现可压缩的视频文件', 'warning');
+      showMessage('所选项目及子目录中未发现可压缩的视频文件', 'warning', 2500, undefined, msgId);
     }
   } catch (err: any) {
-    showMessage(`扫描视频文件失败: ${err?.message}`, 'error');
+    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
   }
 };
 
