@@ -1237,9 +1237,16 @@ export function getLanWebHtml(): string {
       }
     };
 
-    async function loadDirectory(path) {
+    async function loadDirectory(path, options) {
+      options = options || {};
+      var preserveScroll = !!options.preserveScroll;
+      var savedScrollY = preserveScroll ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+
       state.currentPath = path;
-      fileGrid.innerHTML = '<div class="empty-state"><span>正在读取目录</span></div>';
+      if (!preserveScroll) {
+        fileGrid.innerHTML = '<div class="empty-state"><span>正在读取目录</span></div>';
+        window.scrollTo(0, 0);
+      }
       renderBreadcrumbs();
 
       try {
@@ -1247,6 +1254,12 @@ export function getLanWebHtml(): string {
         if (res.success) {
           state.items = res.items || [];
           renderFileGrid();
+          if (preserveScroll) {
+            window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+            requestAnimationFrame(function() {
+              window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+            });
+          }
         } else {
           fileGrid.innerHTML = '<div class="empty-state"><span>读取失败: ' + escapeHtml(res.error || '未知错误') + '</span></div>';
         }
@@ -1480,8 +1493,25 @@ export function getLanWebHtml(): string {
       window.location.href = '/download?path=' + encodeURIComponent(itemPath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
     };
 
+    // Preview Scroll Anchor Restoration
+    var previewScrollY = 0;
+
+    function recordPreviewScroll() {
+      previewScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    }
+
+    function restorePreviewScroll() {
+      if (typeof previewScrollY === 'number') {
+        window.scrollTo({ top: previewScrollY, behavior: 'instant' });
+        requestAnimationFrame(function() {
+          window.scrollTo({ top: previewScrollY, behavior: 'instant' });
+        });
+      }
+    }
+
     // Video Player
     function openVideoModal(item) {
+      recordPreviewScroll();
       var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
       
       document.getElementById('video-modal-title').innerText = item.name;
@@ -1496,10 +1526,12 @@ export function getLanWebHtml(): string {
       video.pause();
       video.src = '';
       document.getElementById('video-modal').style.display = 'none';
+      restorePreviewScroll();
     };
 
     // Image Preview
     function openImageModal(item) {
+      recordPreviewScroll();
       var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
       document.getElementById('main-image').src = streamUrl;
       document.getElementById('image-modal').style.display = 'flex';
@@ -1508,7 +1540,29 @@ export function getLanWebHtml(): string {
     window.closeImageModal = function() {
       document.getElementById('image-modal').style.display = 'none';
       document.getElementById('main-image').src = '';
+      restorePreviewScroll();
     };
+
+    // Fullscreen Exit Event Handlers (Desktop & Mobile)
+    document.addEventListener('fullscreenchange', function() {
+      if (!document.fullscreenElement) {
+        restorePreviewScroll();
+      }
+    });
+
+    document.addEventListener('webkitfullscreenchange', function() {
+      if (!document.webkitFullscreenElement) {
+        restorePreviewScroll();
+      }
+    });
+
+    var mainVideo = document.getElementById('main-video');
+    if (mainVideo) {
+      // iOS Safari native video fullscreen exit event
+      mainVideo.addEventListener('webkitendfullscreen', function() {
+        restorePreviewScroll();
+      });
+    }
 
     // Search & Sort Event Listeners
     searchInput.addEventListener('input', function(e) {
@@ -1522,7 +1576,7 @@ export function getLanWebHtml(): string {
     });
 
     refreshBtn.addEventListener('click', function() {
-      loadDirectory(state.currentPath);
+      loadDirectory(state.currentPath, { preserveScroll: true });
     });
 
 
@@ -1548,7 +1602,7 @@ export function getLanWebHtml(): string {
         if (res.success) {
           showToast('文件夹创建成功');
           closeActionModal();
-          loadDirectory(state.currentPath);
+          loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
           showToast(res.error || '创建失败');
         }
@@ -1688,7 +1742,7 @@ export function getLanWebHtml(): string {
         if (res.success) {
           showToast('移动成功');
           closeActionModal();
-          loadDirectory(state.currentPath);
+          loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
           showToast(res.error || '移动失败');
         }
@@ -1718,7 +1772,7 @@ export function getLanWebHtml(): string {
         if (res.success) {
           showToast('重命名成功');
           closeActionModal();
-          loadDirectory(state.currentPath);
+          loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
           showToast(res.error || '重命名失败');
         }
@@ -1745,7 +1799,7 @@ export function getLanWebHtml(): string {
         if (res.success) {
           showToast('已成功删除');
           closeActionModal();
-          loadDirectory(state.currentPath);
+          loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
           showToast(res.error || '删除失败');
         }
