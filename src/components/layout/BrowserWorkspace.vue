@@ -3,7 +3,8 @@
     <!-- Tab Bar -->
     <div class="tab-bar">
       <div v-for="tab in workspace?.tabs || []" :key="tab.id" class="tab"
-        :class="{ active: workspace?.activeTabId === tab.id }" @click="setActiveTab(tab.id)">
+        :class="{ active: workspace?.activeTabId === tab.id }" @click="setActiveTab(tab.id)"
+        @auxclick="onTabAuxClick($event, tab.id)" @mousedown="onTabMouseDown($event)">
         <div class="tab-favicon">
           <img v-if="tab.favicon" :src="tab.favicon" referrerpolicy="no-referrer" />
           <div v-else class="favicon-placeholder" :class="{ loading: tab.loading }"></div>
@@ -209,6 +210,7 @@ import { getPickerScript, getPickerCancelScript } from '../../utils/elementPicke
 
 
 import { useMessage } from '../../composables/useMessage';
+import { useConfirm } from '../../composables/useConfirm';
 import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
 
 const props = defineProps<{
@@ -222,6 +224,7 @@ const toggleParseRule = () => {
 };
 
 const { showMessage } = useMessage();
+const { confirm } = useConfirm();
 const { openSaveMediaDialog, isDraggingAnyDialog } = useSaveMediaDialog();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
 const { state: settingsState, saveCustomStyles, saveCustomScripts, saveExternalSites, saveCmsResources } = useSettings();
@@ -766,10 +769,10 @@ const executeSingleParseTask = async (task: {
     const uniqueMatchedDomains = Array.from(matchedDomainSet);
 
     if (uniqueMatchedDomains.length === 1) {
-      // 单个匹配规则：直接执行规则
+      // 单个匹配域名：直接执行规则
       await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator, shortLabel);
     } else {
-      // 多个匹配规则：加入选择排队队列
+      // 多个匹配域名：加入选择排队队列
       showMessage({
         id: toastId,
         text: `匹配到多个解析规则，请在弹窗中选择 (${shortLabel})`,
@@ -1001,6 +1004,20 @@ const onCloseTab = (tabId: string) => {
   closeTab(props.resourceId, tabId);
 };
 
+const onTabMouseDown = (e: MouseEvent) => {
+  if (e.button === 1) {
+    e.preventDefault();
+  }
+};
+
+const onTabAuxClick = (e: MouseEvent, tabId: string) => {
+  if (e.button === 1) {
+    e.preventDefault();
+    e.stopPropagation();
+    onCloseTab(tabId);
+  }
+};
+
 const currentResourceUrl = computed(() => {
   const site = settingsState.externalSites.find(r => r.id === props.resourceId);
   if (site && site.url) return site.url;
@@ -1012,33 +1029,161 @@ const onAddDefaultTab = () => {
 };
 
 // Webview Events
-const onDomReady = async (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: false });
-
+const injectTabBaseScripts = async (tabId: string) => {
   const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (webview) {
-    // Listen to console-message to hide custom context menu on webview left click
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+
+  if (!webview.__veloraConsoleBound) {
+    webview.__veloraConsoleBound = true;
     webview.addEventListener('console-message', (e: any) => {
       if (e.message === '__webview_click__') {
         contextMenuVisible.value = false;
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_tab__:')) {
+        const targetUrl = e.message.slice('__velora_open_tab__:'.length);
+        if (targetUrl && targetUrl !== 'about:blank') {
+          addTab(props.resourceId, targetUrl, getResourceIcon());
+        }
       }
     });
+  }
 
-    refreshWebviewScripts(tabId, 'dom-ready');
-
-    const clickScript = `
-      (function() {
-        if (window.__clickInjected) return;
+  const script = `
+    (function() {
+      // 1. Hide custom context menu on webview left click
+      if (!window.__clickInjected) {
         window.__clickInjected = true;
         window.addEventListener('mousedown', (e) => {
-          if (e.button === 0) { // left click
+          if (e.button === 0) {
             console.log('__webview_click__');
           }
         }, true);
-      })();
-    `;
-    webview.executeJavaScript(clickScript);
-  }
+      }
+
+      // 2. Intercept link clicks to open in a new tab uniformly
+      if (!window.__veloraLinkInterceptorInjected) {
+        window.__veloraLinkInterceptorInjected = true;
+        let lastClickedUrl = '';
+        let lastClickedTime = 0;
+
+        function findAnchor(e) {
+          try {
+            const path = e.composedPath ? e.composedPath() : [];
+            for (let i = 0; i < path.length; i++) {
+              const el = path[i];
+              if (el && el.tagName) {
+                const tag = el.tagName.toLowerCase();
+                if (tag === 'a' || tag === 'area') {
+                  return el;
+                }
+              }
+            }
+          } catch (err) {}
+
+          if (e.target && typeof e.target.closest === 'function') {
+            try {
+              return e.target.closest('a, area');
+            } catch (err) {}
+          }
+          return null;
+        }
+
+        function handleLinkTrigger(e) {
+          // Only respond to left click (0) or middle click (1)
+          if (e.button !== 0 && e.button !== 1) return;
+
+          const anchor = findAnchor(e);
+          if (!anchor) return;
+
+          let rawHref = anchor.getAttribute('href');
+          if (!rawHref && anchor.getAttribute('xlink:href')) {
+            rawHref = anchor.getAttribute('xlink:href');
+          }
+          if (!rawHref) return;
+
+          const trimmed = rawHref.trim();
+          // Skip empty hrefs, in-page hash anchors, and javascript: pseudo-protocol
+          if (!trimmed || trimmed === '#' || trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('javascript:')) {
+            return;
+          }
+
+          // Preserve normal download behavior for elements with download attribute
+          if (anchor.hasAttribute('download')) {
+            return;
+          }
+
+          let hrefStr = '';
+          if (typeof anchor.href === 'string') {
+            hrefStr = anchor.href;
+          } else if (anchor.href && typeof anchor.href.baseVal === 'string') {
+            hrefStr = anchor.href.baseVal;
+          } else {
+            hrefStr = trimmed;
+          }
+
+          let targetUrlObj;
+          try {
+            targetUrlObj = new URL(hrefStr, window.location.href);
+          } catch (err) {
+            return;
+          }
+
+          // Only open http and https URLs
+          if (targetUrlObj.protocol !== 'http:' && targetUrlObj.protocol !== 'https:') {
+            return;
+          }
+
+          // If it is just an in-page hash anchor on the exact same page, let browser handle smooth scroll
+          try {
+            const cur = window.location;
+            if (
+              targetUrlObj.origin === cur.origin &&
+              targetUrlObj.pathname === cur.pathname &&
+              targetUrlObj.search === cur.search &&
+              targetUrlObj.hash
+            ) {
+              return;
+            }
+          } catch (err) {}
+
+          // Prevent rapid duplicate clicks on the same link from opening duplicate tabs
+          const now = Date.now();
+          if (targetUrlObj.href === lastClickedUrl && (now - lastClickedTime < 600)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof e.stopImmediatePropagation === 'function') {
+              e.stopImmediatePropagation();
+            }
+            return;
+          }
+          lastClickedUrl = targetUrlObj.href;
+          lastClickedTime = now;
+
+          // Stop in-page navigation and client-side SPA routing
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof e.stopImmediatePropagation === 'function') {
+            e.stopImmediatePropagation();
+          }
+
+          // Notify host to open in a new workspace tab
+          console.log('__velora_open_tab__:' + targetUrlObj.href);
+        }
+
+        window.addEventListener('click', handleLinkTrigger, true);
+        window.addEventListener('auxclick', handleLinkTrigger, true);
+      }
+    })();
+  `;
+
+  try {
+    await webview.executeJavaScript(script);
+  } catch (e) {}
+};
+
+const onDomReady = async (tabId: string) => {
+  updateTab(props.resourceId, tabId, { loading: false });
+  refreshWebviewScripts(tabId, 'dom-ready');
+  await injectTabBaseScripts(tabId);
 };
 
 const matchPattern = (pattern: string, url: string) => {
@@ -1055,6 +1200,7 @@ const onLoadCommit = async (event: any, tabId: string) => {
   if (event.isMainFrame) {
     refreshWebviewStyles(tabId);
     refreshWebviewScripts(tabId, 'document-start');
+    await injectTabBaseScripts(tabId);
   }
 };
 
@@ -1415,19 +1561,62 @@ const onSaveScript = async (script: any) => {
   }
   
   const targetArray = currentScripts[props.resourceId];
-  const idx = targetArray.findIndex((s: any) => s.domain === script.domain && s.name === script.name);
+  const trimmedDomain = script.domain.trim();
   if (!script.id) {
-    script.id = Date.now().toString();
+    script.id = 'script_' + Date.now() + Math.random().toString(36).slice(2, 6);
   }
-  
-  if (idx !== -1) {
-    targetArray[idx] = script;
+
+  // 查找原脚本（如果存在）
+  const originalScript = targetArray.find((s: any) => s.id === script.id);
+  const isDomainChanged = originalScript ? (originalScript.domain || '').trim() !== trimmedDomain : true;
+
+  // 1. 只有当修改了匹配域名（或新建脚本）时，才检查是否存在其他同匹配域名脚本
+  if (isDomainChanged) {
+    const duplicateScript = targetArray.find((s: any) => s.id !== script.id && (s.domain || '').trim() === trimmedDomain);
+
+    if (duplicateScript) {
+      const confirmed = await confirm({
+        title: '匹配域名重复',
+        message: `已存在相同匹配域名的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
+        confirmText: '合并',
+        cancelText: '取消',
+        type: 'warning'
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      // 用户确认合并：将代码追加合并到已有脚本中
+      duplicateScript.code = (duplicateScript.code || '').trim() + '\n\n' + script.code.trim();
+      if (script.name && !duplicateScript.name.includes(script.name)) {
+        duplicateScript.name = duplicateScript.name ? `${duplicateScript.name} & ${script.name}` : script.name;
+      }
+
+      // 如果当前正在编辑的脚本原本在列表中，将其移除（合二为一）
+      const curIdx = targetArray.findIndex((s: any) => s.id === script.id);
+      if (curIdx !== -1) {
+        targetArray.splice(curIdx, 1);
+      }
+
+      await saveCustomScripts(currentScripts);
+      showMessage('脚本已成功合并保存！', 'success');
+      scriptInjectorVisible.value = false;
+      return;
+    }
+  }
+
+  // 2. 没有重复：在当前脚本上保存修改（通过 id 原地更新，绝不新建脚本）
+  const existingIdx = targetArray.findIndex((s: any) => s.id === script.id);
+  if (existingIdx !== -1) {
+    targetArray[existingIdx] = { ...script, domain: trimmedDomain };
   } else {
-    targetArray.push(script);
+    targetArray.push({ ...script, domain: trimmedDomain });
   }
-  
+
   await saveCustomScripts(currentScripts);
   showMessage('脚本保存成功', 'success');
+  scriptInjectorVisible.value = false;
 };
 
 const refreshWebviewScripts = async (tabId: string, runAt: string) => {

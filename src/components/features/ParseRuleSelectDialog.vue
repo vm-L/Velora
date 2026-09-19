@@ -15,12 +15,12 @@
           </p>
 
           <div class="form-row">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">匹配规则</label>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">匹配域名</label>
             <VInputSelect
               v-model="selectedDomain"
               :options="ruleOptions"
               :allow-input="false"
-              placeholder="选择规则"
+              placeholder="选择域名"
               class="w-full"
             />
           </div>

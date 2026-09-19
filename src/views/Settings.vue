@@ -1318,7 +1318,7 @@ const deleteParseRule = async (rule: ParseRule) => {
   if (!managingParseFor.value) return;
   const confirmed = await confirm({
     title: '删除解析规则',
-    message: `确定要删除匹配规则 "${rule.domain}" (${rule.actionType === 'download' ? '下载' : '复制'}) 吗？`,
+    message: `确定要删除匹配域名 "${rule.domain}" (${rule.actionType === 'download' ? '下载' : '复制'}) 吗？`,
     confirmText: '删除',
     cancelText: '取消',
     type: 'danger'
@@ -1350,38 +1350,88 @@ const closeScriptManager = () => {
 
 const scriptEditorVisible = ref(false);
 const editingScript = ref<CustomScript | undefined>(undefined);
+const editingOriginalId = ref('');
+const editingOriginalDomain = ref('');
 
 const openScriptEditor = (script: CustomScript) => {
-  editingScript.value = script;
+  if (!script.id) {
+    script.id = 'script_' + Date.now() + Math.random().toString(36).slice(2, 6);
+  }
+  editingOriginalId.value = script.id;
+  editingOriginalDomain.value = script.domain || '';
+  editingScript.value = { ...script };
   scriptEditorVisible.value = true;
 };
 
-const onSaveScript = (updatedScript: CustomScript) => {
+const onSaveScript = async (updatedScript: CustomScript) => {
+  if (!managingScriptsFor.value) return;
+  const resId = managingScriptsFor.value.id;
   const allScripts = { ...state.customScripts };
-  
-  if (editingScript.value) {
-    const oldDomain = editingScript.value.domain;
-    if (allScripts[oldDomain]) {
-      allScripts[oldDomain] = allScripts[oldDomain].filter(s => s.id !== updatedScript.id);
-      if (allScripts[oldDomain].length === 0) {
-        delete allScripts[oldDomain];
+  if (!allScripts[resId]) {
+    allScripts[resId] = [];
+  }
+  const targetArray = [...allScripts[resId]];
+  const trimmedDomain = (updatedScript.domain || '').trim();
+  const scriptId = updatedScript.id || editingOriginalId.value;
+  updatedScript.id = scriptId;
+  updatedScript.domain = trimmedDomain;
+
+  // 检查是否修改了匹配域名
+  const isDomainChanged = editingOriginalDomain.value.trim() !== '' && trimmedDomain !== editingOriginalDomain.value.trim();
+
+  // 1. 只有当修改了匹配域名时，才检查新域名是否与其他已有脚本冲突
+  if (isDomainChanged) {
+    const duplicateScript = targetArray.find(s => s.id !== scriptId && (s.domain || '').trim() === trimmedDomain);
+
+    if (duplicateScript) {
+      const isConfirmed = await confirm({
+        title: '匹配域名重复',
+        message: `已存在相同匹配域名的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
+        confirmText: '合并',
+        cancelText: '取消',
+        type: 'warning'
+      });
+
+      if (!isConfirmed) return;
+
+      // 合并脚本内容
+      duplicateScript.code = (duplicateScript.code || '').trim() + '\n\n' + (updatedScript.code || '').trim();
+      if (updatedScript.name && !duplicateScript.name.includes(updatedScript.name)) {
+        duplicateScript.name = duplicateScript.name ? `${duplicateScript.name} & ${updatedScript.name}` : updatedScript.name;
       }
+      // 移除原本的脚本项（已合并入 duplicateScript）
+      const curIdx = targetArray.findIndex(s => s.id === scriptId);
+      if (curIdx !== -1) {
+        targetArray.splice(curIdx, 1);
+      }
+
+      allScripts[resId] = targetArray;
+      await saveCustomScripts(allScripts);
+      showMessage('脚本已成功合并保存！', 'success');
+      scriptEditorVisible.value = false;
+      return;
     }
   }
 
-  if (!allScripts[updatedScript.domain]) {
-    allScripts[updatedScript.domain] = [];
+  // 2. 没有修改域名，或修改后无域名冲突：直接在当前脚本上保存修改
+  let existingIdx = targetArray.findIndex(s => s.id === scriptId);
+  if (existingIdx === -1 && editingOriginalId.value) {
+    existingIdx = targetArray.findIndex(s => s.id === editingOriginalId.value);
   }
-  
-  const existingIdx = allScripts[updatedScript.domain].findIndex(s => s.id === updatedScript.id);
-  if (existingIdx !== -1) {
-    allScripts[updatedScript.domain][existingIdx] = updatedScript;
-  } else {
-    allScripts[updatedScript.domain].push(updatedScript);
+  if (existingIdx === -1 && editingOriginalDomain.value) {
+    existingIdx = targetArray.findIndex(s => (s.domain || '').trim() === editingOriginalDomain.value.trim());
   }
 
-  saveCustomScripts(allScripts);
-  
+  if (existingIdx !== -1) {
+    targetArray[existingIdx] = { ...updatedScript };
+  } else {
+    targetArray.push({ ...updatedScript });
+  }
+
+  allScripts[resId] = targetArray;
+  await saveCustomScripts(allScripts);
+  showMessage('脚本保存成功', 'success');
+  scriptEditorVisible.value = false;
 };
 
 const styleEditorVisible = ref(false);

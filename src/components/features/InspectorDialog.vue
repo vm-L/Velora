@@ -16,7 +16,7 @@
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配规则</span>
+            <span class="label">匹配域名</span>
             <VInputSelect
               v-model="domain"
               placeholder="匹配域名，例如: *://*.bilibili.com/*"

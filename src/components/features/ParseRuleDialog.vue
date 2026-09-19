@@ -17,16 +17,16 @@
     <div class="inspector-content">
       <div class="inspector-content-inner">
         <div class="inspector-body">
-          <!-- 行 1：匹配规则 -->
+          <!-- 行 1：匹配域名 -->
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配规则</span>
+            <span class="label">匹配域名</span>
             <VInputSelect
               v-model="currentRule.domain"
               placeholder="匹配域名，例如: *://*.bilibili.com/*"
               :options="historyDomainOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
-              @change="onDomainOrActionChange"
+              @change="onDomainSelect"
             />
           </div>
 
@@ -39,7 +39,7 @@
               :allow-input="false"
               class="value-input flex-1"
               style="margin-left: 12px;"
-              @change="onDomainOrActionChange"
+              @change="onActionTypeChange"
             />
           </div>
 
@@ -126,6 +126,7 @@ import VIcon from '../base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
 import { useSettings, type ParseRule } from '../../composables/useSettings';
 import { useMessage } from '../../composables/useMessage';
+import { useConfirm } from '../../composables/useConfirm';
 import { useDraggableDialog } from '../../composables/useDraggableDialog';
 
 const props = defineProps<{
@@ -139,6 +140,7 @@ const emit = defineEmits(['update:modelValue', 'save']);
 
 const { state: settingsState, saveCustomParseRules } = useSettings();
 const { showMessage } = useMessage();
+const { confirm } = useConfirm();
 
 const { position, startDrag } = useDraggableDialog({
   initialX: 300,
@@ -189,7 +191,13 @@ const ensureDownloadDefaults = () => {
     const item1 = items[1] || { id: Math.random().toString(36).substring(2, 9), key: '文件链接', value: '' };
     item0.key = '文件名称';
     item1.key = '文件链接';
-    currentRule.value.items = [item0, item1];
+    if (items.length < 2) {
+      currentRule.value.items = [item0, item1];
+    } else {
+      items[0] = item0;
+      items[1] = item1;
+      currentRule.value.items = items;
+    }
   }
 };
 
@@ -234,8 +242,22 @@ const loadExistingRule = () => {
   ensureDownloadDefaults();
 };
 
-const onDomainOrActionChange = () => {
-  loadExistingRule();
+const onDomainSelect = (selectedDomain: string) => {
+  // 仅在新建模式下从下拉列表中选择已有域名时加载已配置项
+  if (!props.editingRule) {
+    const rules = settingsState.customParseRules[props.resourceId] || [];
+    const found = rules.find(r => r.domain === selectedDomain && r.actionType === currentRule.value.actionType);
+    if (found) {
+      const rule = JSON.parse(JSON.stringify(found));
+      rule.items = normalizeItems(rule.items);
+      currentRule.value = rule;
+      ensureDownloadDefaults();
+    }
+  }
+};
+
+const onActionTypeChange = () => {
+  ensureDownloadDefaults();
 };
 
 const addItem = () => {
@@ -336,10 +358,12 @@ const close = () => {
 };
 
 const save = async () => {
-  if (!currentRule.value.domain.trim()) {
-    showMessage({ text: '匹配规则不能为空', type: 'error' });
+  const trimmedDomain = currentRule.value.domain.trim();
+  if (!trimmedDomain) {
+    showMessage({ text: '匹配域名不能为空', type: 'error' });
     return;
   }
+  currentRule.value.domain = trimmedDomain;
 
   if (currentRule.value.items.length > 0 && !validateAll()) {
     showMessage({ text: '解析项存在重复Key或非法Value，请检查后重试', type: 'error' });
@@ -349,11 +373,65 @@ const save = async () => {
   const resourceRules = settingsState.customParseRules[props.resourceId] || [];
   const rulesCopy = JSON.parse(JSON.stringify(resourceRules)) as ParseRule[];
 
-  // 以 匹配规则 + 行为类型 为唯一键更新或添加
-  const existingIdx = rulesCopy.findIndex(
-    r => r.domain === currentRule.value.domain && r.actionType === currentRule.value.actionType
-  );
+  // 1. 检查是否存在除当前正在编辑规则外的同域名同行为类型规则
+  const currentId = currentRule.value.id;
+  const originalRule = rulesCopy.find(r => r.id === currentId);
+  const isDomainChanged = originalRule ? originalRule.domain.trim() !== trimmedDomain : true;
 
+  if (isDomainChanged) {
+    const duplicateRule = rulesCopy.find(
+      r => r.domain === trimmedDomain && r.actionType === currentRule.value.actionType && r.id !== currentId
+    );
+
+    if (duplicateRule) {
+      const confirmed = await confirm({
+        title: '匹配域名重复',
+        message: `已存在相同匹配域名与行为类型的解析规则 "${trimmedDomain}"，是否将当前解析项合并到已有规则中？`,
+        confirmText: '合并',
+        cancelText: '取消',
+        type: 'warning'
+      });
+
+      if (!confirmed) {
+        return;
+      }
+
+      // 用户确认合并：合并解析项
+      const targetItems = [...duplicateRule.items];
+      for (const currentItem of currentRule.value.items) {
+        const existingItemIdx = targetItems.findIndex(ti => ti.key.trim() === currentItem.key.trim());
+        if (existingItemIdx !== -1) {
+          targetItems[existingItemIdx] = {
+            ...targetItems[existingItemIdx],
+            value: currentItem.value,
+            regex: currentItem.regex
+          };
+        } else {
+          targetItems.push({ ...currentItem });
+        }
+      }
+      duplicateRule.items = targetItems;
+
+      // 如果当前正在编辑的规则原本存在于列表中（因修改域名产生冲突），从列表中删除当前规则
+      const curIdx = rulesCopy.findIndex(r => r.id === currentId);
+      if (curIdx !== -1) {
+        rulesCopy.splice(curIdx, 1);
+      }
+
+      const allParseRules = {
+        ...settingsState.customParseRules,
+        [props.resourceId]: rulesCopy
+      };
+      await saveCustomParseRules(allParseRules);
+      showMessage({ text: '解析规则已成功合并！', type: 'success' });
+      emit('save', duplicateRule);
+      close();
+      return;
+    }
+  }
+
+  // 2. 没有重复：在当前规则上保存修改（通过 id 原地更新，绝不新建规则）
+  const existingIdx = rulesCopy.findIndex(r => r.id === currentId);
   if (existingIdx !== -1) {
     rulesCopy[existingIdx] = { ...currentRule.value };
   } else {

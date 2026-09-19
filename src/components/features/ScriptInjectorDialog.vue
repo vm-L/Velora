@@ -16,7 +16,7 @@
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配规则</span>
+            <span class="label">匹配域名</span>
             <VInputSelect
               v-model="currentScript.domain"
               placeholder="匹配域名，例如: *://*.bilibili.com/*"
@@ -103,7 +103,8 @@ const { position, startDrag } = useDraggableDialog({
 const editorContainer = ref<HTMLElement | null>(null);
 let editorView: EditorView | null = null;
 
-const currentScript = reactive<Omit<CustomScript, 'id'>>({
+const currentScript = reactive<CustomScript>({
+  id: '',
   name: '',
   domain: '',
   code: '',
@@ -172,6 +173,7 @@ watch(() => props.modelValue, async (newVal) => {
       }
     } catch (e) {}
 
+    currentScript.id = 'script_' + Date.now();
     currentScript.domain = initialDomain;
     currentScript.name = '';
     currentScript.code = '';
@@ -199,6 +201,7 @@ watch(() => props.modelValue, async (newVal) => {
 });
 
 const loadScript = (script: CustomScript) => {
+  currentScript.id = script.id;
   currentScript.domain = script.domain;
   currentScript.name = script.name;
   currentScript.code = script.code;
@@ -212,7 +215,6 @@ const loadScript = (script: CustomScript) => {
 
 const save = () => {
   emit('save', { ...currentScript });
-  emit('update:modelValue', false);
 };
 
 const close = () => {

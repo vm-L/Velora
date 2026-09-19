@@ -124,7 +124,6 @@ const save = () => {
     editScript.value.code = editorView.state.doc.toString();
   }
   emit('save', { ...editScript.value });
-  close();
 };
 </script>
 
