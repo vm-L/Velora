@@ -58,6 +58,11 @@ interface Window {
     stopLanServer: () => Promise<{ success: boolean }>
     notifyFirstScreenReady: () => void
     log: (level: 'info' | 'warn' | 'error' | 'perf', scope: string, message: string) => void
+    editVideoSegments: (params: { taskId: string, sourcePath: string, segments: Array<{ start: number, end: number }>, outputPath?: string, mode: 'replace' | 'saveAs' }) => Promise<{ success: boolean, outputPath?: string, error?: string }>
+    cancelVideoEdit: (taskId: string) => Promise<boolean>
+    onVideoEditProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => void
+    offVideoEditProgress: (taskId: string) => void
+    showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => Promise<{ canceled: boolean, filePath?: string }>
   }
 }
 

@@ -18,10 +18,7 @@
     <Transition name="notif-list">
       <div v-if="notifications.length > 0 || isClearing" class="notification-actions">
         <v-button variant="secondary" class="dismiss-all-btn" @click="clearAllNotifications" :disabled="isClearing">
-          <svg v-if="!isClearing" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
+          <VIcon v-if="!isClearing" name="trash" :size="14" />
           <span v-if="isClearing">清理中</span>
           <span v-else>清除全部通知</span>
         </v-button>
@@ -35,10 +32,7 @@
           <div class="dialog-header">
             <h3>{{ selectedNotification.title }}</h3>
             <v-button variant="icon" class="close-btn" @click="closeDialog">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <VIcon name="close" :size="16" />
             </v-button>
           </div>
           
@@ -68,6 +62,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import VIcon from '../base/VIcon.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNotification, type NotificationItem } from '../../composables/useNotification'
 import VNotificationItem from './VNotificationItem.vue'

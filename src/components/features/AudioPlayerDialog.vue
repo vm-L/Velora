@@ -4,28 +4,16 @@
     @mousedown="bringToFront" ref="dialogRef">
     <div class="dialog-header" @mousedown="startDrag">
       <div class="header-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-        </svg>
+        <VIcon name="music" :size="14" />
         音频播放器
       </div>
       <div class="header-actions">
-        <button v-if="!hideDownload" class="action-btn" @click.stop="downloadAudio" title="下载">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-        </button>
-        <button class="action-btn close-btn" @click.stop="close" title="关闭">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <VButton v-if="!hideDownload" variant="icon" class="action-btn" @click.stop="downloadAudio" title="下载">
+          <VIcon name="download" :size="12" />
+        </VButton>
+        <VButton variant="icon" class="action-btn close-btn" @click.stop="close" title="关闭">
+          <VIcon name="close" :size="12" />
+        </VButton>
       </div>
     </div>
 
@@ -33,15 +21,9 @@
       <audio ref="audioRef" :src="formattedUrl" autoplay @timeupdate="onTimeUpdate" @loadedmetadata="onLoadedMetadata" @ended="isPlaying = false" @play="isPlaying = true" @pause="isPlaying = false"></audio>
       
       <div class="player-controls">
-        <button class="play-btn" @click="togglePlay">
-          <svg v-if="!isPlaying" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-          <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="4" width="4" height="16"></rect>
-            <rect x="14" y="4" width="4" height="16"></rect>
-          </svg>
-        </button>
+        <VButton variant="icon" class="play-btn" @click="togglePlay">
+          <VIcon :name="isPlaying ? 'pause' : 'play'" :size="20" />
+        </VButton>
 
         <div class="progress-container">
           <span class="time">{{ formatTime(currentTime) }}</span>
@@ -64,7 +46,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+import VButton from '../base/VButton.vue';
+import VIcon from '../base/VIcon.vue';
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
@@ -246,6 +230,43 @@ const close = () => {
   }
   emit('close');
 };
+
+const seekBy = (delta: number) => {
+  if (!audioRef.value) return;
+  const maxDur = duration.value || audioRef.value.duration || 0;
+  const newTime = Math.max(0, Math.min(maxDur, audioRef.value.currentTime + delta));
+  audioRef.value.currentTime = newTime;
+  currentTime.value = newTime;
+};
+
+const handleKeydown = (e: KeyboardEvent) => {
+  if (e.target instanceof HTMLInputElement && e.target.type !== 'range') return;
+  if (e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable) return;
+
+  if (e.key === 'Escape') {
+    close();
+  } else if (e.code === 'Space') {
+    e.preventDefault();
+    togglePlay();
+  } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
+    e.preventDefault();
+    seekBy(-1);
+  } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
+    e.preventDefault();
+    seekBy(1);
+  }
+};
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown);
+  if (window.electronAPI && window.electronAPI.destroyMediaClient) {
+    window.electronAPI.destroyMediaClient(previewClientId);
+  }
+});
 </script>
 
 <style scoped>

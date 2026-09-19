@@ -1,4 +1,4 @@
-export function getSplashHtml(theme: string, iconDataUrl: string, version: string = "1.3.7"): string {
+export function getSplashHtml(theme: string, iconDataUrl: string, version: string = "1.4.0"): string {
   const isDark = theme === "dark";
 
   return `<!DOCTYPE html>
@@ -62,7 +62,7 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      padding: 24px 28px 20px;
+      padding: 26px 28px 22px;
       position: relative;
       overflow: hidden;
     }
@@ -74,8 +74,8 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
       margin-top: 4px;
     }
     .logo-box {
-      width: 52px;
-      height: 52px;
+      width: 54px;
+      height: 54px;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: var(--shadow-logo);
@@ -84,6 +84,11 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
       display: flex;
       align-items: center;
       justify-content: center;
+      animation: logo-breathe 2.4s ease-in-out infinite alternate;
+    }
+    @keyframes logo-breathe {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.04); }
     }
     .logo-img {
       width: 100%;
@@ -109,12 +114,14 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
     }
     .bottom-section {
       width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .status-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
       font-size: 12px;
       color: var(--text-secondary);
     }
@@ -123,27 +130,34 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
       overflow: hidden;
       text-overflow: ellipsis;
       font-weight: 500;
+      letter-spacing: 0.2px;
+      animation: text-pulse 2s ease-in-out infinite alternate;
     }
-    .status-percent {
-      font-variant-numeric: tabular-nums;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--color-accent);
+    @keyframes text-pulse {
+      0% { opacity: 0.75; }
+      100% { opacity: 1; }
     }
     .progress-track {
       width: 100%;
-      height: 4px;
+      height: 3px;
       background: var(--track-bg);
       border-radius: 2px;
       overflow: hidden;
       position: relative;
     }
     .progress-fill {
-      height: 100%;
-      width: 15%;
-      background: var(--color-accent);
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 38%;
+      background: linear-gradient(90deg, transparent 0%, var(--color-accent) 50%, transparent 100%);
       border-radius: 2px;
-      transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+      animation: indeterminate-shimmer 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    @keyframes indeterminate-shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(300%); }
     }
   </style>
 </head>
@@ -166,8 +180,7 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
     </div>
     <div class="bottom-section">
       <div class="status-row">
-        <span class="status-text" id="status-text">正在启动核心服务...</span>
-        <span class="status-percent" id="status-percent">15%</span>
+        <span class="status-text" id="status-text">正在启动应用...</span>
       </div>
       <div class="progress-track">
         <div class="progress-fill" id="progress-fill"></div>
@@ -175,13 +188,12 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
     </div>
   </div>
   <script>
-    window.setProgress = function(percent, text) {
-      var fill = document.getElementById("progress-fill");
+    window.setTheme = function(theme) {
+      document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+    };
+    window.setStatusText = function(text) {
       var label = document.getElementById("status-text");
-      var percentLabel = document.getElementById("status-percent");
-      if (fill) fill.style.width = Math.min(100, Math.max(0, percent)) + "%";
       if (label && text) label.textContent = text;
-      if (percentLabel) percentLabel.textContent = Math.round(percent) + "%";
     };
   </script>
 </body>

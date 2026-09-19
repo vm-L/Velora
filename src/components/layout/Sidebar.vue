@@ -5,21 +5,14 @@
         <v-animated-text :text="APP_NAME" :isCollapsed="isCollapsed" />
       </div>
       <button class="toggle-btn" title="展开/收起">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
+        <VIcon name="chevron-left" :size="20" />
       </button>
     </div>
 
     <div class="menu-top">
       <router-link to="/" class="menu-item" active-class="active" :title="isCollapsed ? '主页' : ''">
         <div class="menu-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-            <polyline points="9 22 9 12 15 12 15 22"></polyline>
-          </svg>
+          <VIcon name="home" :size="20" />
         </div>
         <span class="menu-text">主页</span>
       </router-link>
@@ -41,9 +34,7 @@
           :title="isCollapsed ? item.name : ''"
         >
           <div class="menu-icon-wrap">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <VIcon name="folder" :size="16" />
           </div>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
@@ -66,16 +57,7 @@
           :title="isCollapsed ? item.name : ''"
         >
           <div class="menu-icon-wrap">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-              <line x1="7" y1="2" x2="7" y2="22"></line>
-              <line x1="17" y1="2" x2="17" y2="22"></line>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <line x1="2" y1="7" x2="7" y2="7"></line>
-              <line x1="2" y1="17" x2="7" y2="17"></line>
-              <line x1="17" y1="17" x2="22" y2="17"></line>
-              <line x1="17" y1="7" x2="22" y2="7"></line>
-            </svg>
+            <VIcon name="video-sniffer" :size="16" />
           </div>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
@@ -99,11 +81,7 @@
         >
           <div class="menu-icon-wrap">
             <img v-if="item.icon" :src="item.icon" class="resource-icon" referrerpolicy="no-referrer" />
-            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-            </svg>
+            <VIcon v-else name="globe" :size="16" />
           </div>
           <span class="menu-text">{{ item.name }}</span>
         </router-link>
@@ -118,6 +96,7 @@ import { useRoute } from 'vue-router';
 import { useSettings } from '../../composables/useSettings';
 import { useOpenedCMS } from '../../composables/useOpenedCMS';
 import VAnimatedText from '../base/VAnimatedText.vue';
+import VIcon from '../base/VIcon.vue';
 import { APP_NAME } from '../../constants';
 
 const route = useRoute();

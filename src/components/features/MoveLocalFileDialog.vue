@@ -4,18 +4,11 @@
       <div class="modal-content move-dialog-content">
         <div class="modal-header">
           <div class="header-left">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              <line x1="12" y1="11" x2="12" y2="17"></line>
-              <polyline points="9 14 12 17 15 14"></polyline>
-            </svg>
+            <VIcon name="folder" :size="18" />
             <h3>移动 "{{ fileName }}"</h3>
           </div>
           <v-button variant="icon" class="modal-close-btn" @click="close">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="18" />
           </v-button>
         </div>
 
@@ -25,10 +18,7 @@
               目标目录: <strong>{{ selectedDirPath || '未选择' }}</strong>
             </span>
             <v-button variant="secondary" size="small" @click="showNewFolderModal = true" :disabled="!selectedDirPath">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
+              <VIcon name="plus" :size="14" />
               新建子目录
             </v-button>
           </div>
@@ -50,9 +40,7 @@
                 :style="{ paddingLeft: `${item.depth * 18 + 12}px` }"
                 @click="selectedDirPath = item.path"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="folder-icon">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
+                <VIcon name="folder" :size="16" class="folder-icon" />
                 <span class="node-name" :title="item.path">{{ item.name }}</span>
               </div>
             </div>
@@ -73,10 +61,7 @@
           <div class="modal-header">
             <h3>新建子目录</h3>
             <v-button variant="icon" class="modal-close-btn" @click="showNewFolderModal = false">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <VIcon name="close" :size="18" />
             </v-button>
           </div>
           <div class="modal-body" style="padding: 16px 20px;">
@@ -99,6 +84,7 @@
 import { ref, computed, watch } from 'vue';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
+import VIcon from '../base/VIcon.vue';
 import { useMessage } from '../../composables/useMessage';
 
 interface DirNode {

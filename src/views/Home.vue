@@ -35,16 +35,11 @@
           <div class="batch-buttons">
             <span class="selected-count" v-show="selectedTasks.length > 0">已选择 {{ selectedTasks.length }} 项</span>
             <v-button variant="secondary" :disabled="selectedTasks.length === 0" @click="batchPause" title="暂停所选">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="6" y="4" width="4" height="16"></rect>
-                <rect x="14" y="4" width="4" height="16"></rect>
-              </svg>
+              <VIcon name="pause" :size="14" />
               暂停
             </v-button>
             <v-button variant="secondary" :disabled="selectedTasks.length === 0" @click="batchResume" title="继续所选">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
+              <VIcon name="play" :size="14" />
               继续
             </v-button>
             <v-button variant="secondary" :disabled="selectedCompressibleTasks.length === 0" @click="openBatchCompressDialog"
@@ -54,10 +49,7 @@
             </v-button>
             <v-button variant="danger-soft" :disabled="selectedTasks.length === 0" @click="batchDelete"
               title="删除所选">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+              <VIcon name="trash" :size="14" />
               删除
             </v-button>
           </div>
@@ -79,11 +71,7 @@
 
     <div class="downloads-container">
       <div v-if="sortedTasks.length === 0" class="empty-state">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
+        <VIcon name="download" :size="48" />
         <p>暂无下载任务</p>
       </div>
 
@@ -97,24 +85,9 @@
           <div class="task-icon" :class="`status-${task.status}`">
             <img v-if="isImageTask(task)" :src="task.url" class="task-thumbnail" referrerpolicy="no-referrer" />
             <template v-else>
-              <svg v-if="isAudioTask(task)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18V5l12-2v13"></path>
-                <circle cx="6" cy="18" r="3"></circle>
-                <circle cx="18" cy="16" r="3"></circle>
-              </svg>
-              <svg v-else-if="isVideoTask(task)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                <line x1="7" y1="2" x2="7" y2="22"></line>
-                <line x1="17" y1="2" x2="17" y2="22"></line>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <line x1="2" y1="7" x2="7" y2="7"></line>
-                <line x1="2" y1="17" x2="7" y2="17"></line>
-                <line x1="17" y1="17" x2="22" y2="17"></line>
-              </svg>
-              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                <polyline points="13 2 13 9 20 9"></polyline>
-              </svg>
+              <VIcon v-if="isAudioTask(task)" name="music" :size="20" />
+              <VIcon v-else-if="isVideoTask(task)" name="video-sniffer" :size="20" />
+              <VIcon v-else name="file" :size="20" />
             </template>
           </div>
 
@@ -125,44 +98,27 @@
                 <!-- 正在下载/压缩/转码/处理/等待：暂停 -->
                 <VButton v-if="['downloading', 'compressing', 'converting', 'processing', 'resolving', 'waiting'].includes(task.status)" variant="icon-secondary" title="暂停"
                   @click.stop="pauseTask(task.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="6" y="4" width="4" height="16"></rect>
-                    <rect x="14" y="4" width="4" height="16"></rect>
-                  </svg>
+                  <VIcon name="pause" :size="14" />
                 </VButton>
                 <!-- 暂停状态：继续下载（下载矢量箭头图标） -->
                 <VButton v-else-if="task.status === 'paused'" variant="icon-secondary" title="继续下载"
                   @click.stop="resumeTask(task.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
+                  <VIcon name="download" :size="14" />
                 </VButton>
                 <!-- 错误/文件已移除状态：重新下载/重试（环形刷新/重试图标） -->
                 <VButton v-else-if="['error', 'file_removed', 'file_corrupted'].includes(task.status)" variant="icon-secondary" :title="task.status === 'file_removed' ? '重新下载' : '重试'"
                   @click.stop="resumeTask(task.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                  </svg>
+                  <VIcon name="refresh" :size="14" />
                 </VButton>
                 <!-- 已完成状态：播放/预览（向右三角形播放图标） -->
                 <v-button v-else-if="task.status === 'completed'" variant="icon-secondary" title="播放/预览" @click.stop="openTask(task)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                  </svg>
+                  <VIcon name="play" :size="14" />
                 </v-button>
                 <VButton variant="icon-secondary" title="编辑任务" @click.stop="openEditTask(task)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
+                  <VIcon name="edit" :size="14" />
                 </VButton>
                 <VButton variant="icon-secondary" title="打开所在目录" @click.stop="openDirectory(task)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
+                  <VIcon name="folder" :size="14" />
                 </VButton>
                 <!-- 压缩视频按钮（仅对已完成的视频任务显示） -->
                 <VButton
@@ -174,10 +130,7 @@
                   <VIcon name="compress" :size="14" />
                 </VButton>
                 <VButton variant="icon-danger" title="删除记录" @click.stop="confirmDeleteTask(task)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
+                  <VIcon name="close" :size="14" />
                 </VButton>
               </div>
             </div>

@@ -4,16 +4,10 @@
     <div class="workspace-header">
       <div class="header-nav">
         <v-button variant="icon" class="nav-btn" :disabled="isAtRoot" @click="navigateUp" title="返回上一级">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
+          <VIcon name="chevron-left" :size="18" />
         </v-button>
         <v-button variant="icon" class="nav-btn" @click="loadDirectory(currentPath)" title="刷新">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
+          <VIcon name="refresh" :size="16" />
         </v-button>
 
         <!-- Breadcrumbs Navigation -->
@@ -23,9 +17,7 @@
             :class="{ active: breadcrumbs.length === 1 }"
             @click="jumpToBreadcrumb(0)"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="root-icon">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <VIcon name="folder" :size="14" class="root-icon" />
             <span class="crumb-text">{{ resourceName }}</span>
           </div>
 
@@ -45,16 +37,10 @@
       <div class="header-actions">
         <!-- Search Input -->
         <div class="search-wrap">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
+          <VIcon name="search" :size="14" class="search-icon" />
           <v-input v-model="searchQuery" type="text" placeholder="搜索文件或目录" class="search-input" />
           <button v-if="searchQuery" class="clear-search-btn" @click="searchQuery = ''">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="12" />
           </button>
         </div>
 
@@ -73,19 +59,12 @@
 
         <!-- Actions -->
         <v-button variant="secondary" size="small" @click="showNewFolderModal = true" title="新建文件夹">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <VIcon name="plus" :size="14" />
           新建文件夹
         </v-button>
 
         <v-button variant="secondary" size="small" @click="openInExplorer(currentPath)" title="在文件资源管理器中打开当前目录">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
+          <VIcon name="external-link" :size="14" />
           打开目录
         </v-button>
       </div>
@@ -101,11 +80,7 @@
 
       <!-- Error State -->
       <div v-else-if="errorMsg" class="state-container error">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
+        <VIcon name="error" :size="32" />
         <span class="state-title">读取目录失败</span>
         <span class="state-desc">{{ errorMsg }}</span>
         <v-button variant="secondary" size="small" @click="loadDirectory(currentPath)">重试</v-button>
@@ -113,9 +88,7 @@
 
       <!-- Empty State -->
       <div v-else-if="filteredItems.length === 0" class="state-container">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="empty-icon">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-        </svg>
+        <VIcon name="folder" :size="48" class="empty-icon" />
         <span class="state-title">{{ searchQuery ? '未找到匹配项' : '当前目录为空' }}</span>
         <v-button v-if="!searchQuery" variant="secondary" size="small" @click="showNewFolderModal = true">创建新文件夹</v-button>
       </div>
@@ -134,44 +107,16 @@
           <!-- Thumbnail / Icon Area -->
           <div class="card-icon-wrap" :class="getFileCategory(item)">
             <!-- Folder Icon -->
-            <svg v-if="item.isDirectory" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg folder-color">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <VIcon v-if="item.isDirectory" name="folder" :size="40" class="file-svg folder-color" />
             <!-- Video Icon -->
-            <svg v-else-if="getFileCategory(item) === 'video'" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg video-color">
-              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-              <line x1="7" y1="2" x2="7" y2="22"></line>
-              <line x1="17" y1="2" x2="17" y2="22"></line>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <line x1="2" y1="7" x2="7" y2="7"></line>
-              <line x1="2" y1="17" x2="7" y2="17"></line>
-              <line x1="17" y1="17" x2="22" y2="17"></line>
-              <line x1="17" y1="7" x2="22" y2="7"></line>
-            </svg>
+            <VIcon v-else-if="getFileCategory(item) === 'video'" name="video-sniffer" :size="36" class="file-svg video-color" />
             <!-- Audio Icon -->
-            <svg v-else-if="getFileCategory(item) === 'audio'" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg audio-color">
-              <path d="M9 18V5l12-2v13"></path>
-              <circle cx="6" cy="18" r="3"></circle>
-              <circle cx="18" cy="16" r="3"></circle>
-            </svg>
+            <VIcon v-else-if="getFileCategory(item) === 'audio'" name="music" :size="36" class="file-svg audio-color" />
             <!-- Image Icon -->
-            <svg v-else-if="getFileCategory(item) === 'image'" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg image-color">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-              <polyline points="21 15 16 10 5 21"></polyline>
-            </svg>
+            <VIcon v-else-if="getFileCategory(item) === 'image'" name="image" :size="36" class="file-svg image-color" />
             <!-- Code / Doc / Other -->
-            <svg v-else-if="getFileCategory(item) === 'code'" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg code-color">
-              <polyline points="16 18 22 12 16 6"></polyline>
-              <polyline points="8 6 2 12 8 18"></polyline>
-            </svg>
-            <svg v-else width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="file-svg doc-color">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
+            <VIcon v-else-if="getFileCategory(item) === 'code'" name="code" :size="36" class="file-svg code-color" />
+            <VIcon v-else name="file" :size="36" class="file-svg doc-color" />
 
             <!-- Extension Badge for non-folders -->
             <span v-if="!item.isDirectory && item.ext" class="ext-badge">{{ item.ext.toUpperCase() }}</span>
@@ -230,10 +175,7 @@
             <div class="menu-divider"></div>
 
             <div class="menu-action-item danger" @click="handleBatchDelete">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+              <VIcon name="trash" :size="14" />
               <span>删除 ({{ selectedPaths.size }} 项)</span>
             </div>
           </template>
@@ -242,11 +184,7 @@
           <template v-else-if="contextMenu.targetItem">
             <!-- Directory: Enter Directory -->
             <div v-if="contextMenu.targetItem.isDirectory" class="menu-action-item" @click="handleContextPreview(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                <line x1="12" y1="11" x2="12" y2="17"></line>
-                <polyline points="9 14 12 11 15 14"></polyline>
-              </svg>
+              <VIcon name="folder-enter" :size="14" />
               <span>进入目录</span>
             </div>
 
@@ -258,46 +196,28 @@
 
             <!-- Image: Preview -->
             <div v-else-if="getFileCategory(contextMenu.targetItem) === 'image'" class="menu-action-item" @click="handleContextPreview(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
+              <VIcon name="eye" :size="14" />
               <span>预览</span>
             </div>
 
             <!-- Other Files: Open File -->
             <div v-else class="menu-action-item" @click="handleContextPreview(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
+              <VIcon name="external-link" :size="14" />
               <span>打开文件</span>
             </div>
 
             <div class="menu-action-item" @click="openInExplorer(contextMenu.targetItem.path)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
+              <VIcon name="external-link" :size="14" />
               <span>在文件资源管理器中显示</span>
             </div>
 
             <div class="menu-action-item" @click="openRenameModal(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
+              <VIcon name="edit" :size="14" />
               <span>重命名</span>
             </div>
 
             <div class="menu-action-item" @click="openMoveModal(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                <line x1="12" y1="11" x2="12" y2="17"></line>
-                <polyline points="9 14 12 17 15 14"></polyline>
-              </svg>
+              <VIcon name="folder-move" :size="14" />
               <span>移动</span>
             </div>
 
@@ -322,10 +242,7 @@
             <div class="menu-divider"></div>
 
             <div class="menu-action-item danger" @click="handleDelete(contextMenu.targetItem)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+              <VIcon name="trash" :size="14" />
               <span>删除</span>
             </div>
           </template>
@@ -333,28 +250,17 @@
           <!-- Blank Area Menu -->
           <template v-else>
             <div class="menu-action-item" @click="showNewFolderModal = true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
+              <VIcon name="plus" :size="14" />
               <span>新建文件夹</span>
             </div>
 
             <div class="menu-action-item" @click="loadDirectory(currentPath)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-              </svg>
+              <VIcon name="refresh" :size="14" />
               <span>刷新</span>
             </div>
 
             <div class="menu-action-item" @click="openInExplorer(currentPath)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
+              <VIcon name="external-link" :size="14" />
               <span>在资源管理器中打开</span>
             </div>
           </template>
@@ -369,10 +275,7 @@
           <div class="modal-header">
             <h3>重命名</h3>
             <v-button variant="icon" class="modal-close-btn" @click="renameModal.visible = false">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <VIcon name="close" :size="18" />
             </v-button>
           </div>
           <div class="modal-body" style="padding: 16px 20px;">
@@ -393,10 +296,7 @@
           <div class="modal-header">
             <h3>新建文件夹</h3>
             <v-button variant="icon" class="modal-close-btn" @click="showNewFolderModal = false">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <VIcon name="close" :size="18" />
             </v-button>
           </div>
           <div class="modal-body" style="padding: 16px 20px;">

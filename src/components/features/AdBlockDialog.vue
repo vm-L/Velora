@@ -21,17 +21,11 @@
             </div>
             <div class="bar-buttons">
               <v-button variant="secondary" size="small" :disabled="isSyncingAll" @click="handleSyncAll">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'spin-icon': isSyncingAll }">
-                  <polyline points="23 4 23 10 17 10"></polyline>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
+                <VIcon name="refresh" :size="13" :class="{ 'spin-icon': isSyncingAll }" />
                 {{ isSyncingAll ? '更新中' : '更新全部' }}
               </v-button>
               <v-button variant="primary" size="small" @click="openAddModal">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
+                <VIcon name="plus" :size="13" />
                 添加规则源
               </v-button>
             </div>
@@ -54,14 +48,7 @@
                 draggable="true" 
                 @dragstart="onDragStart($event, index)"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-                  <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-                  <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-                </svg>
+                <VIcon name="drag-handle" :size="14" />
               </div>
 
               <div class="source-main">
@@ -78,10 +65,7 @@
 
               <div class="source-actions">
                 <!-- Toggle Enable Switch -->
-                <label class="switch-toggle" :title="source.enabled ? '停用' : '启用'">
-                  <input type="checkbox" :checked="source.enabled" @change="toggleSourceEnable(source)" />
-                  <span class="slider"></span>
-                </label>
+                <VSwitch :model-value="source.enabled" @change="toggleSourceEnable(source)" />
 
                 <!-- Update Single Source -->
                 <v-button variant="secondary" size="small" style="padding: 4px 6px; min-width: unset;" :disabled="syncingIds.includes(source.id)" @click="handleSyncSource(source)" title="更新规则">
@@ -136,6 +120,7 @@ import { useMessage } from '../../composables/useMessage';
 import VButton from '../base/VButton.vue';
 import VInput from '../base/VInput.vue';
 import VIcon from '../base/VIcon.vue';
+import VSwitch from '../base/VSwitch.vue';
 
 defineProps<{
   visible: boolean;

@@ -21,9 +21,9 @@
                 <span class="count-badge">已选 {{ selectedKeys.length }} / {{ availableSections.length }} 项</span>
               </div>
               <div class="quick-actions">
-                <button type="button" class="text-btn" @click="selectAll">全选</button>
+                <v-button variant="text" size="small" class="text-btn" @click="selectAll">全选</v-button>
                 <span class="divider">/</span>
-                <button type="button" class="text-btn" @click="toggleInvert">反选</button>
+                <v-button variant="text" size="small" class="text-btn" @click="toggleInvert">反选</v-button>
               </div>
             </div>
 

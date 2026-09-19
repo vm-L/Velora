@@ -59,5 +59,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartLanServer: () => ipcRenderer.invoke('restart-lan-server'),
   stopLanServer: () => ipcRenderer.invoke('stop-lan-server'),
   notifyFirstScreenReady: () => ipcRenderer.send('app-first-screen-ready'),
-  log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message })
+  log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message }),
+  editVideoSegments: (params: { taskId: string, sourcePath: string, segments: Array<{ start: number, end: number }>, outputPath?: string, mode: 'replace' | 'saveAs' }) => ipcRenderer.invoke('edit-video-segments', params),
+  cancelVideoEdit: (taskId: string) => ipcRenderer.invoke('cancel-video-edit', taskId),
+  onVideoEditProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => {
+    ipcRenderer.on(`video-edit-progress-${taskId}`, (_event, data) => callback(data));
+  },
+  offVideoEditProgress: (taskId: string) => {
+    ipcRenderer.removeAllListeners(`video-edit-progress-${taskId}`);
+  },
+  showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => ipcRenderer.invoke('show-save-dialog', options)
 })

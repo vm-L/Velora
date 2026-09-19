@@ -194,9 +194,7 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-button variant="secondary" @click="showMountModal = true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
+              <VIcon name="folder" :size="14" style="margin-right: 4px;" />
               挂载目录
             </v-button>
           </div>
@@ -276,19 +274,11 @@
             </div>
             <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
               <v-button variant="secondary" @click="handleCopyLanUrl">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
+                <VIcon name="copy-text" :size="14" style="margin-right: 4px;" />
                 复制链接
               </v-button>
               <v-button variant="primary" @click="showQrModal = true">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
-                </svg>
+                <VIcon name="qrcode" :size="14" style="margin-right: 4px;" />
                 手机扫码
               </v-button>
             </div>
@@ -304,14 +294,7 @@
           @drop="onDrop($event, 'cms', index)">
 
           <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'cms', index)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-            </svg>
+            <VIcon name="drag-handle" :size="14" />
           </div>
 
           <template v-if="editingId === item.id">
@@ -352,14 +335,7 @@
           @drop="onDrop($event, 'ext', index)">
 
           <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'ext', index)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-              <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-              <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-            </svg>
+            <VIcon name="drag-handle" :size="14" />
           </div>
 
           <template v-if="editingId === item.id">
@@ -424,10 +400,7 @@
         <div class="modal-header">
           <h3>管理解析规则 - {{ managingParseFor.name }}</h3>
           <v-button variant="icon" class="modal-close-btn" @click="closeParseManager">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="20" />
           </v-button>
         </div>
 
@@ -459,10 +432,7 @@
         <div class="modal-header">
           <h3>管理 JS 脚本 - {{ managingScriptsFor.name }}</h3>
           <v-button variant="icon" class="modal-close-btn" @click="closeScriptManager">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="20" />
           </v-button>
         </div>
 
@@ -492,10 +462,7 @@
         <div class="modal-header">
           <h3>管理样式 - {{ managingStylesFor.name }}</h3>
           <v-button variant="icon" class="modal-close-btn" @click="closeStyleManager">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="20" />
           </v-button>
         </div>
 
@@ -553,10 +520,7 @@
         <div class="modal-header">
           <h3>挂载本地目录</h3>
           <v-button variant="icon" class="modal-close-btn" @click="showMountModal = false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="20" />
           </v-button>
         </div>
         <div class="modal-body" style="padding: 16px 20px; max-height: 60vh; overflow-y: auto;">
@@ -573,14 +537,7 @@
               @drop="onDrop($event, 'local', index)"
             >
               <div class="drag-handle" title="拖动排序" draggable="true" @dragstart="onDragStart($event, 'local', index)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="9" cy="5" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="5" r="1.2" fill="currentColor"></circle>
-                  <circle cx="9" cy="12" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="12" r="1.2" fill="currentColor"></circle>
-                  <circle cx="9" cy="19" r="1.2" fill="currentColor"></circle>
-                  <circle cx="15" cy="19" r="1.2" fill="currentColor"></circle>
-                </svg>
+                <VIcon name="drag-handle" :size="14" />
               </div>
 
               <template v-if="editingId === item.id">
@@ -629,10 +586,7 @@
         <div class="modal-header">
           <h3>手机扫码访问</h3>
           <v-button variant="icon" class="modal-close-btn" @click="showQrModal = false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <VIcon name="close" :size="20" />
           </v-button>
         </div>
         <div class="modal-body" style="padding: 24px 20px; display: flex; flex-direction: column; align-items: center; gap: 14px;">

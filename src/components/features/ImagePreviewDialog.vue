@@ -4,21 +4,13 @@
     @mousedown="bringToFront" ref="dialogRef">
     <div class="dialog-header" @mousedown="startDrag">
       <div class="header-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-          <polyline points="21 15 16 10 5 21"></polyline>
-        </svg>
+        <VIcon name="pick-image" :size="14" />
         图片预览
       </div>
       <div class="header-actions">
-        <button class="action-btn close-btn" @click.stop="close" title="关闭">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <VButton variant="icon" class="action-btn close-btn" @click.stop="close" title="关闭">
+          <VIcon name="close" :size="12" />
+        </VButton>
       </div>
     </div>
 
@@ -29,20 +21,12 @@
       </div>
 
       <!-- Navigation Arrows -->
-      <button v-if="isMulti" class="nav-arrow left-arrow" @click.stop="prev" title="上一张">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
-      </button>
-      <button v-if="isMulti" class="nav-arrow right-arrow" @click.stop="next" title="下一张">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-          <polyline points="12 5 19 12 12 19"></polyline>
-        </svg>
-      </button>
+      <VButton v-if="isMulti" variant="icon" class="nav-arrow left-arrow" @click.stop="prev" title="上一张">
+        <VIcon name="arrow-left" :size="24" />
+      </VButton>
+      <VButton v-if="isMulti" variant="icon" class="nav-arrow right-arrow" @click.stop="next" title="下一张">
+        <VIcon name="arrow-right" :size="24" />
+      </VButton>
 
       <!-- Minimap -->
       <div v-if="scale > 1" class="minimap" :style="minimapContainerStyle">
@@ -57,33 +41,18 @@
         {{ width }} × {{ height }} ({{ Math.round(scale * 100) }}%)
       </div>
       <div class="footer-actions">
-        <button class="icon-action-btn" @click="resetView" title="重置缩放和平移">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-            <polyline points="3 3 3 8 8 8"></polyline>
-          </svg>
-        </button>
-        <button class="icon-action-btn" @click="copyUrl" title="复制图片链接">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-        </button>
-        <button class="icon-action-btn" @click="copyData" title="复制图片到剪贴板">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
-          </svg>
-        </button>
-        <button v-if="!hideDownload" class="icon-action-btn" @click="saveLocal" title="下载图片">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-        </button>
+        <VButton variant="icon" class="icon-action-btn" @click="resetView" title="重置缩放和平移">
+          <VIcon name="refresh" :size="14" />
+        </VButton>
+        <VButton variant="icon" class="icon-action-btn" @click="copyUrl" title="复制图片链接">
+          <VIcon name="copy-text" :size="14" />
+        </VButton>
+        <VButton variant="icon" class="icon-action-btn" @click="copyData" title="复制图片到剪贴板">
+          <VIcon name="pick-image" :size="14" />
+        </VButton>
+        <VButton v-if="!hideDownload" variant="icon" class="icon-action-btn" @click="saveLocal" title="下载图片">
+          <VIcon name="download" :size="14" />
+        </VButton>
       </div>
     </div>
 
@@ -95,13 +64,7 @@
       </div>
     </div>
 
-    <div class="resize-handle" @mousedown="startResize">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="21" y1="21" x2="3" y2="3"></line>
-        <line x1="21" y1="14" x2="10" y2="3"></line>
-        <line x1="14" y1="21" x2="3" y2="10"></line>
-      </svg>
-    </div>
+    <div class="resize-handle" @mousedown="startResize"></div>
 
     <!-- Save Overlay -->
     <Teleport to="body">
@@ -109,12 +72,9 @@
         <div class="save-modal">
           <div class="save-header">
             <h3>下载图片</h3>
-            <button class="icon-action-btn" @click="closeSaveOverlay">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+            <VButton variant="icon" class="icon-action-btn" @click="closeSaveOverlay">
+              <VIcon name="close" :size="12" />
+            </VButton>
           </div>
           <div class="save-body">
             <div class="save-location-group">
@@ -134,9 +94,7 @@
                   <div class="save-item-thumb">
                     <img :src="formatMediaSrc(item.url)" referrerpolicy="no-referrer" />
                     <div class="checkbox-indicator">
-                      <svg v-if="item.checked" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
+                      <VIcon v-if="item.checked" name="check" :size="12" />
                     </div>
                   </div>
                   <input type="text" v-model="item.name" class="save-item-name" @click.stop />
@@ -161,6 +119,7 @@ import { ref, computed, watch, onUnmounted } from 'vue';
 import { useMessage } from '../../composables/useMessage';
 import { useSettings } from '../../composables/useSettings';
 import VButton from '../base/VButton.vue';
+import VIcon from '../base/VIcon.vue';
 import VInput from '../base/VInput.vue';
 import VCheckbox from '../base/VCheckbox.vue';
 

@@ -17,9 +17,7 @@
         :disabled="disabled"
         @click.stop="toggleOpen"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ open: isOpen }">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
+        <VIcon name="chevron-down" :size="14" :class="{ open: isOpen }" />
       </button>
     </div>
 
@@ -37,14 +35,9 @@
           >
             <span class="item-icon" v-if="item.depth !== undefined">
               <!-- Root / Home Icon -->
-              <svg v-if="item.depth === 0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
+              <VIcon v-if="item.depth === 0" name="home" :size="14" />
               <!-- Folder Icon -->
-              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
+              <VIcon v-else name="folder" :size="14" />
             </span>
             <span class="item-label">{{ item.label }}</span>
           </div>
@@ -60,6 +53,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import VInput from './VInput.vue';
+import VIcon from './VIcon.vue';
 
 export interface InputSelectOption {
   label: string;

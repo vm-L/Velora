@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, webContents } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, clipboard, net, dialog, webContents, nativeTheme } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
@@ -35,6 +35,7 @@ app.setPath('sessionData', path.join(localDataPath, 'session'));
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
 import { logger } from './logger'
+import { editVideoSegments, cancelVideoEdit, EditVideoParams } from './videoEditor'
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -188,7 +189,7 @@ function createSplashWindow(theme: string = 'light') {
   });
 
   const iconDataUrl = getIconDataUrl();
-  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.3.7';
+  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.4.0';
   const html = getSplashHtml(theme, iconDataUrl, version);
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 
@@ -199,18 +200,23 @@ function createSplashWindow(theme: string = 'light') {
   });
 }
 
-function updateSplash(percent: number, text: string) {
+function updateSplashTheme(theme: string) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
   splashWindow.webContents.executeJavaScript(`
-    window.setProgress && window.setProgress(${percent}, ${JSON.stringify(text)});
+    window.setTheme && window.setTheme(${JSON.stringify(theme)});
+  `).catch(() => {});
+}
+
+function updateSplashText(text: string) {
+  if (!splashWindow || splashWindow.isDestroyed()) return;
+  splashWindow.webContents.executeJavaScript(`
+    window.setStatusText && window.setStatusText(${JSON.stringify(text)});
   `).catch(() => {});
 }
 
 function finishStartupAndShowMain() {
   if (isFirstScreenReady) return;
   isFirstScreenReady = true;
-
-  updateSplash(100, '准备就绪，正在进入...');
 
   const elapsed = Date.now() - splashStartTime;
   const minDisplayTime = 300; // 保底展示 300ms
@@ -407,10 +413,6 @@ function createWindow() {
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools()
   }
-
-  mainWindow.once('ready-to-show', () => {
-    updateSplash(85, '正在装载应用数据与首屏...');
-  })
 }
 
 let isIpcInitialized = false;
@@ -943,19 +945,45 @@ ipcMain.handle('stop-lan-server', async () => {
   return { success: true };
 });
 
+ipcMain.handle('edit-video-segments', async (event, params: EditVideoParams) => {
+  const sender = event.sender;
+  return await editVideoSegments(params, (percent, text) => {
+    if (!sender.isDestroyed()) {
+      sender.send(`video-edit-progress-${params.taskId}`, { percent, text });
+    }
+  });
+});
+
+ipcMain.handle('cancel-video-edit', async (_event, taskId: string) => {
+  return cancelVideoEdit(taskId);
+});
+
+ipcMain.handle('show-save-dialog', async (event, options: { defaultPath?: string; title?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) {
+    return await dialog.showSaveDialog(options);
+  }
+  return await dialog.showSaveDialog(win, options);
+});
+
 app.whenReady().then(async () => {
+  // 1. 【最高优先级】瞬间秒开 Splash 悬浮卡片（0ms 阻塞，依据系统明暗色偏好极速呈现）
+  const initialTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  createSplashWindow(initialTheme);
+
+  // 2. 初始化核心存储、IPC 通道与网络拦截器
   setupStoreHandlers();
   setupIpcHandlers();
   setupNetworkInterceptors();
 
-  // 立即创建并展示冷启动 Splash 悬浮卡片（极速渲染）
-  const theme = (await storeManager.getSetting('theme')) || 'light';
-  createSplashWindow(theme);
+  // 3. 读取用户主题配置并平滑同步至 Splash（若与系统偏好不一致）
+  storeManager.getSetting('theme').then((savedTheme) => {
+    if (savedTheme && savedTheme !== initialTheme) {
+      updateSplashTheme(savedTheme);
+    }
+  }).catch(() => {});
 
-  updateSplash(20, '正在初始化核心配置与存储...');
-
-  updateSplash(40, '正在检测运行环境与网络服务...');
-  // Background non-blocking initializations
+  // 4. 后台非阻塞环境检测与局域网服务
   initOrRestartLanServer().catch((err) => {
     logger.error('Main', `Failed to initialize LAN server: ${err.message}`);
   });
@@ -963,19 +991,16 @@ app.whenReady().then(async () => {
   // 自动检测系统环境变量中是否存在 ffmpeg (异步非阻塞)
   exec('ffmpeg -version', (error) => {
     if (error) {
-      dialog.showErrorBox(
-        '未找到 FFmpeg 环境',
-        '系统中未检测到 FFmpeg。\n请将 FFmpeg 的 bin 目录添加到系统环境变量 (PATH) 中，否则将无法正常拼接和转换视频文件。'
-      );
+      logger.warn('System', 'FFmpeg is not detected in system PATH.');
     } else {
       logger.info('System', 'FFmpeg is correctly installed and accessible.');
     }
   });
 
-  updateSplash(65, '正在装载应用主窗口与工作区...');
+  // 5. 装载应用主窗口与工作区
   createWindow();
 
-  // 安全熔断保底：若渲染进程因异常未在 5 秒内通知就绪，强制淡出 Splash 展示主窗口
+  // 6. 安全熔断保底：若渲染进程因异常未在 5 秒内通知就绪，强制淡出 Splash 展示主窗口
   setTimeout(() => {
     if (!isFirstScreenReady) {
       logger.warn('Main', '首屏就绪通知超时，触发安全熔断保底显示主窗口');

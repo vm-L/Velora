@@ -4,10 +4,7 @@
       <div class="editor-header">
         <h3>编辑 CSS 样式</h3>
         <v-button variant="icon" @click="close">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <VIcon name="close" :size="20" />
         </v-button>
       </div>
       
@@ -33,6 +30,7 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import VButton from '../base/VButton.vue';
+import VIcon from '../base/VIcon.vue';
 import VInput from '../base/VInput.vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';

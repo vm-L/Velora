@@ -3,10 +3,7 @@
     <!-- 顶部导航栏 -->
     <div class="detail-nav-header">
       <v-button variant="secondary" class="back-btn" @click="goBack">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="19" y1="12" x2="5" y2="12"></line>
-          <polyline points="12 19 5 12 12 5"></polyline>
-        </svg>
+        <VIcon name="arrow-left" :size="16" />
         返回列表
       </v-button>
       <span class="nav-title" v-if="videoDetail">{{ videoDetail.name }}</span>
@@ -19,11 +16,7 @@
     </div>
     
     <div v-else-if="!videoDetail" class="error-container">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
+      <VIcon name="error" :size="48" />
       <p>{{ error || '视频详情不存在或已被移除' }}</p>
       <v-button variant="primary" @click="goBack">返回上一页</v-button>
     </div>
@@ -59,9 +52,7 @@
           </div>
           
           <div v-else class="no-active-play">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
+            <VIcon name="play" :size="48" />
             <p>请在右侧剧集列表中选择要播放的集数</p>
           </div>
         </div>
@@ -82,17 +73,10 @@
                   <h2 class="title" :title="videoDetail.name">{{ videoDetail.name }}</h2>
                   <div class="title-action-btns">
                     <v-button variant="icon" class="title-action-btn" @click="handleCopyTitle" title="复制标题">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                      </svg>
+                      <VIcon name="copy-text" :size="15" />
                     </v-button>
                     <v-button variant="icon" class="title-action-btn" @click="handleDownloadVideo" title="下载当前集数视频">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                      </svg>
+                      <VIcon name="download" :size="15" />
                     </v-button>
                   </div>
                 </div>
@@ -190,6 +174,7 @@ import { useCMS } from '../composables/useCMS'
 import { useMessage } from '../composables/useMessage'
 import { logger } from '../services/logger'
 import VButton from '../components/base/VButton.vue'
+import VIcon from '../components/base/VIcon.vue'
 import { useSaveMediaDialog } from '../composables/useSaveMediaDialog'
 
 const { openSaveMediaDialog } = useSaveMediaDialog()

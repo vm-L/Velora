@@ -11,21 +11,13 @@
         </div>
         <div class="tab-title">{{ tab.title }}</div>
         <button class="tab-close" @click.stop="onCloseTab(tab.id)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <VIcon name="close" size="12" />
         </button>
       </div>
 
       <!-- New Tab Button -->
       <button class="new-tab-btn" @click="onAddDefaultTab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+        <VIcon name="plus" size="16" />
       </button>
     </div>
 
@@ -79,36 +71,19 @@
           </template>
         </SnifferDropdown>
         <div class="func-divider"></div>
-        <button class="func-btn tooltip-left" v-tooltip="'后退'" @click="onBack">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-        </button>
-        <button class="func-btn tooltip-left" v-tooltip="'前进'" @click="onForward">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-            <polyline points="12 5 19 12 12 19"></polyline>
-          </svg>
-        </button>
-        <button class="func-btn tooltip-left" v-tooltip="'刷新'" @click="onRefresh">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-        </button>
+        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'后退'" @click="onBack">
+          <VIcon name="arrow-left" size="16" />
+        </v-button>
+        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'前进'" @click="onForward">
+          <VIcon name="arrow-right" size="16" />
+        </v-button>
+        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'刷新'" @click="onRefresh">
+          <VIcon name="refresh" size="16" />
+        </v-button>
         
-        <button class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"></polyline>
-            <polyline points="8 6 2 12 8 18"></polyline>
-          </svg>
-        </button>
+        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
+          <VIcon name="code" size="16" />
+        </v-button>
 
       </div>
     </div>

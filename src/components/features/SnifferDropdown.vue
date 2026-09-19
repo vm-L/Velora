@@ -8,7 +8,7 @@
     <div v-if="isOpen" class="dropdown-menu">
       <div class="dropdown-header">
         <span class="dropdown-title">{{ title }} ({{ items.length }})</span>
-        <button class="text-btn" @click.stop="clear">清空</button>
+        <VButton variant="text" size="small" class="text-btn" @click.stop="clear">清空</VButton>
       </div>
       <div class="dropdown-items">
         <div v-if="processedItems.length === 0" class="dropdown-empty">暂无捕获记录</div>
@@ -17,36 +17,23 @@
             <img :src="item.url" referrerpolicy="no-referrer" />
           </div>
           <div class="media-preview video-icon" v-else>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
+            <VIcon name="play" :size="16" />
           </div>
           <div class="item-info">
             <div class="item-url">{{ getBasename(item.url) }}</div>
             <div class="item-time">{{ formatTime(item.timestamp) }}</div>
           </div>
           <div class="item-actions">
-            <button class="icon-action-btn" @click.stop="copyUrl(item.url)" title="复制链接">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </button>
-            <button v-if="type === 'image'" class="icon-action-btn" @click.stop="copyData(item.url)"
+            <VButton variant="icon" class="icon-action-btn" @click.stop="copyUrl(item.url)" title="复制链接">
+              <VIcon name="copy-text" :size="14" />
+            </VButton>
+            <VButton v-if="type === 'image'" variant="icon" class="icon-action-btn" @click.stop="copyData(item.url)"
               title="复制图片到剪贴板">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                <polyline points="21 15 16 10 5 21"></polyline>
-              </svg>
-            </button>
-            <button class="icon-action-btn" @click.stop="saveLocal(item.url)" title="下载到本地">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-            </button>
+              <VIcon name="pick-image" :size="14" />
+            </VButton>
+            <VButton variant="icon" class="icon-action-btn" @click.stop="saveLocal(item.url)" title="下载到本地">
+              <VIcon name="download" :size="14" />
+            </VButton>
           </div>
         </div>
       </div>
@@ -58,6 +45,8 @@
 import { ref, computed } from 'vue';
 import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
 import { useMessage } from '../../composables/useMessage';
+import VButton from '../base/VButton.vue';
+import VIcon from '../base/VIcon.vue';
 
 const props = defineProps<{
   type: 'image' | 'video' | 'audio';

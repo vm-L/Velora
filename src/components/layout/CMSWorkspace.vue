@@ -29,10 +29,7 @@
             class="search-input"
             @enter="handleSearch"
           />
-          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
+          <VIcon class="search-icon" name="search" size="16" />
         </div>
         <v-button variant="primary" class="search-btn" @click="handleSearch">搜索</v-button>
         <v-button v-if="keyword" variant="secondary" class="reset-btn" @click="handleReset">清空</v-button>
@@ -132,12 +129,7 @@
       <!-- 资源网格区 -->
       <div class="video-grid-container">
         <div v-if="videos.length === 0 && !loading" class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-            <line x1="7" y1="2" x2="7" y2="22"></line>
-            <line x1="17" y1="2" x2="17" y2="22"></line>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-          </svg>
+          <VIcon name="video-sniffer" size="48" />
           <p>暂无符合条件的资源，尝试换个分类或搜索词吧</p>
         </div>
 
@@ -161,9 +153,7 @@
               <!-- 悬浮播放按钮遮罩 -->
               <div class="card-overlay">
                 <div class="play-btn-circle">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                  </svg>
+                  <VIcon name="play" size="16" />
                 </div>
               </div>
 
@@ -226,6 +216,7 @@ import { useCMS } from '../../composables/useCMS'
 import { logger } from '../../services/logger'
 import VInput from '../base/VInput.vue'
 import VButton from '../base/VButton.vue'
+import VIcon from '../base/VIcon.vue'
 import VideoDetail from '../../views/VideoDetail.vue'
 
 const props = defineProps<{
