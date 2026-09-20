@@ -209,16 +209,22 @@
     <div v-if="exportState.isExporting" class="editor-modal-mask" @mousedown.stop>
       <div class="editor-progress-card">
         <div class="modal-header">
-          <VIcon name="loading" :size="18" class="spin-icon" />
-          <h3>正在处理视频剪辑</h3>
+          <VIcon v-if="exportState.isFinished" name="success" :size="18" style="color: var(--color-success, #10b981);" />
+          <VIcon v-else-if="exportState.error" name="error" :size="18" style="color: var(--color-error, #ef4444);" />
+          <VIcon v-else name="loading" :size="18" class="spin-icon" />
+          <h3>{{ exportState.isFinished ? '导出完毕' : (exportState.error ? '剪辑处理失败' : '正在处理视频剪辑') }}</h3>
         </div>
         
         <div class="export-progress-bar-track">
-          <div class="export-progress-fill" :style="{ width: exportState.percent + '%' }"></div>
+          <div
+            class="export-progress-fill"
+            :class="{ success: exportState.isFinished, error: !!exportState.error }"
+            :style="{ width: exportState.percent + '%' }"
+          ></div>
         </div>
 
         <div class="progress-info-row">
-          <span class="status-msg">{{ exportState.text || '正在处理中' }}</span>
+          <span class="status-msg">{{ exportState.text || (exportState.isFinished ? '导出完毕' : '正在处理中') }}</span>
           <span class="status-pct">{{ Math.round(exportState.percent) }}%</span>
         </div>
 
@@ -227,7 +233,39 @@
         </div>
 
         <div class="modal-actions">
-          <VButton variant="secondary" @click="handleCancelExport">取消处理</VButton>
+          <!-- 导出完成状态：展示“打开文件目录”与“确认”，点击确认关闭预览播放窗口 -->
+          <template v-if="exportState.isFinished">
+            <VButton
+              v-if="exportState.outputPath"
+              variant="secondary"
+              @click="handleOpenExportDir"
+            >
+              打开文件目录
+            </VButton>
+            <VButton
+              variant="primary"
+              @click="handleConfirmComplete"
+            >
+              确认
+            </VButton>
+          </template>
+
+          <!-- 导出异常状态：仅关闭当前提示弹窗，保留剪辑界面方便重试 -->
+          <template v-else-if="exportState.error">
+            <VButton variant="secondary" @click="handleCloseExportModal">关闭</VButton>
+          </template>
+
+          <!-- 导出进行中状态：支持取消，但在最终写入覆盖阶段禁用防止源文件损坏 -->
+          <template v-else>
+            <VButton
+              variant="secondary"
+              :disabled="exportState.percent >= 95"
+              :title="exportState.percent >= 95 ? '正在完成文件写入，不可取消' : '取消当前剪辑任务'"
+              @click="handleCancelExport"
+            >
+              取消处理
+            </VButton>
+          </template>
         </div>
       </div>
     </div>
@@ -462,31 +500,44 @@ const selectSegment = (idx: number) => {
 const setCurrentAsStart = () => {
   if (editSegments.value.length === 0) return;
   const seg = editSegments.value[activeSegmentIndex.value];
-  if (seg) {
-    seg.start = Math.min(currentTime.value, Math.max(0, seg.end - 0.1));
+  if (!seg) return;
+  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
+  const maxDur = duration.value > 0 ? duration.value : (videoRef.value?.duration || 0);
+
+  if (cur >= seg.end) {
+    seg.start = cur;
+    const targetEnd = maxDur > 0 ? Math.min(maxDur, cur + 15) : cur + 15;
+    seg.end = Number(Math.max(cur + 0.1, targetEnd).toFixed(2));
+  } else {
+    seg.start = cur;
   }
 };
 
 const setCurrentAsEnd = () => {
   if (editSegments.value.length === 0) return;
   const seg = editSegments.value[activeSegmentIndex.value];
-  if (seg) {
-    seg.end = Math.max(currentTime.value, seg.start + 0.1);
+  if (!seg) return;
+  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
+
+  if (cur <= seg.start) {
+    seg.end = cur;
+    seg.start = Number(Math.max(0, cur - 15).toFixed(2));
+  } else {
+    seg.end = cur;
   }
 };
 
 const addSegment = () => {
-  const lastSeg = editSegments.value[editSegments.value.length - 1];
-  let newStart = 0;
-  let newEnd = duration.value || 10;
-  if (lastSeg) {
-    newStart = Math.min(duration.value, lastSeg.end);
-    newEnd = Math.min(duration.value, newStart + 15);
-    if (newEnd <= newStart) {
-      newStart = Math.max(0, currentTime.value);
-      newEnd = Math.min(duration.value, newStart + 15);
-    }
+  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
+  const maxDur = duration.value > 0 ? duration.value : (videoRef.value?.duration || 0);
+
+  let newStart = cur;
+  let newEnd = maxDur > 0 ? Math.min(maxDur, cur + 15) : cur + 15;
+  if (maxDur > 0 && cur >= maxDur) {
+    newStart = Math.max(0, maxDur - 15);
+    newEnd = maxDur;
   }
+
   const newSeg: EditSegment = {
     id: 'seg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     start: Number(newStart.toFixed(2)),
@@ -525,12 +576,16 @@ const exportState = ref<{
   percent: number;
   text: string;
   error: string | null;
+  isFinished: boolean;
+  outputPath: string | null;
 }>({
   isExporting: false,
   taskId: '',
   percent: 0,
   text: '',
-  error: null
+  error: null,
+  isFinished: false,
+  outputPath: null
 });
 
 const promptConfirmOverwrite = () => {
@@ -573,8 +628,10 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
     isExporting: true,
     taskId,
     percent: 0,
-    text: '正在初始化剪辑任务',
-    error: null
+    text: '正在初始化剪辑任务...',
+    error: null,
+    isFinished: false,
+    outputPath: null
   };
 
   window.electronAPI.onVideoEditProgress(taskId, (data) => {
@@ -593,15 +650,9 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
 
     if (result.success) {
       exportState.value.percent = 100;
-      exportState.value.text = mode === 'replace' ? '保存覆盖成功！' : '另存为导出完成！';
-      
-      setTimeout(() => {
-        exportState.value.isExporting = false;
-        isEditingMode.value = false;
-        if (mode === 'replace') {
-          reloadVideoSource();
-        }
-      }, 700);
+      exportState.value.text = mode === 'replace' ? '原视频已成功覆盖保存！' : '视频剪辑已成功导出！';
+      exportState.value.isFinished = true;
+      exportState.value.outputPath = result.outputPath || saveAsPath || disk;
     } else {
       exportState.value.error = result.error || '剪辑处理失败';
     }
@@ -612,21 +663,31 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
   }
 };
 
+const handleConfirmComplete = () => {
+  exportState.value.isExporting = false;
+  close();
+};
+
+const handleOpenExportDir = () => {
+  if (exportState.value.outputPath && window.electronAPI?.showItemInFolder) {
+    window.electronAPI.showItemInFolder(exportState.value.outputPath);
+  }
+};
+
+const handleCloseExportModal = () => {
+  exportState.value.isExporting = false;
+  exportState.value.error = null;
+};
+
 const handleCancelExport = () => {
+  if (exportState.value.percent >= 95) return;
   if (exportState.value.taskId && window.electronAPI?.cancelVideoEdit) {
     window.electronAPI.cancelVideoEdit(exportState.value.taskId);
   }
   exportState.value.isExporting = false;
+  exportState.value.error = null;
 };
 
-const reloadVideoSource = () => {
-  if (!videoRef.value || !props.url) return;
-  const currentSrc = formatMediaSrc(props.url);
-  const bustSrc = currentSrc.includes('?') ? `${currentSrc}&_t=${Date.now()}` : `${currentSrc}?_t=${Date.now()}`;
-  videoRef.value.src = bustSrc;
-  videoRef.value.load();
-  videoRef.value.play().catch(() => {});
-};
 
 // ==============================
 // 鼠标与基础播放交互控制
@@ -1917,6 +1978,14 @@ onUnmounted(() => {
   background: var(--color-accent);
   border-radius: 3px;
   transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &.success {
+    background: var(--color-success, #10b981);
+  }
+
+  &.error {
+    background: var(--color-error, #ef4444);
+  }
 }
 
 .progress-info-row {

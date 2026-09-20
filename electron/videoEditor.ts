@@ -341,7 +341,7 @@ export async function editVideoSegments(
       return { success: false, error: '生成剪辑文件失败，文件大小为 0' }
     }
 
-    onProgress?.(98, '正在完成文件写入...')
+    onProgress?.(98, mode === 'replace' ? '正在覆盖保存原文件...' : '正在写入目标文件...')
 
     let finalTargetPath = sourcePath
     if (mode === 'saveAs' && outputPath) {
