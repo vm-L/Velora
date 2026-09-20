@@ -189,7 +189,7 @@ function createSplashWindow(theme: string = 'light') {
   });
 
   const iconDataUrl = getIconDataUrl();
-  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.4.2';
+  const version = typeof app.getVersion === 'function' ? app.getVersion() : '1.4.3';
   const html = getSplashHtml(theme, iconDataUrl, version);
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 

@@ -43,7 +43,16 @@
             <p>设置最大同时进行的下载任务数量 (支持范围 1-10)</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input type="number" min="1" max="10" :value="state.maxConcurrentDownloads" @change="handleMaxConcurrentChange" class="inline-input" style="width: 100px; min-width: 100px;" />
+            <v-input
+              type="number"
+              min="1"
+              max="10"
+              v-model.number="state.maxConcurrentDownloads"
+              @change="handleMaxConcurrentChange"
+              @blur="handleMaxConcurrentChange"
+              class="inline-input"
+              style="width: 100px; min-width: 100px;"
+            />
           </div>
         </div>
 
@@ -54,7 +63,16 @@
             <p>设置下载流在内存中的缓冲容量上限，超限时自动批量写盘</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input type="number" min="64" max="8192" :value="state.maxMemoryBufferMB" @change="handleMaxMemoryChange" class="inline-input" style="width: 100px; min-width: 100px;" />
+            <v-input
+              type="number"
+              min="64"
+              max="8192"
+              v-model.number="state.maxMemoryBufferMB"
+              @change="handleMaxMemoryChange"
+              @blur="handleMaxMemoryChange"
+              class="inline-input"
+              style="width: 100px; min-width: 100px;"
+            />
           </div>
         </div>
 
@@ -65,8 +83,15 @@
             <p>图片的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input v-model="state.imageDirectory" @change="saveImageDirectory(state.imageDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
+            <v-input
+              v-model="state.imageDirectory"
+              @change="saveImageDirectory(state.imageDirectory)"
+              @blur="saveImageDirectory(state.imageDirectory)"
+              type="text"
+              class="inline-input"
+              placeholder="输入或选择目录"
+              style="flex: 1; max-width: 300px; margin-right: 8px;"
+            />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</v-button>
           </div>
         </div>
@@ -78,8 +103,15 @@
             <p>音频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input v-model="state.audioDirectory" @change="saveAudioDirectory(state.audioDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
+            <v-input
+              v-model="state.audioDirectory"
+              @change="saveAudioDirectory(state.audioDirectory)"
+              @blur="saveAudioDirectory(state.audioDirectory)"
+              type="text"
+              class="inline-input"
+              placeholder="输入或选择目录"
+              style="flex: 1; max-width: 300px; margin-right: 8px;"
+            />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</v-button>
           </div>
         </div>
@@ -91,8 +123,15 @@
             <p>视频的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input v-model="state.videoDirectory" @change="saveVideoDirectory(state.videoDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
+            <v-input
+              v-model="state.videoDirectory"
+              @change="saveVideoDirectory(state.videoDirectory)"
+              @blur="saveVideoDirectory(state.videoDirectory)"
+              type="text"
+              class="inline-input"
+              placeholder="输入或选择目录"
+              style="flex: 1; max-width: 300px; margin-right: 8px;"
+            />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</v-button>
           </div>
         </div>
@@ -104,8 +143,15 @@
             <p>其他类型文件的默认下载目录</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
-            <v-input v-model="state.fileDirectory" @change="saveFileDirectory(state.fileDirectory)" type="text"
-              class="inline-input" placeholder="输入或选择目录" style="flex: 1; max-width: 300px; margin-right: 8px;" />
+            <v-input
+              v-model="state.fileDirectory"
+              @change="saveFileDirectory(state.fileDirectory)"
+              @blur="saveFileDirectory(state.fileDirectory)"
+              type="text"
+              class="inline-input"
+              placeholder="输入或选择目录"
+              style="flex: 1; max-width: 300px; margin-right: 8px;"
+            />
             <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
           </div>
         </div>
@@ -154,8 +200,9 @@
               step="0.1"
               min="0.1"
               max="50"
-              :value="state.videoCompressTargetGB"
+              v-model.number="state.videoCompressTargetGB"
               @change="handleTargetGBChange"
+              @blur="handleTargetGBChange"
               class="inline-input"
               style="width: 100px; min-width: 100px;"
             />
@@ -174,8 +221,9 @@
               step="100"
               min="100"
               max="50000"
-              :value="state.videoCompressMinBitrateKbps"
+              v-model.number="state.videoCompressMinBitrateKbps"
               @change="handleMinBitrateChange"
+              @blur="handleMinBitrateChange"
               class="inline-input"
               style="width: 100px; min-width: 100px;"
             />
@@ -794,21 +842,27 @@ const handleCopyLanUrl = () => {
   });
 };
 
-const handleTargetGBChange = (e: Event) => {
-  const target = e.target as HTMLInputElement;
-  let val = parseFloat(target.value);
-  if (isNaN(val) || val < 0.1) val = 0.1;
-  else if (val > 50) val = 50;
-  val = Math.round(val * 10) / 10;
-  saveVideoCompressTargetGB(val);
+const handleTargetGBChange = (val?: any) => {
+  const raw = val !== undefined && val !== null
+    ? (typeof val === 'object' && 'target' in val ? (val.target as HTMLInputElement)?.value : val)
+    : state.videoCompressTargetGB;
+  let num = parseFloat(String(raw));
+  if (isNaN(num) || num < 0.1) num = 0.1;
+  else if (num > 50) num = 50;
+  num = Math.round(num * 10) / 10;
+  state.videoCompressTargetGB = num;
+  saveVideoCompressTargetGB(num);
 };
 
-const handleMinBitrateChange = (e: Event) => {
-  const target = e.target as HTMLInputElement;
-  let val = parseInt(target.value, 10);
-  if (isNaN(val) || val < 100) val = 100;
-  else if (val > 50000) val = 50000;
-  saveVideoCompressMinBitrateKbps(val);
+const handleMinBitrateChange = (val?: any) => {
+  const raw = val !== undefined && val !== null
+    ? (typeof val === 'object' && 'target' in val ? (val.target as HTMLInputElement)?.value : val)
+    : state.videoCompressMinBitrateKbps;
+  let num = parseInt(String(raw), 10);
+  if (isNaN(num) || num < 100) num = 100;
+  else if (num > 50000) num = 50000;
+  state.videoCompressMinBitrateKbps = num;
+  saveVideoCompressMinBitrateKbps(num);
 };
 
 const showBackupDialog = ref(false);
@@ -1011,20 +1065,26 @@ const handleSelectEditLocalDir = async () => {
   }
 };
 
-const handleMaxConcurrentChange = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  let val = parseInt(target.value, 10);
-  if (isNaN(val) || val < 1) val = 1;
-  else if (val > 10) val = 10;
-  saveMaxConcurrentDownloads(val);
+const handleMaxConcurrentChange = (val?: any) => {
+  const raw = val !== undefined && val !== null
+    ? (typeof val === 'object' && 'target' in val ? (val.target as HTMLInputElement)?.value : val)
+    : state.maxConcurrentDownloads;
+  let num = parseInt(String(raw), 10);
+  if (isNaN(num) || num < 1) num = 1;
+  else if (num > 10) num = 10;
+  state.maxConcurrentDownloads = num;
+  saveMaxConcurrentDownloads(num);
 };
 
-const handleMaxMemoryChange = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  let val = parseInt(target.value, 10);
-  if (isNaN(val) || val < 64) val = 64;
-  else if (val > 8192) val = 8192;
-  saveMaxMemoryBufferMB(val);
+const handleMaxMemoryChange = (val?: any) => {
+  const raw = val !== undefined && val !== null
+    ? (typeof val === 'object' && 'target' in val ? (val.target as HTMLInputElement)?.value : val)
+    : state.maxMemoryBufferMB;
+  let num = parseInt(String(raw), 10);
+  if (isNaN(num) || num < 64) num = 64;
+  else if (num > 8192) num = 8192;
+  state.maxMemoryBufferMB = num;
+  saveMaxMemoryBufferMB(num);
 };
 
 const generateId = () => Math.random().toString(36).substr(2, 9);

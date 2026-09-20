@@ -1,7 +1,7 @@
 <template>
   <input
     :type="type"
-    :value="modelValue"
+    :value="computedValue"
     :placeholder="placeholder"
     :disabled="disabled"
     :readonly="readonly"
@@ -14,10 +14,16 @@
 </template>
 
 <script setup lang="ts">
-defineProps({
+import { computed } from 'vue';
+
+const props = defineProps({
   modelValue: {
     type: [String, Number],
-    default: '',
+    default: undefined,
+  },
+  value: {
+    type: [String, Number],
+    default: undefined,
   },
   placeholder: {
     type: String,
@@ -38,6 +44,12 @@ defineProps({
 });
 
 const emit = defineEmits(['update:modelValue', 'input', 'change', 'blur', 'enter']);
+
+const computedValue = computed(() => {
+  if (props.modelValue !== undefined) return props.modelValue;
+  if (props.value !== undefined) return props.value;
+  return '';
+});
 
 const onInput = (e: Event) => {
   const target = e.target as HTMLInputElement;

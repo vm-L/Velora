@@ -144,10 +144,10 @@ export const useSettings = () => {
     state.audioDirectory = all['audioDirectory'] || ''
     state.videoDirectory = all['videoDirectory'] || ''
     state.fileDirectory = all['fileDirectory'] || ''
-    state.maxConcurrentDownloads = all['maxConcurrentDownloads'] || 3
-    state.maxMemoryBufferMB = all['maxMemoryBufferMB'] || 128
+    state.maxConcurrentDownloads = typeof all['maxConcurrentDownloads'] === 'number' ? all['maxConcurrentDownloads'] : 3
+    state.maxMemoryBufferMB = typeof all['maxMemoryBufferMB'] === 'number' ? all['maxMemoryBufferMB'] : 128
     state.autoMatchDownloadSubdir = all['autoMatchDownloadSubdir'] !== undefined ? all['autoMatchDownloadSubdir'] : true
-    state.enableVideoCompress = all['enableVideoCompress'] || false
+    state.enableVideoCompress = all['enableVideoCompress'] === true
     const savedTarget = all['videoCompressTargetGB'] ?? all['videoCompressThresholdGB']
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
     const savedMinBitrate = all['videoCompressMinBitrateKbps']
@@ -158,10 +158,10 @@ export const useSettings = () => {
     state.customStyles = all['customStyles'] || {}
     state.customScripts = all['customScripts'] || {}
     state.customParseRules = all['customParseRules'] || {}
-    state.lanShareEnabled = all['lanShareEnabled'] || false
-    state.lanSharePort = all['lanSharePort'] || 8899
+    state.lanShareEnabled = all['lanShareEnabled'] === true
+    state.lanSharePort = typeof all['lanSharePort'] === 'number' ? all['lanSharePort'] : 8899
     state.lanSharePassword = all['lanSharePassword'] || ''
-    state.lanShareAllowEdit = all['lanShareAllowEdit'] || false
+    state.lanShareAllowEdit = all['lanShareAllowEdit'] === true
 
     // Load adblock sources & merge built-ins
     const savedSources: AdBlockSource[] = all['adBlockSources'] || [];
@@ -344,7 +344,7 @@ export const useSettings = () => {
   const exportConfigBackup = async (selectedKeys: ConfigBackupSectionKey[]) => {
     const payload: any = {
       type: 'velora-config-backup',
-      version: '1.4.2',
+      version: '1.4.3',
       timestamp: Date.now(),
       data: {}
     };
