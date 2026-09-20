@@ -173,6 +173,16 @@ export async function editVideoSegments(
 
   const totalSegmentDuration = cleanSegments.reduce((sum, s) => sum + (s.end - s.start), 0)
 
+  // 覆盖保存模式下，预先记录源文件的访问时间与修改时间，以便保存后精准恢复，不破坏原有文件排序
+  let origStats: fs.Stats | null = null
+  if (mode === 'replace' && fs.existsSync(sourcePath)) {
+    try {
+      origStats = fs.statSync(sourcePath)
+    } catch (err: any) {
+      logger.warn('VideoEditor', `获取原文件时间戳失败: ${err.message}`)
+    }
+  }
+
   try {
     if (cleanSegments.length === 1) {
       const seg = cleanSegments[0]
@@ -354,6 +364,15 @@ export async function editVideoSegments(
     } else {
       // 覆盖保存模式：先将临时文件复制替换原文件
       fs.copyFileSync(tempOutputFile, sourcePath)
+
+      // 恢复原文件的修改时间与访问时间，不破坏系统的文件排序
+      if (origStats) {
+        try {
+          fs.utimesSync(sourcePath, origStats.atime, origStats.mtime)
+        } catch (err: any) {
+          logger.warn('VideoEditor', `恢复原文件时间戳失败: ${err.message}`)
+        }
+      }
     }
 
     onProgress?.(100, '处理完成！')

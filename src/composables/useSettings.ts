@@ -344,7 +344,7 @@ export const useSettings = () => {
   const exportConfigBackup = async (selectedKeys: ConfigBackupSectionKey[]) => {
     const payload: any = {
       type: 'velora-config-backup',
-      version: '1.4.1',
+      version: '1.4.2',
       timestamp: Date.now(),
       data: {}
     };
