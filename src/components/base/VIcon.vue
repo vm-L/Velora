@@ -87,6 +87,7 @@ export type IconName =
   | 'eye'
   | 'qrcode'
   | 'image'
+  | 'help'
   | 'folder-enter'
   | 'folder-move';
 
@@ -280,6 +281,13 @@ const iconsMap: Record<string, string> = {
     <circle cx="12" cy="12" r="10"></circle>
     <line x1="12" y1="16" x2="12" y2="12"></line>
     <line x1="12" y1="8" x2="12.01" y2="8"></line>
+  `,
+
+  // 帮助 / 问号 (Help - 居中问号圆标)
+  'help': `
+    <circle cx="12" cy="12" r="10"></circle>
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+    <line x1="12" y1="17" x2="12.01" y2="17"></line>
   `,
 
   // 成功 (Success - 对勾圆环)

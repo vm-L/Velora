@@ -1,6 +1,19 @@
 <template>
   <div class="view settings-view">
     <div class="settings-container">
+      <!-- 页面顶部标题与操作栏 -->
+      <div class="settings-header">
+        <div class="settings-title-area">
+          <button class="back-btn" @click="goBack" title="返回">
+            <VIcon name="arrow-left" :size="18" />
+          </button>
+          <div>
+            <h1 class="settings-page-title">系统设置</h1>
+            <p class="settings-page-subtitle">管理应用程序行为、存储目录、网络服务与自定义规则</p>
+          </div>
+        </div>
+      </div>
+
       <!-- General Settings -->
       <div class="settings-section-title">常规</div>
       <div class="settings-card">
@@ -657,6 +670,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { CustomScript, ParseRule, useSettings } from '../composables/useSettings';
 import { useConfirm } from '../composables/useConfirm';
 import { useMessage } from '../composables/useMessage';
@@ -675,6 +689,16 @@ import VInput from '../components/base/VInput.vue';
 import VSwitch, { type VSwitchOption } from '../components/base/VSwitch.vue';
 import ConfigBackupDialog from '../components/features/ConfigBackupDialog.vue';
 import type { ConfigBackupSectionKey } from '../types/backup';
+
+const router = useRouter();
+
+const goBack = () => {
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    router.push('/');
+  }
+};
 
 const closeBehaviorOptions: VSwitchOption[] = [
   { label: '隐藏到托盘', value: 'tray' },
@@ -1549,6 +1573,54 @@ const deleteDomainStyle = async (domain: string) => {
   flex-direction: column;
   flex: 1;
   padding-bottom: var(--view-padding);
+}
+
+.settings-header {
+  margin-bottom: 24px;
+}
+
+.settings-title-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+.settings-page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.settings-page-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
 }
 
 .settings-section-title {

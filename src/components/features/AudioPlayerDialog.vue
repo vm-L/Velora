@@ -117,6 +117,8 @@ const currentTime = ref(0);
 const duration = ref(0);
 const playbackRate = ref(1);
 const isDragging = ref(false);
+const volume = ref(1);
+const isMuted = ref(false);
 
 const formattedUrl = computed(() => {
   return props.url ? formatMediaSrc(props.url) : '';
@@ -239,6 +241,27 @@ const seekBy = (delta: number) => {
   currentTime.value = newTime;
 };
 
+const changeVolume = (delta: number) => {
+  if (!audioRef.value) return;
+  const newVol = Math.max(0, Math.min(1, Number((volume.value + delta).toFixed(2))));
+  audioRef.value.volume = newVol;
+  volume.value = newVol;
+  if (newVol > 0 && isMuted.value) {
+    audioRef.value.muted = false;
+    isMuted.value = false;
+  }
+};
+
+const toggleMute = () => {
+  if (!audioRef.value) return;
+  audioRef.value.muted = !audioRef.value.muted;
+  isMuted.value = audioRef.value.muted;
+  if (!isMuted.value && volume.value === 0) {
+    volume.value = 1;
+    audioRef.value.volume = 1;
+  }
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.target instanceof HTMLInputElement && e.target.type !== 'range') return;
   if (e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable) return;
@@ -250,10 +273,33 @@ const handleKeydown = (e: KeyboardEvent) => {
     togglePlay();
   } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
     e.preventDefault();
-    seekBy(-1);
+    if (e.shiftKey) {
+      seekBy(-60);
+    } else if (e.ctrlKey || e.metaKey) {
+      seekBy(-10);
+    } else {
+      seekBy(-1);
+    }
   } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
     e.preventDefault();
-    seekBy(1);
+    if (e.shiftKey) {
+      seekBy(60);
+    } else if (e.ctrlKey || e.metaKey) {
+      seekBy(10);
+    } else {
+      seekBy(1);
+    }
+  } else if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    changeVolume(0.01);
+  } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
+    e.preventDefault();
+    changeVolume(-0.01);
+  } else if (e.key === 'm' || e.key === 'M' || e.code === 'KeyM') {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleMute();
+    }
   }
 };
 

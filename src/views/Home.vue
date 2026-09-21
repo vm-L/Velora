@@ -183,6 +183,7 @@
     <AudioPlayerDialog v-if="activeAudioPreviewUrl" :url="activeAudioPreviewUrl" 
       @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" :hideDownload="true" />
     <VideoPlayerDialog v-if="activeVideoPreviewUrl" :url="activeVideoPreviewUrl"
+      @edit-complete="handleVideoEditComplete"
       @close="activeVideoPreviewUrl = null" :hideDownload="true" />
 
     <EditTaskDialog
@@ -232,6 +233,24 @@ const { openSaveMediaDialog } = useSaveMediaDialog();
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);
 const activeVideoPreviewUrl = ref<string | null>(null);
+
+const handleVideoEditComplete = async (payload: { mode: 'replace' | 'saveAs'; outputPath: string; sourcePath: string }) => {
+  if (!window.electronAPI?.getVideoMediaInfo) return;
+  try {
+    const targetPath = payload.mode === 'replace' ? payload.sourcePath : payload.outputPath;
+    const task = tasks.value.find(t => t.savePath === targetPath || t.savePath === payload.sourcePath);
+    if (task && payload.mode === 'replace') {
+      const info = await window.electronAPI.getVideoMediaInfo(payload.sourcePath);
+      if (info && info.size > 0) {
+        task.totalBytes = info.size;
+        task.receivedBytes = info.size;
+        await updateTaskDb(task);
+      }
+    }
+  } catch (err: any) {
+    logger.error('HomeView', `Failed to update edited task file size: ${err?.message}`);
+  }
+};
 
 const editTaskDialogVisible = ref(false);
 const editingTask = ref<any>(null);

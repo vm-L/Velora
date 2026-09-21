@@ -324,7 +324,8 @@
       v-if="activeVideoUrl"
       :url="activeVideoUrl"
       :hideDownload="true"
-      @close="activeVideoUrl = null"
+      @edit-complete="refreshDirectorySilently"
+      @close="activeVideoUrl = null; refreshDirectorySilently()"
     />
 
     <!-- Audio Preview Modal -->
@@ -500,6 +501,18 @@ const loadDirectory = async (dirPath: string) => {
     items.value = [];
   } finally {
     loading.value = false;
+  }
+};
+
+const refreshDirectorySilently = async () => {
+  if (!currentPath.value || !window.electronAPI?.readLocalDirectory) return;
+  try {
+    const res = await window.electronAPI.readLocalDirectory(currentPath.value);
+    if (res && res.success && res.items) {
+      items.value = res.items;
+    }
+  } catch (err: any) {
+    logger.error('LocalWorkspace', `Failed to silently refresh directory: ${err?.message}`);
   }
 };
 

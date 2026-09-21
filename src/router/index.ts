@@ -15,6 +15,11 @@ const router = createRouter({
       component: () => import('../views/Settings.vue')
     },
     {
+      path: '/help',
+      name: 'Help',
+      component: () => import('../views/Help.vue')
+    },
+    {
       path: '/resource/:type/:id',
       name: 'Resource',
       component: () => import('../views/ResourceView.vue')

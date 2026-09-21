@@ -78,7 +78,7 @@
               <VIcon :name="isPlaying ? 'pause' : 'play'" :size="18" />
             </VButton>
             <div class="volume-control" @mouseenter="showVolume = true" @mouseleave="showVolume = false">
-              <VButton variant="icon" class="ctrl-btn volume-btn" @click="toggleMute" title="音量/静音">
+              <VButton variant="icon" class="ctrl-btn volume-btn" @click="toggleMute" title="音量/静音 (快捷键: M)">
                 <VIcon :name="(volume === 0 || isMuted) ? 'volume-mute' : (volume < 0.5 ? 'volume-low' : 'volume')" :size="16" />
               </VButton>
               <div class="volume-slider-container" :class="{ 'show': showVolume }">
@@ -95,7 +95,7 @@
               <option :value="1">1.0x</option>
               <option :value="1.25">1.25x</option>
               <option :value="1.5">1.5x</option>
-              <option :value="2">2.0x</option>
+              <option :value="2.0">2.0x</option>
             </select>
 
             <!-- 听视频模式切换 -->
@@ -118,7 +118,7 @@
             </VButton>
             
             <!-- True Fullscreen Button -->
-            <VButton v-if="!isAudioMode" variant="icon" class="ctrl-btn" :active="isFullscreen" @click="toggleFullscreen" title="系统级全屏">
+            <VButton v-if="!isAudioMode" variant="icon" class="ctrl-btn" :active="isFullscreen" @click="toggleFullscreen" title="系统级全屏 (快捷键: F)">
               <VIcon :name="isFullscreen ? 'fullscreen-exit' : 'fullscreen'" :size="16" />
             </VButton>
           </div>
@@ -131,15 +131,15 @@
       <!-- 第一行：打点控制与片段统计 -->
       <div class="dock-header-row">
         <div class="dock-actions-left">
-          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsStart" title="将当前播放时间设为当前片段起点 (快捷键: [)">
+          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsStart" title="将当前播放时间设为当前片段起点 (快捷键: Z)">
             <VIcon name="segment-start" :size="12" />
             起点
           </VButton>
-          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsEnd" title="将当前播放时间设为当前片段终点 (快捷键: ])">
+          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsEnd" title="将当前播放时间设为当前片段终点 (快捷键: C)">
             <VIcon name="segment-end" :size="12" />
             终点
           </VButton>
-          <VButton variant="primary" class="dock-btn" @click="addSegment" title="添加新的剪辑选段">
+          <VButton variant="primary" class="dock-btn" @click="addSegment" title="添加新的剪辑选段 (快捷键: X)">
             <VIcon name="plus" :size="12" />
             添加选段
           </VButton>
@@ -153,8 +153,8 @@
         </div>
       </div>
 
-      <!-- 第二行：片段横向滚动列表 -->
-      <div class="dock-segments-list">
+      <!-- 第二行：片段列表 (支持自适应换行与纵向滚动) -->
+      <div ref="segmentsListRef" class="dock-segments-list">
         <div v-for="(seg, idx) in editSegments" :key="seg.id"
           class="dock-segment-item"
           :class="{ 'is-selected': idx === activeSegmentIndex }"
@@ -169,10 +169,10 @@
           </div>
 
           <div class="seg-item-actions" @click.stop>
-            <VButton variant="icon" class="seg-icon-btn" :active="isSegmentPlaying && idx === activeSegmentIndex" @click="togglePreviewSegment(idx)" :title="isSegmentPlaying && idx === activeSegmentIndex ? '停止播放' : '播放此片段'">
+            <VButton variant="icon" class="seg-icon-btn" :active="isSegmentPlaying && idx === activeSegmentIndex" @click="togglePreviewSegment(idx)" :title="isSegmentPlaying && idx === activeSegmentIndex ? '停止播放 (快捷键: S)' : '播放此片段 (快捷键: S)'">
               <VIcon :name="(isSegmentPlaying && idx === activeSegmentIndex) ? 'pause' : 'play'" :size="10" />
             </VButton>
-            <VButton v-if="editSegments.length > 1" variant="icon-danger" class="seg-icon-btn" @click="removeSegment(idx)" title="删除此选段">
+            <VButton v-if="editSegments.length > 1" variant="icon-danger" class="seg-icon-btn" @click="removeSegment(idx)" title="删除此选段 (快捷键: W)">
               <VIcon name="close" :size="10" />
             </VButton>
           </div>
@@ -276,7 +276,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import VButton from '../base/VButton.vue';
 import VIcon from '../base/VIcon.vue';
 import { logger } from '../../services/logger';
@@ -290,6 +290,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'download', url: string): void;
+  (e: 'edit-complete', payload: { mode: 'replace' | 'saveAs'; outputPath: string; sourcePath: string }): void;
 }>();
 
 const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
@@ -445,6 +446,17 @@ export interface EditSegment {
 const editSegments = ref<EditSegment[]>([]);
 const activeSegmentIndex = ref(0);
 const isSegmentPlaying = ref(false);
+const segmentsListRef = ref<HTMLElement | null>(null);
+
+const scrollToActiveSegment = () => {
+  nextTick(() => {
+    if (!segmentsListRef.value) return;
+    const activeEl = segmentsListRef.value.querySelector('.dock-segment-item.is-selected') as HTMLElement;
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
+  });
+};
 
 const totalEditedDuration = computed(() => {
   return editSegments.value.reduce((acc, s) => acc + Math.max(0, s.end - s.start), 0);
@@ -475,6 +487,7 @@ const toggleEditingMode = () => {
       ];
       activeSegmentIndex.value = 0;
     }
+    scrollToActiveSegment();
   } else {
     isEditingMode.value = false;
     isSegmentPlaying.value = false;
@@ -494,6 +507,7 @@ const selectSegment = (idx: number) => {
       videoRef.value.currentTime = seg.start;
       currentTime.value = seg.start;
     }
+    scrollToActiveSegment();
   }
 };
 
@@ -545,6 +559,7 @@ const addSegment = () => {
   };
   editSegments.value.push(newSeg);
   activeSegmentIndex.value = editSegments.value.length - 1;
+  scrollToActiveSegment();
 };
 
 const removeSegment = (idx: number) => {
@@ -553,6 +568,7 @@ const removeSegment = (idx: number) => {
   if (activeSegmentIndex.value >= editSegments.value.length) {
     activeSegmentIndex.value = editSegments.value.length - 1;
   }
+  scrollToActiveSegment();
 };
 
 const togglePreviewSegment = (idx: number) => {
@@ -652,7 +668,13 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
       exportState.value.percent = 100;
       exportState.value.text = mode === 'replace' ? '原视频已成功覆盖保存！' : '视频剪辑已成功导出！';
       exportState.value.isFinished = true;
-      exportState.value.outputPath = result.outputPath || saveAsPath || disk;
+      const finalOutputPath = result.outputPath || saveAsPath || disk;
+      exportState.value.outputPath = finalOutputPath;
+      emit('edit-complete', {
+        mode,
+        outputPath: finalOutputPath,
+        sourcePath: disk
+      });
     } else {
       exportState.value.error = result.error || '剪辑处理失败';
     }
@@ -1032,7 +1054,7 @@ const onTimeUpdate = () => {
   if (!isDragging.value && videoRef.value) {
     currentTime.value = videoRef.value.currentTime;
 
-    // 单段试听到达终点自动暂停
+    // 播放到达终点自动暂停
     if (isSegmentPlaying.value && isEditingMode.value) {
       const seg = editSegments.value[activeSegmentIndex.value];
       if (seg && currentTime.value >= seg.end) {
@@ -1222,6 +1244,49 @@ const seekBy = (delta: number) => {
   }
 };
 
+const changeVolume = (delta: number) => {
+  if (!videoRef.value) return;
+  const newVol = Math.max(0, Math.min(1, Number((volume.value + delta).toFixed(2))));
+  videoRef.value.volume = newVol;
+  volume.value = newVol;
+  if (newVol > 0 && isMuted.value) {
+    videoRef.value.muted = false;
+    isMuted.value = false;
+  }
+  showVolume.value = true;
+  resetControlsTimeout();
+};
+
+const seekToSegmentStart = () => {
+  if (editSegments.value.length === 0) return;
+  const seg = editSegments.value[activeSegmentIndex.value];
+  if (seg && videoRef.value) {
+    videoRef.value.currentTime = seg.start;
+    currentTime.value = seg.start;
+  }
+};
+
+const seekToSegmentEnd = () => {
+  if (editSegments.value.length === 0) return;
+  const seg = editSegments.value[activeSegmentIndex.value];
+  if (seg && videoRef.value) {
+    videoRef.value.currentTime = seg.end;
+    currentTime.value = seg.end;
+  }
+};
+
+const selectPrevSegment = () => {
+  if (editSegments.value.length === 0) return;
+  const targetIdx = Math.max(0, activeSegmentIndex.value - 1);
+  selectSegment(targetIdx);
+};
+
+const selectNextSegment = () => {
+  if (editSegments.value.length === 0) return;
+  const targetIdx = Math.min(editSegments.value.length - 1, activeSegmentIndex.value + 1);
+  selectSegment(targetIdx);
+};
+
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.target instanceof HTMLInputElement && e.target.type !== 'range') return;
   if (e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable) return;
@@ -1242,15 +1307,67 @@ const handleKeydown = (e: KeyboardEvent) => {
     togglePlay();
   } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
     e.preventDefault();
-    seekBy(-1);
+    if (e.shiftKey) {
+      seekBy(-60);
+    } else if (e.ctrlKey || e.metaKey) {
+      seekBy(-10);
+    } else {
+      seekBy(-1);
+    }
   } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
     e.preventDefault();
-    seekBy(1);
-  } else if (isEditingMode.value) {
-    if (e.key === '[') {
+    if (e.shiftKey) {
+      seekBy(60);
+    } else if (e.ctrlKey || e.metaKey) {
+      seekBy(10);
+    } else {
+      seekBy(1);
+    }
+  } else if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    changeVolume(0.01);
+  } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
+    e.preventDefault();
+    changeVolume(-0.01);
+  } else if (e.key === 'f' || e.key === 'F' || e.code === 'KeyF') {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !isAudioMode.value) {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+  } else if (e.key === 'm' || e.key === 'M' || e.code === 'KeyM') {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleMute();
+    }
+  } else if (isEditingMode.value && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const key = e.key.toLowerCase();
+    if (key === 'z') {
+      e.preventDefault();
       setCurrentAsStart();
-    } else if (e.key === ']') {
+    } else if (key === 'c') {
+      e.preventDefault();
       setCurrentAsEnd();
+    } else if (key === 'x') {
+      e.preventDefault();
+      addSegment();
+    } else if (key === 'a') {
+      e.preventDefault();
+      seekToSegmentStart();
+    } else if (key === 'd') {
+      e.preventDefault();
+      seekToSegmentEnd();
+    } else if (key === 's') {
+      e.preventDefault();
+      togglePreviewSegment(activeSegmentIndex.value);
+    } else if (key === 'q') {
+      e.preventDefault();
+      selectPrevSegment();
+    } else if (key === 'e') {
+      e.preventDefault();
+      selectNextSegment();
+    } else if (key === 'w') {
+      e.preventDefault();
+      removeSegment(activeSegmentIndex.value);
     }
   }
 };
@@ -1751,20 +1868,26 @@ onUnmounted(() => {
 .dock-segments-list {
   flex: 1;
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  gap: 6px 8px;
+  padding: 8px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--bg-app);
-  min-height: 44px;
+  min-height: 48px;
 
   &::-webkit-scrollbar {
+    width: 4px;
     height: 4px;
   }
   &::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 2px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
   }
 }
 

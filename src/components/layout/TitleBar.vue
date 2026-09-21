@@ -2,6 +2,9 @@
   <div class="title-bar">
     <div class="title-bar-text"></div>
     <div class="title-bar-controls">
+      <router-link to="/help" class="control-btn help-btn" title="帮助与快捷键">
+        <VIcon name="help" :size="14" />
+      </router-link>
       <router-link to="/settings" class="control-btn settings-btn" title="设置">
         <VIcon name="settings" :size="14" />
       </router-link>
