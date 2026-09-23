@@ -1013,10 +1013,15 @@ const injectTabBaseScripts = async (tabId: string) => {
     webview.addEventListener('console-message', (e: any) => {
       if (e.message === '__webview_click__') {
         contextMenuVisible.value = false;
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_tab__:')) {
-        const targetUrl = e.message.slice('__velora_open_tab__:'.length);
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_bg_tab__:')) {
+        const targetUrl = e.message.slice('__velora_open_bg_tab__:'.length);
         if (targetUrl && targetUrl !== 'about:blank') {
-          addTab(props.resourceId, targetUrl, getResourceIcon());
+          addTab(props.resourceId, targetUrl, getResourceIcon(), false);
+        }
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_fg_tab__:')) {
+        const targetUrl = e.message.slice('__velora_open_fg_tab__:'.length);
+        if (targetUrl && targetUrl !== 'about:blank') {
+          addTab(props.resourceId, targetUrl, getResourceIcon(), true);
         }
       }
     });
@@ -1034,11 +1039,9 @@ const injectTabBaseScripts = async (tabId: string) => {
         }, true);
       }
 
-      // 2. Intercept link clicks to open in a new tab uniformly
-      if (!window.__veloraLinkInterceptorInjected) {
-        window.__veloraLinkInterceptorInjected = true;
-        let lastClickedUrl = '';
-        let lastClickedTime = 0;
+      // 2. 鼠标中键 / Ctrl+左键 / Meta+左键：在新标签页打开 (与 Chrome 行为完全一致)
+      if (!window.__veloraLinkShortcutInjected) {
+        window.__veloraLinkShortcutInjected = true;
 
         function findAnchor(e) {
           try {
@@ -1062,9 +1065,13 @@ const injectTabBaseScripts = async (tabId: string) => {
           return null;
         }
 
-        function handleLinkTrigger(e) {
-          // Only respond to left click (0) or middle click (1)
-          if (e.button !== 0 && e.button !== 1) return;
+        function handleLinkShortcutClick(e) {
+          const isMiddleClick = (e.button === 1);
+          const isCtrlOrMetaLeftClick = (e.button === 0 && (e.ctrlKey || e.metaKey));
+
+          if (!isMiddleClick && !isCtrlOrMetaLeftClick) {
+            return;
+          }
 
           const anchor = findAnchor(e);
           if (!anchor) return;
@@ -1076,13 +1083,7 @@ const injectTabBaseScripts = async (tabId: string) => {
           if (!rawHref) return;
 
           const trimmed = rawHref.trim();
-          // Skip empty hrefs, in-page hash anchors, and javascript: pseudo-protocol
           if (!trimmed || trimmed === '#' || trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('javascript:')) {
-            return;
-          }
-
-          // Preserve normal download behavior for elements with download attribute
-          if (anchor.hasAttribute('download')) {
             return;
           }
 
@@ -1102,50 +1103,33 @@ const injectTabBaseScripts = async (tabId: string) => {
             return;
           }
 
-          // Only open http and https URLs
           if (targetUrlObj.protocol !== 'http:' && targetUrlObj.protocol !== 'https:') {
             return;
           }
 
-          // If it is just an in-page hash anchor on the exact same page, let browser handle smooth scroll
-          try {
-            const cur = window.location;
-            if (
-              targetUrlObj.origin === cur.origin &&
-              targetUrlObj.pathname === cur.pathname &&
-              targetUrlObj.search === cur.search &&
-              targetUrlObj.hash
-            ) {
-              return;
-            }
-          } catch (err) {}
-
-          // Prevent rapid duplicate clicks on the same link from opening duplicate tabs
-          const now = Date.now();
-          if (targetUrlObj.href === lastClickedUrl && (now - lastClickedTime < 600)) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (typeof e.stopImmediatePropagation === 'function') {
-              e.stopImmediatePropagation();
-            }
-            return;
-          }
-          lastClickedUrl = targetUrlObj.href;
-          lastClickedTime = now;
-
-          // Stop in-page navigation and client-side SPA routing
           e.preventDefault();
           e.stopPropagation();
           if (typeof e.stopImmediatePropagation === 'function') {
             e.stopImmediatePropagation();
           }
 
-          // Notify host to open in a new workspace tab
-          console.log('__velora_open_tab__:' + targetUrlObj.href);
+          if (e.shiftKey) {
+            console.log('__velora_open_fg_tab__:' + targetUrlObj.href);
+          } else {
+            console.log('__velora_open_bg_tab__:' + targetUrlObj.href);
+          }
         }
 
-        window.addEventListener('click', handleLinkTrigger, true);
-        window.addEventListener('auxclick', handleLinkTrigger, true);
+        window.addEventListener('click', handleLinkShortcutClick, true);
+        window.addEventListener('auxclick', handleLinkShortcutClick, true);
+        window.addEventListener('mousedown', (e) => {
+          if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
+            const anchor = findAnchor(e);
+            if (anchor) {
+              e.preventDefault();
+            }
+          }
+        }, true);
       }
     })();
   `;

@@ -44,7 +44,7 @@ export const useWorkspaces = () => {
 
   const getWorkspace = (resourceId: string) => workspaces[resourceId]
 
-  const addTab = (resourceId: string, url: string, favicon?: string) => {
+  const addTab = (resourceId: string, url: string, favicon?: string, activate = true) => {
     const ws = workspaces[resourceId]
     if (!ws) return null
     const tabId = generateId()
@@ -58,7 +58,9 @@ export const useWorkspaces = () => {
       sniffedVideos: [],
       sniffedAudios: []
     })
-    ws.activeTabId = tabId
+    if (activate) {
+      ws.activeTabId = tabId
+    }
     return tabId
   }
 

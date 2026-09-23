@@ -210,6 +210,54 @@
         </div>
       </div>
 
+      <!-- 网络资源与工作区 -->
+      <div class="help-section-title">
+        <VIcon name="globe" :size="16" />
+        <span>网络资源与标签页</span>
+      </div>
+      <div class="help-card">
+        <div class="shortcut-grid">
+          <div class="shortcut-item">
+            <div class="shortcut-keys">
+              <kbd class="v-kbd">Ctrl</kbd>
+              <span class="key-plus">+</span>
+              <span class="tip-badge">左键</span>
+              <span class="key-plus">/</span>
+              <span class="tip-badge">中键</span>
+            </div>
+            <div class="shortcut-desc">
+              <span class="desc-name">后台新建标签页</span>
+              <span class="desc-detail">在后台新标签页打开链接，保持当前页面</span>
+            </div>
+          </div>
+
+          <div class="shortcut-item">
+            <div class="shortcut-keys">
+              <kbd class="v-kbd">Ctrl</kbd>
+              <span class="key-plus">+</span>
+              <kbd class="v-kbd">Shift</kbd>
+              <span class="key-plus">+</span>
+              <span class="tip-badge">左键</span>
+            </div>
+            <div class="shortcut-desc">
+              <span class="desc-name">前台新建标签页</span>
+              <span class="desc-detail">在新标签页打开链接并立即切换激活</span>
+            </div>
+          </div>
+
+          <div class="shortcut-item">
+            <div class="shortcut-keys">
+              <span class="tip-badge">中键</span>
+              <span class="key-plus">点击标签</span>
+            </div>
+            <div class="shortcut-desc">
+              <span class="desc-name">快速关闭标签页</span>
+              <span class="desc-detail">鼠标中键点击顶部标签栏可快速关闭对应标签</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 通用与导航 -->
       <div class="help-section-title">
         <VIcon name="info" :size="16" />
