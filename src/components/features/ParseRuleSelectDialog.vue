@@ -15,12 +15,12 @@
           </p>
 
           <div class="form-row">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">匹配域名</label>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">匹配URL</label>
             <VInputSelect
               v-model="selectedDomain"
               :options="ruleOptions"
               :allow-input="false"
-              placeholder="选择域名"
+              placeholder="选择URL"
               class="w-full"
             />
           </div>
@@ -37,10 +37,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
-import type { ParseRule } from '../../composables/useSettings';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
+import type { ParseRule } from '@/composables/useSettings';
 
 const props = defineProps<{
   visible: boolean;

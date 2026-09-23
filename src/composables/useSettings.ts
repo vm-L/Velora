@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { ConfigBackupSectionKey } from '../types/backup'
+import type { ConfigBackupSectionKey } from '@/types/backup'
 
 export interface ResourceItem {
   id: string
@@ -77,6 +77,15 @@ export interface ParseRule {
   items: ParseRuleItem[];
 }
 
+export interface WaterfallRule {
+  id: string;
+  name?: string;
+  domain: string;
+  nextSelector: string;
+  contentSelector: string;
+  enabled?: boolean;
+}
+
 export interface SettingsState {
   closeBehavior: string
   theme: string
@@ -96,6 +105,7 @@ export interface SettingsState {
   customStyles: Record<string, Record<string, string>>
   customScripts: Record<string, CustomScript[]>
   customParseRules: Record<string, ParseRule[]>
+  customWaterfallRules: Record<string, WaterfallRule[]>
   adBlockSources: AdBlockSource[]
   lanShareEnabled: boolean
   lanSharePort: number
@@ -123,6 +133,7 @@ export const state = reactive<SettingsState>({
   customStyles: {} as Record<string, Record<string, string>>,
   customScripts: {} as Record<string, CustomScript[]>,
   customParseRules: {} as Record<string, ParseRule[]>,
+  customWaterfallRules: {} as Record<string, WaterfallRule[]>,
   adBlockSources: [] as AdBlockSource[],
   lanShareEnabled: false,
   lanSharePort: 8899,
@@ -158,6 +169,7 @@ export const useSettings = () => {
     state.customStyles = all['customStyles'] || {}
     state.customScripts = all['customScripts'] || {}
     state.customParseRules = all['customParseRules'] || {}
+    state.customWaterfallRules = all['customWaterfallRules'] || {}
     state.lanShareEnabled = all['lanShareEnabled'] === true
     state.lanSharePort = typeof all['lanSharePort'] === 'number' ? all['lanSharePort'] : 8899
     state.lanSharePassword = all['lanSharePassword'] || ''
@@ -285,6 +297,11 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customParseRules', JSON.parse(JSON.stringify(rules)))
   }
 
+  const saveCustomWaterfallRules = async (rules: Record<string, WaterfallRule[]>) => {
+    state.customWaterfallRules = rules
+    await window.electronAPI.setSetting('customWaterfallRules', JSON.parse(JSON.stringify(rules)))
+  }
+
   const saveAdBlockSources = async (sources: AdBlockSource[]) => {
     state.adBlockSources = sources;
     await window.electronAPI.setSetting('adBlockSources', JSON.parse(JSON.stringify(sources)));
@@ -344,7 +361,7 @@ export const useSettings = () => {
   const exportConfigBackup = async (selectedKeys: ConfigBackupSectionKey[]) => {
     const payload: any = {
       type: 'velora-config-backup',
-      version: '1.4.3',
+      version: '1.5.0',
       timestamp: Date.now(),
       data: {}
     };
@@ -407,6 +424,7 @@ export const useSettings = () => {
     if (selectedKeys.includes('customScripts')) {
       payload.data.customScripts = JSON.parse(JSON.stringify(state.customScripts || {}));
       payload.data.customStyles = JSON.parse(JSON.stringify(state.customStyles || {}));
+      payload.data.customWaterfallRules = JSON.parse(JSON.stringify(state.customWaterfallRules || {}));
     }
 
     if (selectedKeys.includes('adBlockSources')) {
@@ -531,13 +549,15 @@ export const useSettings = () => {
       }
     }
 
-    // 9. 自定义注入脚本与样式
+    // 9. 自定义注入脚本与样式及瀑布流规则
     const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
     const newStyles: Record<string, Record<string, string>> = data.customStyles || {};
+    const newWaterfallRules: Record<string, WaterfallRule[]> = data.customWaterfallRules || {};
     if (selectedKeys.includes('customScripts')) {
       if (mode === 'overwrite') {
         if (data.customScripts) await saveCustomScripts(newScripts);
         if (data.customStyles) await saveCustomStyles(newStyles);
+        if (data.customWaterfallRules) await saveCustomWaterfallRules(newWaterfallRules);
       } else {
         if (data.customScripts) {
           const mergedScripts: Record<string, CustomScript[]> = { ...(state.customScripts || {}) };
@@ -558,6 +578,22 @@ export const useSettings = () => {
         if (data.customStyles) {
           const mergedStyles = { ...(state.customStyles || {}), ...newStyles };
           await saveCustomStyles(mergedStyles);
+        }
+        if (data.customWaterfallRules) {
+          const mergedWfRules: Record<string, WaterfallRule[]> = { ...(state.customWaterfallRules || {}) };
+          for (const [resId, wfRules] of Object.entries(newWaterfallRules)) {
+            if (!mergedWfRules[resId]) {
+              mergedWfRules[resId] = wfRules;
+            } else {
+              const existingIds = new Set(mergedWfRules[resId].map(r => r.id));
+              for (const r of wfRules) {
+                if (!existingIds.has(r.id)) {
+                  mergedWfRules[resId].push(r);
+                }
+              }
+            }
+          }
+          await saveCustomWaterfallRules(mergedWfRules);
         }
       }
     }
@@ -660,6 +696,7 @@ export const useSettings = () => {
     saveCustomStyles,
     saveCustomScripts,
     saveCustomParseRules,
+    saveCustomWaterfallRules,
     saveAdBlockSources,
     syncAdBlockSourceItem,
     syncAllAdBlockSources,

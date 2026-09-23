@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Home from '../views/Home.vue'
+import Home from '@/views/Home.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -12,22 +12,22 @@ const router = createRouter({
     {
       path: '/settings',
       name: 'Settings',
-      component: () => import('../views/Settings.vue')
+      component: () => import('@/views/Settings.vue')
     },
     {
       path: '/help',
       name: 'Help',
-      component: () => import('../views/Help.vue')
+      component: () => import('@/views/Help.vue')
     },
     {
       path: '/resource/:type/:id',
       name: 'Resource',
-      component: () => import('../views/ResourceView.vue')
+      component: () => import('@/views/ResourceView.vue')
     },
     {
       path: '/resource/:type/:id/video/:vodId',
       name: 'VideoDetail',
-      component: () => import('../views/VideoDetail.vue')
+      component: () => import('@/views/VideoDetail.vue')
     }
   ]
 })

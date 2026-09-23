@@ -17,16 +17,16 @@
     <div class="inspector-content">
       <div class="inspector-content-inner">
         <div class="inspector-body">
-          <!-- 行 1：匹配域名 -->
+          <!-- 行 1：匹配URL -->
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配域名</span>
+            <span class="label">匹配URL</span>
             <VInputSelect
               v-model="currentRule.domain"
-              placeholder="匹配域名，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: *://*.bilibili.com/*"
               :options="historyDomainOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
-              @change="onDomainSelect"
+              @select="onDomainSelect"
             />
           </div>
 
@@ -120,14 +120,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, reactive } from 'vue';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
-import { useSettings, type ParseRule } from '../../composables/useSettings';
-import { useMessage } from '../../composables/useMessage';
-import { useConfirm } from '../../composables/useConfirm';
-import { useDraggableDialog } from '../../composables/useDraggableDialog';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
+import { useSettings, type ParseRule } from '@/composables/useSettings';
+import { useMessage } from '@/composables/useMessage';
+import { useConfirm } from '@/composables/useConfirm';
+import { useDraggableDialog } from '@/composables/useDraggableDialog';
+import { getDefaultUrlPattern } from '@/utils/urlMatcher';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -176,10 +177,7 @@ const historyDomainOptions = computed<InputSelectOption[]>(() => {
   const set = new Set<string>();
   rules.forEach(r => set.add(r.domain));
   if (props.currentUrl) {
-    try {
-      const u = new URL(props.currentUrl);
-      set.add(`*://${u.hostname}/*`);
-    } catch {}
+    set.add(getDefaultUrlPattern(props.currentUrl));
   }
   return Array.from(set).map(d => ({ label: d, value: d }));
 });
@@ -211,13 +209,7 @@ watch(() => props.modelValue, (val) => {
       currentRule.value = rule;
       ensureDownloadDefaults();
     } else {
-      let defaultDomain = '*';
-      if (props.currentUrl) {
-        try {
-          const u = new URL(props.currentUrl);
-          defaultDomain = `*://${u.hostname}/*`;
-        } catch {}
-      }
+      const defaultDomain = getDefaultUrlPattern(props.currentUrl);
       currentRule.value = {
         id: Math.random().toString(36).substring(2, 9),
         domain: defaultDomain,
@@ -245,19 +237,17 @@ const loadExistingRule = () => {
 const onDomainSelect = (selectedDomain: string) => {
   // 仅在新建模式下从下拉列表中选择已有域名时加载已配置项
   if (!props.editingRule) {
-    const rules = settingsState.customParseRules[props.resourceId] || [];
-    const found = rules.find(r => r.domain === selectedDomain && r.actionType === currentRule.value.actionType);
-    if (found) {
-      const rule = JSON.parse(JSON.stringify(found));
-      rule.items = normalizeItems(rule.items);
-      currentRule.value = rule;
-      ensureDownloadDefaults();
-    }
+    currentRule.value.domain = selectedDomain;
+    loadExistingRule();
   }
 };
 
 const onActionTypeChange = () => {
-  ensureDownloadDefaults();
+  if (!props.editingRule) {
+    loadExistingRule();
+  } else {
+    ensureDownloadDefaults();
+  }
 };
 
 const addItem = () => {
@@ -360,7 +350,7 @@ const close = () => {
 const save = async () => {
   const trimmedDomain = currentRule.value.domain.trim();
   if (!trimmedDomain) {
-    showMessage({ text: '匹配域名不能为空', type: 'error' });
+    showMessage({ text: '匹配URL不能为空', type: 'error' });
     return;
   }
   currentRule.value.domain = trimmedDomain;
@@ -385,8 +375,8 @@ const save = async () => {
 
     if (duplicateRule) {
       const confirmed = await confirm({
-        title: '匹配域名重复',
-        message: `已存在相同匹配域名与行为类型的解析规则 "${trimmedDomain}"，是否将当前解析项合并到已有规则中？`,
+        title: '匹配URL重复',
+        message: `已存在相同匹配URL与行为类型的解析规则 "${trimmedDomain}"，是否将当前解析项合并到已有规则中？`,
         confirmText: '合并',
         cancelText: '取消',
         type: 'warning'

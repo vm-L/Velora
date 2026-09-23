@@ -212,12 +212,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useCMS } from '../../composables/useCMS'
-import { logger } from '../../services/logger'
-import VInput from '../base/VInput.vue'
-import VButton from '../base/VButton.vue'
-import VIcon from '../base/VIcon.vue'
-import VideoDetail from '../../views/VideoDetail.vue'
+import { useCMS } from '@/composables/useCMS'
+import { logger } from '@/services/logger'
+import VInput from '@/components/base/VInput.vue'
+import VButton from '@/components/base/VButton.vue'
+import VIcon from '@/components/base/VIcon.vue'
+import VideoDetail from '@/views/VideoDetail.vue'
 
 const props = defineProps<{
   resourceId: string

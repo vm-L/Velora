@@ -277,9 +277,9 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import { logger } from '../../services/logger';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import { logger } from '@/services/logger';
 
 const props = defineProps<{
   url: string | null;

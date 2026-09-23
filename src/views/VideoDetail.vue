@@ -169,13 +169,13 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, onActivated, onDeactivated } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { useSettings } from '../composables/useSettings'
-import { useCMS } from '../composables/useCMS'
-import { useMessage } from '../composables/useMessage'
-import { logger } from '../services/logger'
-import VButton from '../components/base/VButton.vue'
-import VIcon from '../components/base/VIcon.vue'
-import { useSaveMediaDialog } from '../composables/useSaveMediaDialog'
+import { useSettings } from '@/composables/useSettings'
+import { useCMS } from '@/composables/useCMS'
+import { useMessage } from '@/composables/useMessage'
+import { logger } from '@/services/logger'
+import VButton from '@/components/base/VButton.vue'
+import VIcon from '@/components/base/VIcon.vue'
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog'
 
 const { openSaveMediaDialog } = useSaveMediaDialog()
 

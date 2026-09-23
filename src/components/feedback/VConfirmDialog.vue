@@ -31,10 +31,10 @@
 </template>
 
 <script setup lang="ts">
-import { useConfirm } from '../../composables/useConfirm'
-import VButton from '../base/VButton.vue'
-import VIcon from '../base/VIcon.vue'
-import VCheckbox from '../base/VCheckbox.vue'
+import { useConfirm } from '@/composables/useConfirm'
+import VButton from '@/components/base/VButton.vue'
+import VIcon from '@/components/base/VIcon.vue'
+import VCheckbox from '@/components/base/VCheckbox.vue'
 
 const { state, proceed, cancel } = useConfirm()
 </script>

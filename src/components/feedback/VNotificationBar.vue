@@ -62,11 +62,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import VIcon from '../base/VIcon.vue'
+import VIcon from '@/components/base/VIcon.vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useNotification, type NotificationItem } from '../../composables/useNotification'
-import VNotificationItem from './VNotificationItem.vue'
-import VButton from '../base/VButton.vue'
+import { useNotification, type NotificationItem } from '@/composables/useNotification'
+import VNotificationItem from '@/components/feedback/VNotificationItem.vue'
+import VButton from '@/components/base/VButton.vue'
 
 const { notifications, isClearing, removeNotification, clearAllNotifications } = useNotification()
 const router = useRouter()

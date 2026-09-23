@@ -52,8 +52,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import VInput from './VInput.vue';
-import VIcon from './VIcon.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
 
 export interface InputSelectOption {
   label: string;
@@ -82,6 +82,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:modelValue', val: string): void;
   (e: 'change', val: string): void;
+  (e: 'select', val: string, item: InputSelectOption): void;
   (e: 'enter', evt: KeyboardEvent): void;
 }>();
 
@@ -168,6 +169,7 @@ const onInputChange = (val: string) => {
 const selectOption = (item: InputSelectOption) => {
   emit('update:modelValue', item.value);
   emit('change', item.value);
+  emit('select', item.value, item);
   isOpen.value = false;
 };
 

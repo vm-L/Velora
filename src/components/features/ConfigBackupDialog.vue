@@ -107,11 +107,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { BACKUP_SECTIONS, type ConfigBackupSectionKey, type ConfigBackupSectionMeta } from '../../types/backup';
-import { useSettings } from '../../composables/useSettings';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VCheckbox from '../base/VCheckbox.vue';
+import { BACKUP_SECTIONS, type ConfigBackupSectionKey, type ConfigBackupSectionMeta } from '@/types/backup';
+import { useSettings } from '@/composables/useSettings';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VCheckbox from '@/components/base/VCheckbox.vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean;

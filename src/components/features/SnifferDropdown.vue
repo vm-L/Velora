@@ -43,10 +43,10 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
-import { useMessage } from '../../composables/useMessage';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import { useMessage } from '@/composables/useMessage';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
 
 const props = defineProps<{
   type: 'image' | 'video' | 'audio';
@@ -159,7 +159,7 @@ const copyData = async (url: string) => {
   }
 };
 
-import { useSettings } from '../../composables/useSettings';
+import { useSettings } from '@/composables/useSettings';
 
 const { state } = useSettings();
 const { openSaveMediaDialog } = useSaveMediaDialog();

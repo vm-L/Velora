@@ -282,7 +282,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import VIcon from '../components/base/VIcon.vue';
+import VIcon from '@/components/base/VIcon.vue';
 
 const router = useRouter();
 

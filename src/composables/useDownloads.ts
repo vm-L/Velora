@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import { db, type DownloadTask } from '../db'
-import { logger } from '../services/logger'
+import { db, type DownloadTask } from '@/db'
+import { logger } from '@/services/logger'
 
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
@@ -171,22 +171,22 @@ export const useDownloads = () => {
           // Trigger notifications & messages
           if (t.status === 'compressing' && (prevStatus === 'downloading' || prevStatus === 'converting' || prevStatus === 'resolving')) {
             // Auto-compression started
-            const { useMessage } = await import('./useMessage')
+            const { useMessage } = await import('@/composables/useMessage')
             useMessage().showMessage(`任务 "${t.name}" 下载完成，开始压缩`, 'info')
           } else if (prevStatus === 'compressing' && t.status === 'completed') {
             // Compression completed
             notifiedErrorTaskIds.delete(t.id)
-            const { useMessage } = await import('./useMessage')
+            const { useMessage } = await import('@/composables/useMessage')
             useMessage().showMessage(`任务 "${t.name}" 压缩完成`, 'success')
           } else if (activeStatuses.includes(prevStatus) && t.status === 'completed') {
             // Normal download completed (without compression)
             notifiedErrorTaskIds.delete(t.id)
-            const { useMessage } = await import('./useMessage')
+            const { useMessage } = await import('@/composables/useMessage')
             useMessage().showMessage(`任务 "${t.name}" 下载完成`, 'success')
           } else if (activeStatuses.includes(prevStatus) && t.status === 'error') {
             if (!notifiedErrorTaskIds.has(t.id)) {
               notifiedErrorTaskIds.add(t.id)
-              const { useNotification } = await import('./useNotification')
+              const { useNotification } = await import('@/composables/useNotification')
               useNotification().showNotification({
                 type: 'error',
                 title: '下载失败',
@@ -208,7 +208,7 @@ export const useDownloads = () => {
       const fileExists = window.electronAPI ? await window.electronAPI.fileExists(savePath) : false
       
       if (existingTask || fileExists) {
-        const { useConfirm } = await import('./useConfirm')
+        const { useConfirm } = await import('@/composables/useConfirm')
         const confirmed = await useConfirm().confirm({
           title: '文件或任务已存在',
           message: `在当前下载目录或任务列表中已经存在名为 "${name}" 的项。\n要将其覆盖并重新开始全新的下载吗？`,

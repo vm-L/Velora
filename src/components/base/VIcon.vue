@@ -88,6 +88,7 @@ export type IconName =
   | 'qrcode'
   | 'image'
   | 'help'
+  | 'waterfall'
   | 'folder-enter'
   | 'folder-move';
 
@@ -531,6 +532,14 @@ const iconsMap: Record<string, string> = {
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
     <line x1="12" y1="11" x2="12" y2="17"></line>
     <polyline points="9 14 12 17 15 14"></polyline>
+  `,
+
+  // 瀑布模式 / 瀑布流 (错落卡片流)
+  'waterfall': `
+    <rect x="3" y="3" width="7" height="9" rx="1.5"></rect>
+    <rect x="14" y="3" width="7" height="5" rx="1.5"></rect>
+    <rect x="14" y="12" width="7" height="9" rx="1.5"></rect>
+    <rect x="3" y="16" width="7" height="5" rx="1.5"></rect>
   `
 };
 

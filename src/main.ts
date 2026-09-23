@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router'
-import { tooltip } from './directives/tooltip'
+import App from '@/App.vue'
+import router from '@/router'
+import { tooltip } from '@/directives/tooltip'
 
 const app = createApp(App)
 

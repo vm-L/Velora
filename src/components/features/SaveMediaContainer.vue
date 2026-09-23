@@ -26,8 +26,8 @@
 </template>
 
 <script setup lang="ts">
-import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
-import SaveMediaDialog from './SaveMediaDialog.vue';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import SaveMediaDialog from '@/components/features/SaveMediaDialog.vue';
 
 const { dialogs, isDraggingAnyDialog, closeSaveMediaDialog, focusDialog, updateDialogPosition } = useSaveMediaDialog();
 </script>

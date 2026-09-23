@@ -31,20 +31,20 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import TitleBar from './components/layout/TitleBar.vue';
-import Sidebar from './components/layout/Sidebar.vue';
-import VConfirmDialog from './components/feedback/VConfirmDialog.vue';
-import VMessageBar from './components/feedback/VMessageBar.vue';
-import VNotificationBar from './components/feedback/VNotificationBar.vue';
-import SaveMediaContainer from './components/features/SaveMediaContainer.vue';
-const BrowserWorkspace = defineAsyncComponent(() => import('./components/layout/BrowserWorkspace.vue'));
-const CMSWorkspace = defineAsyncComponent(() => import('./components/layout/CMSWorkspace.vue'));
-const LocalWorkspace = defineAsyncComponent(() => import('./components/layout/LocalWorkspace.vue'));
-import { useSettings } from './composables/useSettings';
-import { useDownloads } from './composables/useDownloads';
-import { useOpenedResources } from './composables/useOpenedResources';
-import { useOpenedCMS } from './composables/useOpenedCMS';
-import { useOpenedLocal } from './composables/useOpenedLocal';
+import TitleBar from '@/components/layout/TitleBar.vue';
+import Sidebar from '@/components/layout/Sidebar.vue';
+import VConfirmDialog from '@/components/feedback/VConfirmDialog.vue';
+import VMessageBar from '@/components/feedback/VMessageBar.vue';
+import VNotificationBar from '@/components/feedback/VNotificationBar.vue';
+import SaveMediaContainer from '@/components/features/SaveMediaContainer.vue';
+const BrowserWorkspace = defineAsyncComponent(() => import('@/components/layout/BrowserWorkspace.vue'));
+const CMSWorkspace = defineAsyncComponent(() => import('@/components/layout/CMSWorkspace.vue'));
+const LocalWorkspace = defineAsyncComponent(() => import('@/components/layout/LocalWorkspace.vue'));
+import { useSettings } from '@/composables/useSettings';
+import { useDownloads } from '@/composables/useDownloads';
+import { useOpenedResources } from '@/composables/useOpenedResources';
+import { useOpenedCMS } from '@/composables/useOpenedCMS';
+import { useOpenedLocal } from '@/composables/useOpenedLocal';
 
 const route = useRoute();
 const { state, loadSettings } = useSettings();

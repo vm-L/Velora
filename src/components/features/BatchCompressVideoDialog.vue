@@ -53,11 +53,11 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import VIcon from '../base/VIcon.vue';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import { useSettings } from '../../composables/useSettings';
-import type { DownloadTask } from '../../db';
+import VIcon from '@/components/base/VIcon.vue';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import { useSettings } from '@/composables/useSettings';
+import type { DownloadTask } from '@/db';
 
 const props = defineProps<{
   visible: boolean;

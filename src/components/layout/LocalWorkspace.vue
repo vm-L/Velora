@@ -365,19 +365,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import MoveLocalFileDialog from '../features/MoveLocalFileDialog.vue';
-import VideoPlayerDialog from '../features/VideoPlayerDialog.vue';
-import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
-import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
-import CompressVideoDialog from '../features/CompressVideoDialog.vue';
-import BatchCompressVideoDialog from '../features/BatchCompressVideoDialog.vue';
-import { useMessage } from '../../composables/useMessage';
-import { useConfirm } from '../../composables/useConfirm';
-import { logger } from '../../services/logger';
-import { formatBytes } from '../../utils/format';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import MoveLocalFileDialog from '@/components/features/MoveLocalFileDialog.vue';
+import VideoPlayerDialog from '@/components/features/VideoPlayerDialog.vue';
+import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
+import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
+import CompressVideoDialog from '@/components/features/CompressVideoDialog.vue';
+import BatchCompressVideoDialog from '@/components/features/BatchCompressVideoDialog.vue';
+import { useMessage } from '@/composables/useMessage';
+import { useConfirm } from '@/composables/useConfirm';
+import { logger } from '@/services/logger';
+import { formatBytes } from '@/utils/format';
 
 export interface LocalFileItem {
   name: string;

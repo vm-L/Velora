@@ -23,6 +23,18 @@
 
     <!-- Function Bar -->
     <div class="function-bar">
+      <div class="nav-btn-group">
+        <v-button variant="icon" class="func-btn" v-tooltip="'后退'" @click="onBack">
+          <VIcon name="arrow-left" size="16" />
+        </v-button>
+        <v-button variant="icon" class="func-btn" v-tooltip="'前进'" @click="onForward">
+          <VIcon name="arrow-right" size="16" />
+        </v-button>
+        <v-button variant="icon" class="func-btn" v-tooltip="'刷新'" @click="onRefresh">
+          <VIcon name="refresh" size="16" />
+        </v-button>
+      </div>
+
       <div class="address-bar-container">
         <input 
           type="text" 
@@ -47,6 +59,16 @@
           <VIcon name="css" size="16" />
         </v-button>
 
+        <WaterfallDropdown
+          :rules="currentDomainWaterfallRules"
+          :selected-rule-id="selectedWaterfallRuleId"
+          :is-active="isCurrentTabWaterfallActive"
+          @start-wizard="onStartWaterfallWizard"
+          @toggle-active="toggleWaterfallActive"
+          @select-rule="onSelectWaterfallRule"
+          @delete-rule="onDeleteWaterfallRule"
+        />
+
         <v-button variant="icon" class="func-btn" :class="{ 'active': isPickingElementImage }" v-tooltip="'捕获图片'"
           @click="pickElementImage">
           <VIcon name="pick-image" size="16" />
@@ -70,22 +92,27 @@
             <VIcon name="audio-sniffer" size="16" />
           </template>
         </SnifferDropdown>
+
         <div class="func-divider"></div>
-        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'后退'" @click="onBack">
-          <VIcon name="arrow-left" size="16" />
-        </v-button>
-        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'前进'" @click="onForward">
-          <VIcon name="arrow-right" size="16" />
-        </v-button>
-        <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'刷新'" @click="onRefresh">
-          <VIcon name="refresh" size="16" />
-        </v-button>
-        
+
         <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
           <VIcon name="code" size="16" />
         </v-button>
 
       </div>
+    </div>
+
+    <!-- Waterfall Picking Banner -->
+    <div v-if="waterfallPickingStep > 0" class="waterfall-picking-banner">
+      <div class="banner-content">
+        <span class="picking-badge">
+          {{ waterfallPickingStep === 2 ? '步骤 2/4' : '步骤 3/4' }}
+        </span>
+        <span class="picking-instruction">
+          {{ waterfallPickingStep === 2 ? '请在网页中点击【下一页】按钮或链接 (Alt+滚轮可微调选择范围)' : '请在网页中点击【内容主体 / 列表区域】容器 (Alt+滚轮可微调选择范围)' }}
+        </span>
+      </div>
+      <v-button size="small" variant="secondary" @click="cancelWaterfallPicking">取消</v-button>
     </div>
 
     <!-- Webviews -->
@@ -111,6 +138,22 @@
       ></webview>
     </div>
 
+    <!-- Hidden Webviews for Waterfall Pre-rendering Pipeline -->
+    <div
+      v-for="session in activeWaterfallSessionsList"
+      :key="session.tabId"
+      style="position: fixed; top: -9999px; left: -9999px; width: 1280px; height: 800px; opacity: 0; pointer-events: none; overflow: hidden; z-index: -999;"
+    >
+      <webview
+        v-if="session.nextUrl && session.status !== 'finished'"
+        :src="session.nextUrl"
+        :id="`waterfall-bg-webview-${session.tabId}`"
+        allowpopups
+        @did-stop-loading="onWaterfallBgStopLoading(session.tabId)"
+        @did-fail-load="onWaterfallBgFailLoad($event, session.tabId)"
+      ></webview>
+    </div>
+
     <!-- Audio Player Dialog -->
     <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageOrigin()" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
@@ -121,6 +164,20 @@
 
     <!-- Parse Rule Dialog -->
     <ParseRuleDialog v-model="parseRuleVisible" :resource-id="resourceId" :current-url="getCurrentPageUrl()" />
+
+    <!-- Waterfall Wizard Modal -->
+    <WaterfallWizardModal
+      v-model:visible="waterfallWizardVisible"
+      :step="waterfallWizardStep"
+      :initial-domain="wizardTempDomain"
+      :initial-next-selector="wizardTempNextSelector"
+      :initial-content-selector="wizardTempContentSelector"
+      :rules="settingsState.customWaterfallRules[resourceId] || []"
+      @start-picking-next="onStartPickingNext"
+      @restart-picking="onRestartPicking"
+      @confirm="onConfirmWaterfallRule"
+      @cancel="cancelWaterfallPicking"
+    />
 
     <!-- Script Injector Dialog -->
     <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="getCurrentPageUrl()"
@@ -165,28 +222,39 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed, nextTick, defineAsyncComponent } from 'vue';
-import { useWorkspaces } from '../../composables/useWorkspaces';
-import { useSettings, type ParseRule, type ParseRuleItem } from '../../composables/useSettings';
-import { logger } from '../../services/logger';
-import { sanitizeFilename } from '../../utils/filename';
+import { useWorkspaces } from '@/composables/useWorkspaces';
+import { useSettings, type ParseRule, type ParseRuleItem } from '@/composables/useSettings';
+import { logger } from '@/services/logger';
+import { sanitizeFilename } from '@/utils/filename';
 
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-const InspectorDialog = defineAsyncComponent(() => import('../features/InspectorDialog.vue'));
-const ScriptInjectorDialog = defineAsyncComponent(() => import('../features/ScriptInjectorDialog.vue'));
-import ParseRuleDialog from '../features/ParseRuleDialog.vue';
-import ParseRuleSelectDialog from '../features/ParseRuleSelectDialog.vue';
-import SnifferDropdown from '../features/SnifferDropdown.vue';
-import ImagePreviewDialog from '../features/ImagePreviewDialog.vue';
-import AudioPlayerDialog from '../features/AudioPlayerDialog.vue';
-import VideoPlayerDialog from '../features/VideoPlayerDialog.vue';
-import { APP_PREFIX } from '../../constants';
-import { getPickerScript, getPickerCancelScript } from '../../utils/elementPicker';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+const InspectorDialog = defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'));
+const ScriptInjectorDialog = defineAsyncComponent(() => import('@/components/features/ScriptInjectorDialog.vue'));
+import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
+import ParseRuleSelectDialog from '@/components/features/ParseRuleSelectDialog.vue';
+import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
+import WaterfallDropdown from '@/components/features/WaterfallDropdown.vue';
+import WaterfallWizardModal from '@/components/features/WaterfallWizardModal.vue';
+import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
+import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
+import VideoPlayerDialog from '@/components/features/VideoPlayerDialog.vue';
+import { APP_PREFIX } from '@/constants';
+import { getPickerScript, getPickerCancelScript } from '@/utils/elementPicker';
+import {
+  getWaterfallParentInitScript,
+  getWaterfallBackgroundExtractScript,
+  getWaterfallQueryInitialNextUrlScript,
+  getWaterfallDestroyScript,
+  type WaterfallExtractResult
+} from '@/utils/waterfallEngine';
+import { isUrlMatchPattern, getDefaultUrlPattern } from '@/utils/urlMatcher';
+import type { WaterfallRule } from '@/composables/useSettings';
 
 
-import { useMessage } from '../../composables/useMessage';
-import { useConfirm } from '../../composables/useConfirm';
-import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
+import { useMessage } from '@/composables/useMessage';
+import { useConfirm } from '@/composables/useConfirm';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
 
 const props = defineProps<{
   resourceId: string;
@@ -202,7 +270,7 @@ const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { openSaveMediaDialog, isDraggingAnyDialog } = useSaveMediaDialog();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveCustomScripts, saveExternalSites, saveCmsResources } = useSettings();
+const { state: settingsState, saveCustomStyles, saveCustomScripts, saveCustomWaterfallRules, saveExternalSites, saveCmsResources } = useSettings();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -324,46 +392,9 @@ const runParseTask = async (task: () => Promise<void>) => {
   }
 };
 
-// 域名通配符匹配逻辑
+// 统一 URL 通配符匹配
 const matchDomainPattern = (urlStr: string, domainPattern: string): boolean => {
-  if (!urlStr || !domainPattern) return false;
-  const pattern = domainPattern.trim();
-  if (pattern === '*' || pattern === '*://*/*' || pattern === '*://*') return true;
-
-  try {
-    const urlObj = new URL(urlStr);
-    const host = urlObj.hostname;
-
-    // 1. 转为精确通配符正则表达式
-    const escapedPattern = pattern
-      .replace(/[+?^${}()|[\]\\]/g, '\\$&') // 转义正则元字符，保留 . 和 *
-      .replace(/\./g, '\\.')              // . 转为 \.
-      .replace(/\*/g, '.*');              // * 转为 .*
-
-    const reg = new RegExp(`^${escapedPattern}$`, 'i');
-    if (reg.test(urlStr) || reg.test(host)) return true;
-
-    // 2. 补全末尾斜杠兼容 (如 https://www.bilibili.com 匹配 *://www.bilibili.com/*)
-    const altUrl = urlStr.endsWith('/') ? urlStr.slice(0, -1) : (urlStr + '/');
-    if (reg.test(altUrl)) return true;
-
-    // 3. 主机名与基础域名后缀匹配回退
-    const cleanPattern = pattern
-      .replace(/^\*:\/\//, '')
-      .replace(/\/\*$/, '')
-      .replace(/^\*\./, '')
-      .replace(/\*/g, '');
-
-    if (cleanPattern) {
-      if (host === cleanPattern || host.endsWith('.' + cleanPattern) || urlStr.includes(cleanPattern)) {
-        return true;
-      }
-    }
-  } catch {
-    if (domainPattern === '*' || urlStr.includes(domainPattern)) return true;
-  }
-
-  return false;
+  return isUrlMatchPattern(domainPattern, urlStr);
 };
 
 // 解析单个 Rule Item (支持 /正则/、'固定常量' 及 全局变量名/JS表达式)
@@ -429,7 +460,7 @@ const evaluateParseItem = async (
   return null;
 };
 
-// 执行特定匹配域名规则的所有行为类型
+// 执行特定匹配URL规则的所有行为类型
 const executeMatchedRulesForDomain = async (
   _targetUrl: string,
   htmlText: string,
@@ -744,10 +775,10 @@ const executeSingleParseTask = async (task: {
     const uniqueMatchedDomains = Array.from(matchedDomainSet);
 
     if (uniqueMatchedDomains.length === 1) {
-      // 单个匹配域名：直接执行规则
+      // 单个匹配URL：直接执行规则
       await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator, shortLabel);
     } else {
-      // 多个匹配域名：加入选择排队队列
+      // 多个匹配URL：加入选择排队队列
       showMessage({
         id: toastId,
         text: `匹配到多个解析规则，请在弹窗中选择 (${shortLabel})`,
@@ -923,6 +954,9 @@ onUnmounted(() => {
   document.removeEventListener('click', hideAllContextMenus);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
+  activeWaterfallSessions.value.forEach((_, tabId) => {
+    destroyWaterfallSession(tabId);
+  });
 });
 
 const handleWindowClick = (e: MouseEvent) => {
@@ -976,6 +1010,7 @@ const setActiveTab = (tabId: string) => {
 };
 
 const onCloseTab = (tabId: string) => {
+  destroyWaterfallSession(tabId);
   closeTab(props.resourceId, tabId);
 };
 
@@ -1023,6 +1058,12 @@ const injectTabBaseScripts = async (tabId: string) => {
         if (targetUrl && targetUrl !== 'about:blank') {
           addTab(props.resourceId, targetUrl, getResourceIcon(), true);
         }
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_wf_bottom__:')) {
+        const triggerTabId = e.message.slice('__velora_wf_bottom__:'.length);
+        onWaterfallTriggerBottom(triggerTabId || tabId);
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_wf_retry__:')) {
+        const triggerTabId = e.message.slice('__velora_wf_retry__:'.length);
+        retryWaterfall(triggerTabId || tabId);
       }
     });
   }
@@ -1143,16 +1184,76 @@ const onDomReady = async (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
   refreshWebviewScripts(tabId, 'dom-ready');
   await injectTabBaseScripts(tabId);
+
+  // 检查并自动应用已开启的瀑布流规则
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (webview) {
+    try {
+      const urlStr = webview.getURL();
+      if (urlStr) {
+        const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
+        const matchedRule = allRules.find(r => {
+          if (r.enabled === false || !r.domain) return false;
+          return isUrlMatchPattern(r.domain, urlStr);
+        });
+        if (matchedRule) {
+          await applyWaterfallToTab(tabId, matchedRule);
+        }
+      }
+    } catch (e) {}
+  }
 };
 
-const matchPattern = (pattern: string, url: string) => {
-  let regexPattern = pattern
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\\\*/g, '.*');
+const applyCustomStylesToWebview = async (webview: any, customUrl?: string) => {
+  if (!webview) return;
+  try {
+    let urlStr = customUrl;
+    if (!urlStr && typeof webview.getURL === 'function') {
+      try { urlStr = webview.getURL(); } catch (e) {}
+    }
+    if (!urlStr || urlStr === 'about:blank') return;
 
-  regexPattern = regexPattern.replace(/:\/\/\.\*\\\./g, '://(?:.*\\.)?');
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(url);
+    const stylesObj = settingsState.customStyles[props.resourceId];
+    let cssText = '';
+
+    if (stylesObj) {
+      for (const [pattern, rules] of Object.entries(stylesObj)) {
+        if (isUrlMatchPattern(pattern, urlStr)) {
+          cssText += `${rules}\n`;
+        }
+      }
+    }
+
+    if (cssText && typeof webview.insertCSS === 'function') {
+      await webview.insertCSS(cssText, { cssOrigin: 'user' });
+    }
+  } catch (e) {
+    logger.warn('BrowserWorkspace', 'Failed to inject custom CSS: ' + e);
+  }
+};
+
+const applyCustomScriptsToWebview = async (webview: any, runAt: string, customUrl?: string) => {
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+  try {
+    let urlStr = customUrl;
+    if (!urlStr && typeof webview.getURL === 'function') {
+      try { urlStr = webview.getURL(); } catch (e) {}
+    }
+    if (!urlStr || urlStr === 'about:blank') return;
+
+    const scriptsArr = settingsState.customScripts[props.resourceId] || [];
+    
+    for (const script of scriptsArr) {
+      if (runAt && script.runAt !== runAt) continue;
+      if (isUrlMatchPattern(script.domain, urlStr) && script.code) {
+        try {
+          await webview.executeJavaScript(script.code);
+        } catch (scriptErr) {
+          logger.warn('BrowserWorkspace', 'Custom script execution error: ' + scriptErr);
+        }
+      }
+    }
+  } catch(e) {}
 };
 
 const onLoadCommit = async (event: any, tabId: string) => {
@@ -1168,9 +1269,7 @@ const refreshWebviewStyles = async (tabId: string) => {
   if (!webview) return;
 
   try {
-    const urlStr = webview.getURL();
-    const stylesObj = settingsState.customStyles[props.resourceId];
-    let cssText = `
+    let baseScrollbarCss = `
       /* Global Scrollbar Beautification */
       ::-webkit-scrollbar {
         width: 14px !important;
@@ -1195,29 +1294,19 @@ const refreshWebviewStyles = async (tabId: string) => {
       }
     `;
 
-    if (stylesObj) {
-      for (const [pattern, rules] of Object.entries(stylesObj)) {
-        let isMatch = false;
-        if (!pattern.includes('*') && !pattern.includes('/')) {
-          try {
-            isMatch = new URL(urlStr).hostname.endsWith(pattern);
-          } catch (e) { }
-        } else {
-          isMatch = matchPattern(pattern, urlStr);
-        }
-
-        if (isMatch) {
-          cssText += `${rules}\n`;
-        }
-      }
+    if (typeof webview.insertCSS === 'function') {
+      await webview.insertCSS(baseScrollbarCss, { cssOrigin: 'user' });
     }
-
-    if (cssText) {
-      await webview.insertCSS(cssText, { cssOrigin: 'user' });
-    }
+    await applyCustomStylesToWebview(webview);
   } catch (e) {
     logger.warn('BrowserWorkspace', 'Failed to inject CSS via insertCSS: ' + e);
   }
+};
+
+const refreshWebviewScripts = async (tabId: string, runAt: string) => {
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) return;
+  await applyCustomScriptsToWebview(webview, runAt);
 };
 
 const onStartLoading = (tabId: string) => {
@@ -1283,6 +1372,7 @@ const getCurrentPageOrigin = (): string => {
 const onDidNavigate = (event?: any, tabId?: string) => {
   const targetId = tabId || workspace.value?.activeTabId;
   if (targetId) {
+    destroyWaterfallSession(targetId);
     let newUrl = event?.url;
     if (!newUrl) {
       const wv = activeWebview();
@@ -1300,6 +1390,7 @@ const onDidNavigate = (event?: any, tabId?: string) => {
 const onStopLoading = (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
   refreshWebviewScripts(tabId, 'document-end');
+  checkAutoApplyWaterfall(tabId);
 };
 
 const onTitleUpdated = (event: any, tabId: string) => {
@@ -1529,14 +1620,14 @@ const onSaveScript = async (script: any) => {
   const originalScript = targetArray.find((s: any) => s.id === script.id);
   const isDomainChanged = originalScript ? (originalScript.domain || '').trim() !== trimmedDomain : true;
 
-  // 1. 只有当修改了匹配域名（或新建脚本）时，才检查是否存在其他同匹配域名脚本
+  // 1. 只有当修改了匹配URL（或新建脚本）时，才检查是否存在其他同匹配URL脚本
   if (isDomainChanged) {
     const duplicateScript = targetArray.find((s: any) => s.id !== script.id && (s.domain || '').trim() === trimmedDomain);
 
     if (duplicateScript) {
       const confirmed = await confirm({
-        title: '匹配域名重复',
-        message: `已存在相同匹配域名的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
+        title: '匹配URL重复',
+        message: `已存在相同匹配URL的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
         confirmText: '合并',
         cancelText: '取消',
         type: 'warning'
@@ -1578,40 +1669,7 @@ const onSaveScript = async (script: any) => {
   scriptInjectorVisible.value = false;
 };
 
-const refreshWebviewScripts = async (tabId: string, runAt: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) return;
-  try {
-    const urlStr = webview.getURL();
-    const scriptsArr = settingsState.customScripts[props.resourceId] || [];
-    
-    for (const script of scriptsArr) {
-      if (script.runAt !== runAt) continue;
-      
-      let isMatch = false;
-      const pattern = script.domain;
-      if (!pattern.includes('*') && !pattern.includes('/')) {
-        try {
-          isMatch = new URL(urlStr).hostname.endsWith(pattern);
-        } catch(e){}
-      } else if (pattern.startsWith('*://') && pattern.endsWith('/*')) {
-        const domainMatch = pattern.replace('*://', '').replace('/*', '');
-        try {
-          const host = new URL(urlStr).hostname;
-          isMatch = host.endsWith(domainMatch.replace('*.', ''));
-        } catch(e){}
-      } else {
-        const regexStr = pattern.replace(/\*/g, '.*').replace(/\//g, '\/');
-        const regex = new RegExp(`^${regexStr}$`);
-        isMatch = regex.test(urlStr);
-      }
-      
-      if (isMatch && script.code) {
-        await webview.executeJavaScript(script.code);
-      }
-    }
-  } catch(e) {}
-};
+
 
 
 const isInteracting = ref(false);
@@ -1642,7 +1700,490 @@ const deactivateOtherFeatures = async (exclude: string) => {
       } catch (e) {}
     }
   }
+  if (exclude !== 'waterfall' && waterfallPickingStep.value > 0) {
+    cancelWaterfallPicking();
+  }
 };
+
+// ==================== 瀑布模式 (Waterfall Flow) ====================
+interface WaterfallSession {
+  tabId: string;
+  parentUrl: string;
+  domain: string;
+  rule: WaterfallRule;
+  currentPage: number;
+  nextUrl: string;
+  status: 'preloading' | 'loaded' | 'processing' | 'finished' | 'error';
+  isWaitingAtBottom: boolean;
+  bottomTimeoutTimer?: any;
+}
+
+const waterfallWizardVisible = ref(false);
+const waterfallWizardStep = ref(1);
+const waterfallPickingStep = ref(0); // 0: none, 2: picking next, 3: picking content
+const wizardTempDomain = ref('');
+const wizardTempNextSelector = ref('');
+const wizardTempContentSelector = ref('');
+const activeWaterfallTabs = ref<Set<string>>(new Set());
+const activeWaterfallSessions = ref<Map<string, WaterfallSession>>(new Map());
+const selectedWaterfallRuleId = ref('');
+
+const activeWaterfallSessionsList = computed(() => {
+  return Array.from(activeWaterfallSessions.value.values());
+});
+
+const currentDomainWaterfallRules = computed<WaterfallRule[]>(() => {
+  const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
+  const currentUrl = activeTab.value?.url || '';
+  if (!currentUrl) return allRules;
+
+  const matched = allRules.filter(r => {
+    if (!r.domain) return false;
+    return isUrlMatchPattern(r.domain, currentUrl);
+  });
+
+  return matched.length > 0 ? matched : allRules;
+});
+
+watch(currentDomainWaterfallRules, (rules) => {
+  if (rules.length > 0 && (!selectedWaterfallRuleId.value || !rules.some(r => r.id === selectedWaterfallRuleId.value))) {
+    const enabledRule = rules.find(r => r.enabled === true);
+    selectedWaterfallRuleId.value = enabledRule ? enabledRule.id : rules[0].id;
+  }
+}, { immediate: true });
+
+const isCurrentTabWaterfallActive = computed(() => {
+  const currentId = activeTab.value?.id;
+  return !!currentId && activeWaterfallTabs.value.has(currentId);
+});
+
+const onStartWaterfallWizard = async () => {
+  await deactivateOtherFeatures('waterfall');
+  const initialUrlPattern = getDefaultUrlPattern(activeTab.value?.url);
+
+  wizardTempDomain.value = initialUrlPattern;
+  wizardTempNextSelector.value = '';
+  wizardTempContentSelector.value = '';
+  waterfallWizardStep.value = 1;
+  waterfallWizardVisible.value = true;
+};
+
+const onStartPickingNext = async () => {
+  waterfallWizardVisible.value = false;
+  waterfallPickingStep.value = 2;
+
+  const tabId = activeTab.value?.id;
+  if (!tabId) return;
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) return;
+
+  try {
+    const nextSel: string = await webview.executeJavaScript(getPickerScript('selector'));
+    if (!nextSel) {
+      cancelWaterfallPicking();
+      return;
+    }
+    wizardTempNextSelector.value = nextSel;
+
+    // 进入步骤 3: 拾取内容区
+    waterfallPickingStep.value = 3;
+    const contentSel: string = await webview.executeJavaScript(getPickerScript('selector'));
+    if (!contentSel) {
+      cancelWaterfallPicking();
+      return;
+    }
+    wizardTempContentSelector.value = contentSel;
+
+    // 拾取完毕，回到步骤 4 确认
+    waterfallPickingStep.value = 0;
+    waterfallWizardStep.value = 4;
+    waterfallWizardVisible.value = true;
+  } catch (e) {
+    cancelWaterfallPicking();
+  }
+};
+
+const onRestartPicking = () => {
+  onStartPickingNext();
+};
+
+const cancelWaterfallPicking = async () => {
+  waterfallPickingStep.value = 0;
+  waterfallWizardVisible.value = false;
+  const tabId = activeTab.value?.id;
+  if (tabId) {
+    const webview = document.getElementById(`webview-${tabId}`) as any;
+    if (webview) {
+      try {
+        await webview.executeJavaScript(getPickerCancelScript());
+      } catch (e) {}
+    }
+  }
+};
+
+const onConfirmWaterfallRule = async (ruleData: Omit<WaterfallRule, 'id'>) => {
+  const newRule: WaterfallRule = {
+    id: 'wf_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+    ...ruleData,
+    enabled: true
+  };
+
+  const allRulesObj = { ...settingsState.customWaterfallRules };
+  const currentList = [...(allRulesObj[props.resourceId] || [])];
+  currentList.push(newRule);
+  allRulesObj[props.resourceId] = currentList;
+
+  await saveCustomWaterfallRules(allRulesObj);
+  selectedWaterfallRuleId.value = newRule.id;
+  showMessage('瀑布流规则已保存并开启！', 'success');
+
+  const tabId = activeTab.value?.id;
+  if (tabId) {
+    applyWaterfallToTab(tabId, newRule);
+  }
+};
+
+const onSelectWaterfallRule = async (id: string) => {
+  selectedWaterfallRuleId.value = id;
+  const tabId = activeTab.value?.id;
+  if (!tabId) return;
+
+  const currentRules = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
+  const selectedRule = currentRules.find(r => r.id === id);
+
+  if (selectedRule) {
+    if (selectedRule.enabled !== false) {
+      await applyWaterfallToTab(tabId, selectedRule);
+    } else if (activeWaterfallTabs.value.has(tabId)) {
+      await destroyWaterfallSession(tabId);
+    }
+  }
+};
+
+const onDeleteWaterfallRule = async (id: string) => {
+  const confirmed = await confirm({
+    title: '删除瀑布流规则',
+    message: '确认删除该瀑布流规则吗？',
+    type: 'danger',
+    confirmText: '删除'
+  });
+  if (!confirmed) return;
+
+  const allRulesObj = { ...settingsState.customWaterfallRules };
+  const currentList = (allRulesObj[props.resourceId] || []).filter(r => r.id !== id);
+  allRulesObj[props.resourceId] = currentList;
+  await saveCustomWaterfallRules(allRulesObj);
+
+  if (selectedWaterfallRuleId.value === id) {
+    selectedWaterfallRuleId.value = currentList[0]?.id || '';
+  }
+  showMessage('规则已删除', 'success');
+};
+
+const applyWaterfallToTab = async (tabId: string, rule: WaterfallRule) => {
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+  try {
+    await destroyWaterfallSession(tabId);
+
+    // 1. 在主标签页注入监听与拼接脚本
+    const initScript = getWaterfallParentInitScript({
+      contentSelector: rule.contentSelector,
+      nextSelector: rule.nextSelector,
+      tabId
+    });
+    await webview.executeJavaScript(initScript);
+
+    // 2. 提取当前主标签页的初始下一页链接
+    const initialNextUrl: string = await webview.executeJavaScript(
+      getWaterfallQueryInitialNextUrlScript(rule.nextSelector)
+    );
+
+    if (!initialNextUrl) {
+      showMessage('当前页面未检测到下一页链接', 'info');
+      try {
+        await webview.executeJavaScript(`if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');`);
+      } catch (e) {}
+      return;
+    }
+
+    // 3. 注册会话并启动后台 Webview 加载下一页
+    const session: WaterfallSession = {
+      tabId,
+      parentUrl: activeTab.value?.url || '',
+      domain: rule.domain,
+      rule,
+      currentPage: 1,
+      nextUrl: initialNextUrl,
+      status: 'preloading',
+      isWaitingAtBottom: false
+    };
+    activeWaterfallSessions.value.set(tabId, session);
+    activeWaterfallTabs.value.add(tabId);
+  } catch (e) {
+    logger.warn('BrowserWorkspace', 'Failed to apply waterfall: ' + e);
+  }
+};
+
+const onWaterfallBgStopLoading = async (tabId: string) => {
+  const session = activeWaterfallSessions.value.get(tabId);
+  if (!session || session.status !== 'preloading') return;
+
+  session.status = 'loaded';
+
+  // 若主标签页在后台加载期间已经触发触底等待，立即执行处理并拼接
+  if (session.isWaitingAtBottom) {
+    await processAndAppendWaterfall(tabId);
+  }
+};
+
+const onWaterfallBgFailLoad = async (event: any, tabId: string) => {
+  if (event.isMainFrame) {
+    const session = activeWaterfallSessions.value.get(tabId);
+    if (session) {
+      if (session.bottomTimeoutTimer) {
+        clearTimeout(session.bottomTimeoutTimer);
+        session.bottomTimeoutTimer = undefined;
+      }
+      session.status = 'error';
+      session.isWaitingAtBottom = false;
+      const targetPage = session.currentPage + 1;
+      const parentWebview = document.getElementById(`webview-${tabId}`) as any;
+      if (parentWebview) {
+        try {
+          await parentWebview.executeJavaScript(`
+            if (window.__veloraWaterfallSetSkeletonError) {
+              window.__veloraWaterfallSetSkeletonError(${targetPage}, '网络请求失败');
+            } else if (window.__veloraWaterfallSetStatus) {
+              window.__veloraWaterfallSetStatus('error', '下一页网络请求失败');
+            }
+          `);
+        } catch (e) {}
+      }
+    }
+  }
+};
+
+const onWaterfallTriggerBottom = async (tabId: string) => {
+  const session = activeWaterfallSessions.value.get(tabId);
+  if (!session || session.status === 'finished' || session.status === 'processing' || session.status === 'error') return;
+
+  const targetPage = session.currentPage + 1;
+  if (session.status === 'loaded') {
+    if (session.bottomTimeoutTimer) {
+      clearTimeout(session.bottomTimeoutTimer);
+      session.bottomTimeoutTimer = undefined;
+    }
+    await processAndAppendWaterfall(tabId);
+  } else if (session.status === 'preloading') {
+    session.isWaitingAtBottom = true;
+    const parentWebview = document.getElementById(`webview-${tabId}`) as any;
+    if (parentWebview) {
+      try {
+        await parentWebview.executeJavaScript(`if (window.__veloraWaterfallShowSkeleton) window.__veloraWaterfallShowSkeleton(${targetPage});`);
+      } catch (e) {}
+    }
+
+    // 设置触底等待安全超时兜底（15秒）
+    if (session.bottomTimeoutTimer) clearTimeout(session.bottomTimeoutTimer);
+    session.bottomTimeoutTimer = setTimeout(async () => {
+      if (session.status === 'preloading' && session.isWaitingAtBottom) {
+        session.status = 'error';
+        session.isWaitingAtBottom = false;
+        const pw = document.getElementById(`webview-${tabId}`) as any;
+        if (pw) {
+          try {
+            await pw.executeJavaScript(`
+              if (window.__veloraWaterfallSetSkeletonError) {
+                window.__veloraWaterfallSetSkeletonError(${targetPage}, '加载超时');
+              }
+            `);
+          } catch (e) {}
+        }
+      }
+    }, 15000);
+  }
+};
+
+const retryWaterfall = async (tabId: string) => {
+  const session = activeWaterfallSessions.value.get(tabId);
+  if (!session || !session.nextUrl) return;
+
+  if (session.bottomTimeoutTimer) {
+    clearTimeout(session.bottomTimeoutTimer);
+    session.bottomTimeoutTimer = undefined;
+  }
+
+  const targetPage = session.currentPage + 1;
+  session.status = 'preloading';
+  session.isWaitingAtBottom = true;
+
+  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
+  if (parentWebview) {
+    try {
+      await parentWebview.executeJavaScript(`if (window.__veloraWaterfallShowSkeleton) window.__veloraWaterfallShowSkeleton(${targetPage});`);
+    } catch (e) {}
+  }
+
+  const bgWebview = document.getElementById(`waterfall-bg-webview-${tabId}`) as any;
+  if (bgWebview) {
+    try {
+      if (typeof bgWebview.reload === 'function') {
+        bgWebview.reload();
+      } else {
+        bgWebview.src = session.nextUrl;
+      }
+    } catch (e) {}
+  }
+};
+
+const processAndAppendWaterfall = async (tabId: string) => {
+  const session = activeWaterfallSessions.value.get(tabId);
+  if (!session || session.status === 'processing') return;
+
+  if (session.bottomTimeoutTimer) {
+    clearTimeout(session.bottomTimeoutTimer);
+    session.bottomTimeoutTimer = undefined;
+  }
+
+  const targetPage = session.currentPage + 1;
+  session.status = 'processing';
+  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
+  const bgWebview = document.getElementById(`waterfall-bg-webview-${tabId}`) as any;
+
+  if (!parentWebview || !bgWebview || typeof bgWebview.executeJavaScript !== 'function') {
+    session.status = 'error';
+    return;
+  }
+
+  try {
+    // 1. 拼接前在后台专属隐藏 Webview 中执行匹配到的自定义注入脚本
+    await applyCustomScriptsToWebview(bgWebview, '', session.nextUrl);
+
+    // 2. 执行提取脚本获取内容 DOM 与后续下一页链接
+    const extractScript = getWaterfallBackgroundExtractScript(session.rule.contentSelector, session.rule.nextSelector);
+    const rawResult: string = await bgWebview.executeJavaScript(extractScript);
+    const result: WaterfallExtractResult = JSON.parse(rawResult || '{}');
+
+    if (result && result.hasContent && result.contentHtml) {
+      session.currentPage = targetPage;
+      const contentHtml = result.contentHtml;
+      const nextUrl = result.nextUrl;
+
+      // 3. 在主标签页注入拼接新内容（就地替换骨架屏或直接追加）
+      const appendScript = `
+        (function() {
+          if (window.__veloraWaterfallAppend) {
+            window.__veloraWaterfallAppend(${JSON.stringify(contentHtml)}, ${targetPage});
+            if (window.__veloraWaterfallSetStatus) {
+              window.__veloraWaterfallSetStatus('idle');
+            }
+          }
+        })();
+      `;
+      await parentWebview.executeJavaScript(appendScript);
+
+      // 4. 检查是否有后续下一页
+      if (nextUrl && nextUrl !== session.nextUrl) {
+        session.nextUrl = nextUrl;
+        session.status = 'preloading';
+        session.isWaitingAtBottom = false;
+      } else {
+        session.status = 'finished';
+        session.nextUrl = '';
+        session.isWaitingAtBottom = false;
+        try {
+          await parentWebview.executeJavaScript(`if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');`);
+        } catch (e) {}
+      }
+    } else {
+      session.status = 'finished';
+      session.nextUrl = '';
+      session.isWaitingAtBottom = false;
+      try {
+        await parentWebview.executeJavaScript(`
+          if (window.__veloraWaterfallRemoveSkeleton) window.__veloraWaterfallRemoveSkeleton(${targetPage});
+          if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');
+        `);
+      } catch (e) {}
+    }
+  } catch (e) {
+    logger.warn('BrowserWorkspace', 'Waterfall process and append error: ' + e);
+    session.status = 'error';
+    session.isWaitingAtBottom = false;
+    if (parentWebview) {
+      try {
+        await parentWebview.executeJavaScript(`
+          if (window.__veloraWaterfallSetSkeletonError) {
+            window.__veloraWaterfallSetSkeletonError(${targetPage}, '加载下一页异常');
+          } else if (window.__veloraWaterfallSetStatus) {
+            window.__veloraWaterfallSetStatus('error', '加载下一页异常');
+          }
+        `);
+      } catch (err) {}
+    }
+  }
+};
+
+const destroyWaterfallSession = async (tabId: string) => {
+  const session = activeWaterfallSessions.value.get(tabId);
+  if (session && session.bottomTimeoutTimer) {
+    clearTimeout(session.bottomTimeoutTimer);
+    session.bottomTimeoutTimer = undefined;
+  }
+  activeWaterfallSessions.value.delete(tabId);
+  activeWaterfallTabs.value.delete(tabId);
+  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
+  if (parentWebview) {
+    try {
+      await parentWebview.executeJavaScript(getWaterfallDestroyScript());
+    } catch (e) {}
+  }
+};
+
+const checkAutoApplyWaterfall = (tabId: string) => {
+  if (activeWaterfallTabs.value.has(tabId)) return;
+  const tab = workspace.value?.tabs?.find(t => t.id === tabId);
+  const url = tab?.url;
+  if (!url || url === 'about:blank') return;
+
+  const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
+  const matchedRule = allRules.find(r => r.enabled === true && r.domain && isUrlMatchPattern(r.domain, url));
+
+  if (matchedRule) {
+    applyWaterfallToTab(tabId, matchedRule);
+  }
+};
+
+const toggleWaterfallActive = async () => {
+  const tabId = activeTab.value?.id;
+  if (!tabId) return;
+
+  const currentRules = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
+  const rule = currentRules.find(r => r.id === selectedWaterfallRuleId.value) || currentDomainWaterfallRules.value[0];
+
+  if (activeWaterfallTabs.value.has(tabId)) {
+    if (rule) {
+      const allRulesObj = { ...settingsState.customWaterfallRules };
+      allRulesObj[props.resourceId] = currentRules.map(r => r.id === rule.id ? { ...r, enabled: false } : r);
+      await saveCustomWaterfallRules(allRulesObj);
+    }
+    await destroyWaterfallSession(tabId);
+    showMessage('已关闭瀑布模式', 'info');
+  } else {
+    if (!rule) {
+      onStartWaterfallWizard();
+      return;
+    }
+    const allRulesObj = { ...settingsState.customWaterfallRules };
+    allRulesObj[props.resourceId] = currentRules.map(r => r.id === rule.id ? { ...r, enabled: true } : r);
+    await saveCustomWaterfallRules(allRulesObj);
+
+    await applyWaterfallToTab(tabId, rule);
+    showMessage('瀑布模式已开启', 'success');
+  }
+};
+
 
 const toggleInspector = async () => {
   if (inspectorVisible.value) {
@@ -1947,6 +2488,13 @@ const onSaveRules = async (domain: string, cssString: string) => {
   flex-shrink: 0;
 }
 
+.nav-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+
 .func-group {
   display: flex;
   align-items: center;
@@ -2136,9 +2684,8 @@ const onSaveRules = async (domain: string, cssString: string) => {
   display: flex;
   align-items: center;
   flex: 1;
-  max-width: 400px;
+  max-width: 420px;
   min-width: 200px;
-  margin-left: 12px;
 }
 .address-bar-input {
   width: 100%;
@@ -2159,4 +2706,37 @@ const onSaveRules = async (domain: string, cssString: string) => {
   box-shadow: 0 0 0 2px rgba(100, 100, 100, 0.2);
 }
 
+.waterfall-picking-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  z-index: 50;
+  animation: slideDown 0.15s ease-out;
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .picking-badge {
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-accent);
+    background: var(--bg-surface-active);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+  }
+
+  .picking-instruction {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+}
 </style>

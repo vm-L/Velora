@@ -16,14 +16,14 @@
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配域名</span>
+            <span class="label">匹配URL</span>
             <VInputSelect
               v-model="currentScript.domain"
-              placeholder="匹配域名，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: *://*.bilibili.com/*"
               :options="historyScriptOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
-              @change="onScriptDomainChange"
+              @select="onScriptDomainChange"
             />
           </div>
           
@@ -65,10 +65,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive } from 'vue';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 
 const runAtOptions = [
   { value: 'document-start', label: 'document-start (尽早)' },
@@ -80,8 +80,9 @@ import { javascript } from '@codemirror/lang-javascript';
 import { EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-import type { CustomScript } from '../../composables/useSettings';
-import { useDraggableDialog } from '../../composables/useDraggableDialog';
+import type { CustomScript } from '@/composables/useSettings';
+import { useDraggableDialog } from '@/composables/useDraggableDialog';
+import { getDefaultUrlPattern } from '@/utils/urlMatcher';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -120,9 +121,20 @@ const historyScriptOptions = computed<InputSelectOption[]>(() => {
 });
 
 const onScriptDomainChange = (newDomain: string) => {
+  currentScript.domain = newDomain;
   const targetScript = props.scripts?.find(s => s.domain === newDomain);
   if (targetScript) {
     loadScript(targetScript);
+  } else {
+    currentScript.id = 'script_' + Date.now();
+    currentScript.name = '';
+    currentScript.code = '';
+    currentScript.runAt = 'dom-ready';
+    if (editorView) {
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: '' }
+      });
+    }
   }
 };
 
@@ -164,22 +176,22 @@ const initEditor = (initialContent: string) => {
 
 watch(() => props.modelValue, async (newVal) => {
   if (newVal) {
-    let initialDomain = '*://*/*';
-    try {
-      if (props.url) {
-        const urlObj = new URL(props.url);
-        const host = urlObj.hostname.replace(/^www\./, '');
-        initialDomain = `*://*.${host}${urlObj.pathname}`;
-      }
-    } catch (e) {}
+    const initialDomain = getDefaultUrlPattern(props.url);
+    const existingScript = props.scripts?.find(s => s.domain === initialDomain);
 
-    currentScript.id = 'script_' + Date.now();
-    currentScript.domain = initialDomain;
-    currentScript.name = '';
-    currentScript.code = '';
-    currentScript.runAt = 'dom-ready';
-
-    // 默认打开新的空白脚本，不自动加载历史脚本
+    if (existingScript) {
+      currentScript.id = existingScript.id;
+      currentScript.domain = existingScript.domain;
+      currentScript.name = existingScript.name;
+      currentScript.code = existingScript.code;
+      currentScript.runAt = existingScript.runAt;
+    } else {
+      currentScript.id = 'script_' + Date.now();
+      currentScript.domain = initialDomain;
+      currentScript.name = '';
+      currentScript.code = '';
+      currentScript.runAt = 'dom-ready';
+    }
 
     const dialogW = 420;
     const dialogH = 480;

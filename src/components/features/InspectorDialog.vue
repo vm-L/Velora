@@ -16,14 +16,14 @@
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配域名</span>
+            <span class="label">匹配URL</span>
             <VInputSelect
               v-model="domain"
-              placeholder="匹配域名，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: *://*.bilibili.com/*"
               :options="historyRuleOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
-              @change="onRuleDomainChange"
+              @select="onRuleDomainChange"
             />
           </div>
 
@@ -48,9 +48,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 import type { SyntaxNode } from '@lezer/common';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';
@@ -59,7 +59,8 @@ import { keymap } from '@codemirror/view';
 import { defaultKeymap, indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
 
-import { useDraggableDialog } from '../../composables/useDraggableDialog';
+import { useDraggableDialog } from '@/composables/useDraggableDialog';
+import { getDefaultUrlPattern } from '@/utils/urlMatcher';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -92,8 +93,17 @@ const historyRuleOptions = computed<InputSelectOption[]>(() => {
 });
 
 const onRuleDomainChange = (newDomain: string) => {
+  domain.value = newDomain;
   if (props.domainRules && props.domainRules[newDomain] !== undefined) {
     loadRule(newDomain, props.domainRules[newDomain]);
+  } else {
+    currentCss = '';
+    if (editorView) {
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: '' }
+      });
+    }
+    updatePreview();
   }
 };
 
@@ -207,20 +217,13 @@ const initEditor = (initialContent: string) => {
 
 watch(() => props.modelValue, async (newVal) => {
   if (newVal) {
-    let initialDomain = '*://*/*';
-    try {
-      if (props.url) {
-        const urlObj = new URL(props.url);
-        const host = urlObj.hostname.replace(/^www\./, '');
-        initialDomain = `*://*.${host}${urlObj.pathname}`;
-      }
-    } catch (e) {}
+    const initialDomain = getDefaultUrlPattern(props.url);
 
     domain.value = initialDomain;
     currentCss = '';
 
-    if (props.domainRules && props.domainRules[domain.value]) {
-      currentCss = props.domainRules[domain.value];
+    if (props.domainRules && props.domainRules[initialDomain] !== undefined) {
+      currentCss = props.domainRules[initialDomain];
     }
 
     const dialogW = 420;

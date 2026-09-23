@@ -82,10 +82,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import { useMessage } from '../../composables/useMessage';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import { useMessage } from '@/composables/useMessage';
 
 interface DirNode {
   path: string;

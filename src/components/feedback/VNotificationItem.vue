@@ -29,8 +29,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import type { NotificationItem } from '../../composables/useNotification'
-import VIcon from '../base/VIcon.vue'
+import type { NotificationItem } from '@/composables/useNotification'
+import VIcon from '@/components/base/VIcon.vue'
 
 const props = defineProps<{
   notification: NotificationItem

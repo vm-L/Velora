@@ -26,8 +26,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useSettings } from '../../composables/useSettings';
-import VIcon from '../base/VIcon.vue';
+import { useSettings } from '@/composables/useSettings';
+import VIcon from '@/components/base/VIcon.vue';
 
 const isMaximized = ref(false);
 const { state, setTheme } = useSettings();

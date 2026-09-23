@@ -59,13 +59,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { DownloadTask } from '../../db';
-import { useDownloads } from '../../composables/useDownloads';
-import { useMessage } from '../../composables/useMessage';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
+import type { DownloadTask } from '@/db';
+import { useDownloads } from '@/composables/useDownloads';
+import { useMessage } from '@/composables/useMessage';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 
 const props = defineProps<{
   visible: boolean;

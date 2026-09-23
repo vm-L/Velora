@@ -1,4 +1,4 @@
-export type PickerType = 'text' | 'image';
+export type PickerType = 'text' | 'image' | 'selector';
 
 export const getPickerCancelScript = () => {
   return `if (window.__elementPickerCancel) window.__elementPickerCancel();`;
@@ -118,6 +118,50 @@ export const getPickerScript = (type: PickerType) => {
         return list;
       };
 
+      const getOptimalSelector = (el) => {
+        if (!el || el.nodeType !== 1) return '';
+        if (el.id && !/^[0-9]/.test(el.id) && !el.id.includes(':')) {
+          try {
+            if (document.querySelectorAll('#' + CSS.escape(el.id)).length === 1) {
+              return '#' + el.id;
+            }
+          } catch(e) {}
+        }
+
+        const buildSingle = (node) => {
+          let tag = node.tagName.toLowerCase();
+          if (node.id && !/^[0-9]/.test(node.id) && !node.id.includes(':')) {
+            try {
+              if (document.querySelectorAll('#' + CSS.escape(node.id)).length === 1) {
+                return '#' + node.id;
+              }
+            } catch(e) {}
+          }
+          let classes = [];
+          if (node.classList && node.classList.length > 0) {
+            for (const cls of node.classList) {
+              if (cls && !cls.startsWith('v-') && !cls.includes('active') && !cls.includes('hover') && cls.length < 30) {
+                classes.push('.' + cls);
+              }
+            }
+          }
+          if (classes.length > 0) {
+            return tag + classes.slice(0, 2).join('');
+          }
+          return tag;
+        };
+
+        let pathParts = [];
+        let curr = el;
+        while (curr && curr !== document.body && curr !== document.documentElement && pathParts.length < 3) {
+          pathParts.unshift(buildSingle(curr));
+          if (curr.id && pathParts[0].startsWith('#')) break;
+          curr = curr.parentElement;
+        }
+
+        return pathParts.join(' > ') || el.tagName.toLowerCase();
+      };
+
       const updateHighlight = (el) => {
         if (!el || el === document.body || el === document.documentElement) {
           overlay.style.display = 'none';
@@ -136,16 +180,16 @@ export const getPickerScript = (type: PickerType) => {
         let className = el.className && typeof el.className === 'string' ? '.' + [...el.classList].join('.') : '';
         if (className.length > 20) className = className.substring(0, 20) + '...';
 
-        let levelText = pathIndex === 0 ? ' (滚轮切换选择器范围)' : ' (层级 +' + pathIndex + ')';
+        let levelText = pathIndex === 0 ? ' (Alt+滚轮切换范围)' : ' (层级 +' + pathIndex + ')';
         
         childOverlays.forEach(o => o.style.display = 'none');
 
         if (type === 'text') {
           const text = (el.innerText || el.textContent || '').trim();
-          tooltip.textContent = tagName + className + levelText + ' - 文本长度: ' + text.length + ' 字';
+          tooltip.textContent = tagName + className + levelText + ' - 文本: ' + text.length + ' 字';
         } else if (type === 'image') {
           const imgCount = collectImages(el).length;
-          tooltip.textContent = tagName + className + levelText + ' - 包含图片: ' + imgCount + ' 张';
+          tooltip.textContent = tagName + className + levelText + ' - 图片: ' + imgCount + ' 张';
 
           if (pathIndex > 0) {
             const children = getAffectedImages(el);
@@ -170,11 +214,14 @@ export const getPickerScript = (type: PickerType) => {
               childOverlay.style.display = 'block';
             });
           }
+        } else if (type === 'selector') {
+          const sel = getOptimalSelector(el);
+          tooltip.textContent = '选择器: ' + sel + levelText;
         }
 
         let topPos = rect.top - 28;
         if (topPos < 5) topPos = rect.top + 5;
-        let leftPos = Math.min(window.innerWidth - 220, Math.max(10, rect.left + 5));
+        let leftPos = Math.min(window.innerWidth - 240, Math.max(10, rect.left + 5));
 
         tooltip.style.top = topPos + 'px';
         tooltip.style.left = leftPos + 'px';
@@ -197,20 +244,36 @@ export const getPickerScript = (type: PickerType) => {
       };
 
       const onWheel = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.deltaY < 0) {
-          if (pathIndex < path.length - 1) {
-            pathIndex++;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
+        if (e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.deltaY < 0) {
+            if (pathIndex < path.length - 1) {
+              pathIndex++;
+              selectedEl = path[pathIndex];
+              updateHighlight(selectedEl);
+            }
+          } else if (e.deltaY > 0) {
+            if (pathIndex > 0) {
+              pathIndex--;
+              selectedEl = path[pathIndex];
+              updateHighlight(selectedEl);
+            }
           }
-        } else if (e.deltaY > 0) {
-          if (pathIndex > 0) {
-            pathIndex--;
-            selectedEl = path[pathIndex];
-            updateHighlight(selectedEl);
-          }
+        }
+      };
+
+      const onScroll = () => {
+        if (selectedEl) {
+          updateHighlight(selectedEl);
+        }
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cleanup(type === 'image' ? [] : '');
         }
       };
 
@@ -219,6 +282,8 @@ export const getPickerScript = (type: PickerType) => {
         window.__elementPickerCancel = null;
         document.removeEventListener('mouseover', onMouseOver, true);
         document.removeEventListener('wheel', onWheel, { capture: true, passive: false });
+        window.removeEventListener('scroll', onScroll, true);
+        document.removeEventListener('keydown', onKeyDown, true);
         document.removeEventListener('click', onClick, true);
         document.removeEventListener('contextmenu', onContextMenu, true);
         try { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); } catch(e){}
@@ -233,7 +298,7 @@ export const getPickerScript = (type: PickerType) => {
         e.preventDefault();
         e.stopPropagation();
         if (!selectedEl) {
-          cleanup(type === 'text' ? '' : []);
+          cleanup(type === 'image' ? [] : '');
           return;
         }
         
@@ -246,19 +311,24 @@ export const getPickerScript = (type: PickerType) => {
         } else if (type === 'image') {
           const urls = collectImages(selectedEl);
           cleanup(urls);
+        } else if (type === 'selector') {
+          const sel = getOptimalSelector(selectedEl);
+          cleanup(sel);
         }
       };
 
       const onContextMenu = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        cleanup(type === 'text' ? '' : []);
+        cleanup(type === 'image' ? [] : '');
       };
 
-      window.__elementPickerCancel = () => cleanup(type === 'text' ? '' : []);
+      window.__elementPickerCancel = () => cleanup(type === 'image' ? [] : '');
 
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+      window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+      document.addEventListener('keydown', onKeyDown, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('contextmenu', onContextMenu, true);
     })

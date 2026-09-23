@@ -15,7 +15,7 @@
             <v-input v-model="editScript.name" placeholder="例如：去广告脚本" />
           </div>
           <div class="config-item">
-            <label>匹配域名</label>
+            <label>匹配URL</label>
             <v-input v-model="editScript.domain" placeholder="如 bilibili.com 或 *" />
           </div>
           <div class="config-item">
@@ -41,15 +41,15 @@
 
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInput from '../base/VInput.vue';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInput from '@/components/base/VInput.vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-import type { CustomScript } from '../../composables/useSettings';
+import type { CustomScript } from '@/composables/useSettings';
 
 const props = defineProps<{
   modelValue: boolean;

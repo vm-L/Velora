@@ -93,11 +93,11 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { useSettings } from '../../composables/useSettings';
-import { useOpenedCMS } from '../../composables/useOpenedCMS';
-import VAnimatedText from '../base/VAnimatedText.vue';
-import VIcon from '../base/VIcon.vue';
-import { APP_NAME } from '../../constants';
+import { useSettings } from '@/composables/useSettings';
+import { useOpenedCMS } from '@/composables/useOpenedCMS';
+import VAnimatedText from '@/components/base/VAnimatedText.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import { APP_NAME } from '@/constants';
 
 const route = useRoute();
 const isCollapsed = ref(false);

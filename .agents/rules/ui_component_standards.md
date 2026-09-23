@@ -1,15 +1,36 @@
 ---
-description: "UI 基础组件与矢量图标全局开发规约：强制使用与扩展 @/components/base 组件，遵循三层决策漏斗与可扩展性设计规范"
+description: "UI 基础组件与矢量图标全局开发规约：强制使用与扩展 @/components/base 组件，遵循三层决策漏斗与可扩展性设计规范，全局模块导入强制使用 @/ 别名"
 always_on: true
 ---
 
-# UI 基础组件库与交互规范 (UI Component & Extension Standards)
+# UI 基础组件库与工程化规范 (UI Component & Engineering Standards)
 
-本规约适用于本项目所有 Vue 组件、业务页面及交互控件的新增、修改与重构。旨在保障全局视觉语言统一、交互行为一致、代码高度解耦与可持续扩展。
+本规约适用于本项目所有 Vue 组件、业务页面、Composables、工具函数及交互控件的新增、修改与重构。旨在保障全局视觉语言统一、交互行为一致、代码高度解耦与可持续扩展。
 
 ---
 
-## 1. 组件开发决策漏斗 (Three-tier Decision Funnel)
+## 1. 全局模块导入路径规范 (Module Import Path Standards)
+
+在任何 `.vue` 组件、`.ts` 脚本及测试代码中，**严禁使用相对跨层路径进行模块引入**，必须统一采用 `@/` 路径别名（Alias）：
+
+### 1.1 强制规范要求
+- **严禁使用相对路径**：禁止使用形如 `'../base/VIcon.vue'`、`'../../composables/useSettings'`、`'./useMessage'` 的相对路径引用。
+- **强制使用 `@/` 别名**：全局一律使用 `@/` 路径别名引用 `src/` 下的任何模块、组件、Composable、服务或工具。
+
+### 1.2 正误对照示例
+
+| 类型 | 错误示范 (严禁使用) | 正确示范 (强制规范) |
+| :--- | :--- | :--- |
+| **基础 UI 组件** | `import VIcon from '../base/VIcon.vue'`<br/>`import VButton from '../../components/base/VButton.vue'` | `import VIcon from '@/components/base/VIcon.vue'`<br/>`import VButton from '@/components/base/VButton.vue'` |
+| **功能组件/弹窗** | `import ParseRuleDialog from '../features/ParseRuleDialog.vue'` | `import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue'` |
+| **Composables** | `import { useSettings } from '../../composables/useSettings'` | `import { useSettings } from '@/composables/useSettings'` |
+| **服务与工具** | `import { logger } from '../../services/logger'`<br/>`import { sanitizeFilename } from '../../utils/filename'` | `import { logger } from '@/services/logger'`<br/>`import { sanitizeFilename } from '@/utils/filename'` |
+| **常量与类型** | `import { APP_PREFIX } from '../../constants'`<br/>`import type { ConfigBackupSectionKey } from '../types/backup'` | `import { APP_PREFIX } from '@/constants'`<br/>`import type { ConfigBackupSectionKey } from '@/types/backup'` |
+| **动态导入** | `defineAsyncComponent(() => import('../features/InspectorDialog.vue'))` | `defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'))` |
+
+---
+
+## 2. 组件开发决策漏斗 (Three-tier Decision Funnel)
 
 在实现任何新的 UI 或交互需求时，**严禁在业务页面/功能组件内直接裸写原生交互元素或自造一次性轮子**，必须严格按照以下“三层漏斗”决策流程进行：
 
@@ -41,7 +62,7 @@ flowchart TD
 
 ---
 
-## 2. 基础组件设计与工程化规范 (Base Component Engineering Specs)
+## 3. 基础组件设计与工程化规范 (Base Component Engineering Specs)
 
 所有位于 [`src/components/base/`](file:///mnt/f/project/tools/Velora/src/components/base/) 下的组件均须符合以下标准：
 
@@ -62,7 +83,7 @@ flowchart TD
 
 ---
 
-## 3. 矢量图标规约与扩展流程 (Icon Standards)
+## 4. 矢量图标规约与扩展流程 (Icon Standards)
 
 ### 核心原则
 - **严禁**在任何业务组件、页面或弹窗内直接书写原生 `<svg>` 标签或内联 SVG 矢量数据。
@@ -77,25 +98,64 @@ flowchart TD
 
 ---
 
-## 4. 现有基础组件速查表 (Base Components Registry)
+## 5. 基础组件选型对照表与强制规约 (Component Mapping & Mandatory Rules)
 
-| 组件名 | 说明 | 核心 Props / 功能 |
+为确保全站 UI 风格一致与交互无缝，**严禁在任何业务组件中使用原生表单/交互裸标签**，必须严格按照以下对照表使用基础组件：
+
+| 原生裸标签 (严禁使用) | 对应基础组件 | 推荐调用范式与说明 |
 | :--- | :--- | :--- |
-| **`VIcon`** | 统一矢量图标库 | `name`, `size`, `color`, `strokeWidth` |
-| **`VButton`** | 基础按钮 | `variant`: `'primary' \| 'secondary' \| 'danger' \| 'danger-soft' \| 'icon' \| 'icon-secondary' \| 'icon-danger'`, `size`, `disabled`, `loading` |
-| **`VInput`** | 文本/数字输入框 | `v-model`, `type`, `placeholder`, `disabled`, `clearable`, `@enter`, `@clear` |
-| **`VCheckbox`** | 复选框 | `v-model` (支持布尔或数组绑定), `value`, `disabled`, 默认插槽文本 |
-| **`VSwitch`** | 开关 / 分段切换器 | `modelValue`, `options` (支持布尔双态或多项分段选择), `disabled` |
-| **`VInputSelect`** | 组合下拉选择器 | `modelValue`, `options`, `placeholder`, `searchable`, `allowCustom` |
+| `<select>` / `<option>` | **`VInputSelect`** | **纯下拉选择**：`:allow-input="false"`（点击唤起浮层，禁止文本输入）。<br/>**输入+下拉**：`:allow-input="true"`（默认）。<br/>选项格式：`options: InputSelectOption[]` (`{ label: string, value: string, depth?: number }`)。 |
+| `<input type="checkbox">` | **`VCheckbox`** | **布尔切换**：`<VCheckbox v-model="form.enabled">标签文本</VCheckbox>`。<br/>**多选数组**：`<VCheckbox v-model="selectedList" :value="id">标签</VCheckbox>`。 |
+| `<input type="radio">` | **`VSwitch`** | **分段单选**：`<VSwitch v-model="currMode" :options="modeOptions" />`。 |
+| `<input type="text/password/number">` | **`VInput`** | `<VInput v-model="text" placeholder="..." clearable @enter="..." />`。 |
+| `<button>` | **`VButton`** | `<VButton variant="primary | secondary | danger | icon" :loading="..." />`。 |
+| `<svg>` / 内联矢量图形 | **`VIcon`** | `<VIcon name="icon-name" :size="16" />`（未收录图标先入库 `VIcon.vue`）。 |
 
 ---
 
-## 5. 开发与修改自检清单 (Self-Verification Checklist)
+## 6. 核心基础组件调用速查 (Base Components Reference)
 
-在每次编写或修改任何 `.vue` 文件后，必须完成以下自检确认：
+### 6.1 `VInputSelect` (下拉选择 / 组合输入器)
+- **Props**:
+  - `modelValue: string` - 绑定的选定值。
+  - `options?: InputSelectOption[]` - 选项列表，每项需包含 `label` 与 `value`，可选 `depth`（支持缩进层级树状显示）。
+  - `allowInput?: boolean` - 是否允许在输入框中自由输入内容（**作为纯下拉选择框使用时必须显式传 `:allow-input="false"`**）。
+  - `placeholder?: string` - 占位符文本。
+  - `disabled?: boolean` - 是否禁用。
+- **Events**:
+  - `@update:modelValue` / `@change`: 选项变动或输入变更时触发。
+  - `@enter`: 回车触发。
 
+### 6.2 `VCheckbox` (复选框)
+- **Props**:
+  - `modelValue: boolean | any[]` - 支持直接双向绑定布尔值或多选数组。
+  - `value?: string | number | boolean` - 数组多选模式下当前选项的值。
+  - `disabled?: boolean` - 是否禁用。
+- **Slots**:
+  - `default` - 复选框右侧显示的文字内容（无需在外部再套额外 label 或监听点击事件）。
+
+### 6.3 `VSwitch` (开关 / 分段切换器)
+- **Props**:
+  - `modelValue: boolean | string | number`
+  - `options?: Array<{ label: string, value: any }>` - 传入选项时渲染为 Segmented Control 分段控制器；不传时渲染为经典滑动开关。
+  - `disabled?: boolean`
+
+### 6.4 `VButton` (按钮)
+- **Props**:
+  - `variant`: `'primary' | 'secondary' | 'danger' | 'danger-soft' | 'icon' | 'icon-secondary' | 'icon-danger'`
+  - `size`: `'small' | 'medium' | 'large'`
+  - `disabled?: boolean`
+  - `loading?: boolean`
+
+---
+
+## 7. 开发与修改自检清单 (Self-Verification Checklist)
+
+在每次编写或修改任何 `.vue` 或 `.ts` 文件后，必须完成以下自检确认：
+
+- [ ] **0 相对路径导入**：全局一律使用 `@/` 路径别名（如 `@/components/base/VIcon.vue`、`@/composables/useSettings`），严禁使用 `../` 或 `./` 跨层相对路径。
 - [ ] **0 内联 SVG**：检查提交代码中无裸露的 `<svg>` 标签，全量使用 `<VIcon>`。
-- [ ] **0 原生交互裸标签**：按钮、输入框、复选框、下拉框等均使用 `@/components/base/` 封装组件。
+- [ ] **0 原生交互裸标签**：按钮、输入框、复选框、单选框、下拉框等均全量使用 `@/components/base/` 封装组件。
 - [ ] **无重复造轮子**：新功能中未引入私有定制的基础控件，通用交互已沉淀在 `src/components/base/`。
-- [ ] **向下兼容性**：对现有 base 组件的任何改动均未破坏既有业务调用（新 props 具有默认值）。
+- [ ] **向下兼容性**：对现有 base 组件的任何改动均未破坏既有业务调用（新 props 必须具备默认值）。
 - [ ] **轻量校验通过**：运行 `rtk npx vue-tsc --noEmit` 确保 0 错误（严禁/无需运行 build）。

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import { cmsService, type CMSCategory, type CMSVideo, type CMSVideoDetail } from '../services/cmsService'
-import { logger } from '../services/logger'
+import { cmsService, type CMSCategory, type CMSVideo, type CMSVideoDetail } from '@/services/cmsService'
+import { logger } from '@/services/logger'
 
 export const useCMS = (apiUrl: string) => {
   const loading = ref(false)

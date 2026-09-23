@@ -11,7 +11,7 @@
       <div class="editor-body">
         <div class="config-row">
           <div class="config-item">
-            <label>匹配域名</label>
+            <label>匹配URL</label>
             <v-input v-model="editDomain" placeholder="如 bilibili.com 或 *" />
           </div>
         </div>
@@ -29,9 +29,9 @@
 
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount, nextTick } from 'vue';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInput from '../base/VInput.vue';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInput from '@/components/base/VInput.vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { css } from '@codemirror/lang-css';
 import { EditorState } from '@codemirror/state';

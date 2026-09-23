@@ -79,7 +79,7 @@ export const BACKUP_SECTIONS: ConfigBackupSectionMeta[] = [
     key: 'customScripts',
     title: '注入脚本与样式',
     category: '增强定制',
-    description: '网页注入运行的自定义 JS 脚本与全局 CSS 样式',
+    description: '网页注入运行的自定义 JS 脚本、全局 CSS 样式与瀑布流规则',
     icon: 'js'
   },
   {

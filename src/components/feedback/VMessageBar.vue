@@ -42,9 +42,9 @@
 
 <script setup lang="ts">
 import { ref, onBeforeUnmount } from 'vue'
-import { useMessage } from '../../composables/useMessage'
-import VIcon from '../base/VIcon.vue'
-import VButton from '../base/VButton.vue'
+import { useMessage } from '@/composables/useMessage'
+import VIcon from '@/components/base/VIcon.vue'
+import VButton from '@/components/base/VButton.vue'
 
 const { messages, removeMessage, pauseTimer, resumeTimer } = useMessage()
 const isHovered = ref(false)

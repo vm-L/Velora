@@ -1,4 +1,4 @@
-import { calculateSimilarity, extractEffectiveChars } from './similarity';
+import { calculateSimilarity, extractEffectiveChars } from '@/utils/similarity';
 
 export interface DirTreeItem {
   name: string;

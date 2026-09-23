@@ -671,24 +671,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { CustomScript, ParseRule, useSettings } from '../composables/useSettings';
-import { useConfirm } from '../composables/useConfirm';
-import { useMessage } from '../composables/useMessage';
-import { useOpenedResources } from '../composables/useOpenedResources';
-import { useOpenedCMS } from '../composables/useOpenedCMS';
-import { logger } from '../services/logger';
-import { generateQrCodeSvg } from '../utils/qrcode';
-import VButton from '../components/base/VButton.vue';
-import VIcon from '../components/base/VIcon.vue';
+import { CustomScript, ParseRule, useSettings } from '@/composables/useSettings';
+import { useConfirm } from '@/composables/useConfirm';
+import { useMessage } from '@/composables/useMessage';
+import { useOpenedResources } from '@/composables/useOpenedResources';
+import { useOpenedCMS } from '@/composables/useOpenedCMS';
+import { logger } from '@/services/logger';
+import { generateQrCodeSvg } from '@/utils/qrcode';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
 
-import SettingsScriptEditor from '../components/features/SettingsScriptEditor.vue';
-import SettingsStyleEditor from '../components/features/SettingsStyleEditor.vue';
-import ParseRuleDialog from '../components/features/ParseRuleDialog.vue';
-import AdBlockDialog from '../components/features/AdBlockDialog.vue';
-import VInput from '../components/base/VInput.vue';
-import VSwitch, { type VSwitchOption } from '../components/base/VSwitch.vue';
-import ConfigBackupDialog from '../components/features/ConfigBackupDialog.vue';
-import type { ConfigBackupSectionKey } from '../types/backup';
+import SettingsScriptEditor from '@/components/features/SettingsScriptEditor.vue';
+import SettingsStyleEditor from '@/components/features/SettingsStyleEditor.vue';
+import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
+import AdBlockDialog from '@/components/features/AdBlockDialog.vue';
+import VInput from '@/components/base/VInput.vue';
+import VSwitch, { type VSwitchOption } from '@/components/base/VSwitch.vue';
+import ConfigBackupDialog from '@/components/features/ConfigBackupDialog.vue';
+import type { ConfigBackupSectionKey } from '@/types/backup';
 
 const router = useRouter();
 
@@ -1356,7 +1356,7 @@ const deleteParseRule = async (rule: ParseRule) => {
   if (!managingParseFor.value) return;
   const confirmed = await confirm({
     title: '删除解析规则',
-    message: `确定要删除匹配域名 "${rule.domain}" (${rule.actionType === 'download' ? '下载' : '复制'}) 吗？`,
+    message: `确定要删除匹配URL "${rule.domain}" (${rule.actionType === 'download' ? '下载' : '复制'}) 吗？`,
     confirmText: '删除',
     cancelText: '取消',
     type: 'danger'
@@ -1414,17 +1414,17 @@ const onSaveScript = async (updatedScript: CustomScript) => {
   updatedScript.id = scriptId;
   updatedScript.domain = trimmedDomain;
 
-  // 检查是否修改了匹配域名
+  // 检查是否修改了匹配URL
   const isDomainChanged = editingOriginalDomain.value.trim() !== '' && trimmedDomain !== editingOriginalDomain.value.trim();
 
-  // 1. 只有当修改了匹配域名时，才检查新域名是否与其他已有脚本冲突
+  // 1. 只有当修改了匹配URL时，才检查新URL是否与其他已有脚本冲突
   if (isDomainChanged) {
     const duplicateScript = targetArray.find(s => s.id !== scriptId && (s.domain || '').trim() === trimmedDomain);
 
     if (duplicateScript) {
       const isConfirmed = await confirm({
-        title: '匹配域名重复',
-        message: `已存在相同匹配域名的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
+        title: '匹配URL重复',
+        message: `已存在相同匹配URL的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
         confirmText: '合并',
         cancelText: '取消',
         type: 'warning'

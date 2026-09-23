@@ -82,16 +82,16 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useDownloads } from '../../composables/useDownloads';
-import { useMessage } from '../../composables/useMessage';
-import { useSettings } from '../../composables/useSettings';
-import { useSaveMediaDialog } from '../../composables/useSaveMediaDialog';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInputSelect, { type InputSelectOption } from '../base/VInputSelect.vue';
-import { sanitizeFilename } from '../../utils/filename';
-import { findBestMatchingSubdirectory } from '../../utils/dirMatcher';
-import { isSimilarExistingFile } from '../../utils/similarity';
+import { useDownloads } from '@/composables/useDownloads';
+import { useMessage } from '@/composables/useMessage';
+import { useSettings } from '@/composables/useSettings';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
+import { sanitizeFilename } from '@/utils/filename';
+import { findBestMatchingSubdirectory } from '@/utils/dirMatcher';
+import { isSimilarExistingFile } from '@/utils/similarity';
 
 const props = withDefaults(defineProps<{
   visible?: boolean;
@@ -419,7 +419,7 @@ const confirmSave = async () => {
 
     // 情况：相似文件存在于其他子目录（如已有在 B-诺兰，当前选中了 C-盗梦空间）
     if (existingDirNorm !== currentSaveDirNorm) {
-      const { useConfirm } = await import('../../composables/useConfirm');
+      const { useConfirm } = await import('@/composables/useConfirm');
       const shouldOverwriteOriginal = await useConfirm().confirm({
         title: '检测到已存在相似文件',
         message: `在子目录 [${existing.relativeDir}] 已存在高度相似的文件：\n"${existing.name}"\n\n要直接覆盖替换该位置的原文件吗？\n点击【覆盖原文件】将切换并覆盖原文件；\n点击【继续下载】将仍保存至当前选中的目录。`,

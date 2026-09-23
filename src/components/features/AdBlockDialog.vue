@@ -115,12 +115,12 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useSettings, type AdBlockSource } from '../../composables/useSettings';
-import { useMessage } from '../../composables/useMessage';
-import VButton from '../base/VButton.vue';
-import VInput from '../base/VInput.vue';
-import VIcon from '../base/VIcon.vue';
-import VSwitch from '../base/VSwitch.vue';
+import { useSettings, type AdBlockSource } from '@/composables/useSettings';
+import { useMessage } from '@/composables/useMessage';
+import VButton from '@/components/base/VButton.vue';
+import VInput from '@/components/base/VInput.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VSwitch from '@/components/base/VSwitch.vue';
 
 defineProps<{
   visible: boolean;

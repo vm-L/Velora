@@ -116,12 +116,12 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue';
-import { useMessage } from '../../composables/useMessage';
-import { useSettings } from '../../composables/useSettings';
-import VButton from '../base/VButton.vue';
-import VIcon from '../base/VIcon.vue';
-import VInput from '../base/VInput.vue';
-import VCheckbox from '../base/VCheckbox.vue';
+import { useMessage } from '@/composables/useMessage';
+import { useSettings } from '@/composables/useSettings';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VInput from '@/components/base/VInput.vue';
+import VCheckbox from '@/components/base/VCheckbox.vue';
 
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
@@ -403,7 +403,7 @@ const toggleAllSaveItems = () => {
   });
 };
 
-import { useDownloads } from '../../composables/useDownloads';
+import { useDownloads } from '@/composables/useDownloads';
 const { addDownload } = useDownloads();
 
 const confirmSave = async () => {

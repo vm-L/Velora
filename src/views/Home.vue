@@ -205,23 +205,23 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue';
-import { useDownloads } from '../composables/useDownloads';
-import { useMessage } from '../composables/useMessage';
-import { useConfirm } from '../composables/useConfirm';
-import VButton from '../components/base/VButton.vue';
-import VIcon from '../components/base/VIcon.vue';
-import VCheckbox from '../components/base/VCheckbox.vue';
-const ImagePreviewDialog = defineAsyncComponent(() => import('../components/features/ImagePreviewDialog.vue'));
-const AudioPlayerDialog = defineAsyncComponent(() => import('../components/features/AudioPlayerDialog.vue'));
-const VideoPlayerDialog = defineAsyncComponent(() => import('../components/features/VideoPlayerDialog.vue'));
-const EditTaskDialog = defineAsyncComponent(() => import('../components/features/EditTaskDialog.vue'));
-const CompressVideoDialog = defineAsyncComponent(() => import('../components/features/CompressVideoDialog.vue'));
-const BatchCompressVideoDialog = defineAsyncComponent(() => import('../components/features/BatchCompressVideoDialog.vue'));
-import { useNotification } from '../composables/useNotification';
-import { useSettings } from '../composables/useSettings';
-import { useSaveMediaDialog } from '../composables/useSaveMediaDialog';
-import { logger } from '../services/logger';
-import { formatBytes } from '../utils/format';
+import { useDownloads } from '@/composables/useDownloads';
+import { useMessage } from '@/composables/useMessage';
+import { useConfirm } from '@/composables/useConfirm';
+import VButton from '@/components/base/VButton.vue';
+import VIcon from '@/components/base/VIcon.vue';
+import VCheckbox from '@/components/base/VCheckbox.vue';
+const ImagePreviewDialog = defineAsyncComponent(() => import('@/components/features/ImagePreviewDialog.vue'));
+const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
+const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
+const EditTaskDialog = defineAsyncComponent(() => import('@/components/features/EditTaskDialog.vue'));
+const CompressVideoDialog = defineAsyncComponent(() => import('@/components/features/CompressVideoDialog.vue'));
+const BatchCompressVideoDialog = defineAsyncComponent(() => import('@/components/features/BatchCompressVideoDialog.vue'));
+import { useNotification } from '@/composables/useNotification';
+import { useSettings } from '@/composables/useSettings';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import { logger } from '@/services/logger';
+import { formatBytes } from '@/utils/format';
 
 const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();

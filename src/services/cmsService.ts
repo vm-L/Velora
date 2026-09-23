@@ -3,7 +3,7 @@ export interface CMSCategory {
   name: string
   parentId: number
 }
-import { logger } from './logger'
+import { logger } from '@/services/logger'
 
 export interface CMSVideo {
   id: number
