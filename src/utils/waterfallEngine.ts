@@ -251,7 +251,7 @@ export const getWaterfallParentInitScript = (options: { contentSelector: string;
         skeletonWrapper.innerHTML = \`
           <div class="velora-wf-skeleton-header">
             <div class="velora-wf-skeleton-spinner"></div>
-            <span>正在准备第 \${pageNum} 页内容...</span>
+            <span>正在准备第 \${pageNum} 页内容</span>
           </div>
           <div class="velora-wf-skeleton-grid">
             <div class="velora-wf-skeleton-card">

@@ -644,7 +644,7 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
     isExporting: true,
     taskId,
     percent: 0,
-    text: '正在初始化剪辑任务...',
+    text: '正在初始化剪辑任务',
     error: null,
     isFinished: false,
     outputPath: null

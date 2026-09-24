@@ -180,7 +180,7 @@ export function getSplashHtml(theme: string, iconDataUrl: string, version: strin
     </div>
     <div class="bottom-section">
       <div class="status-row">
-        <span class="status-text" id="status-text">正在启动应用...</span>
+        <span class="status-text" id="status-text">正在启动应用</span>
       </div>
       <div class="progress-track">
         <div class="progress-fill" id="progress-fill"></div>

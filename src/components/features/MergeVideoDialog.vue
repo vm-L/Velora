@@ -114,7 +114,7 @@
           <!-- Progress Section -->
           <div v-if="isMerging" class="progress-section">
             <div class="progress-header">
-              <span class="progress-status">{{ progressText || '正在处理中...' }}</span>
+              <span class="progress-status">{{ progressText || '正在处理' }}</span>
               <span class="progress-percent mono">{{ progressPercent }}%</span>
             </div>
             <div class="progress-bar-bg">
@@ -132,7 +132,7 @@
               :disabled="progressPercent >= 100 || isCancelling"
               @click="cancelMerge"
             >
-              {{ progressPercent >= 100 ? '正在完成...' : (isCancelling ? '正在取消...' : '取消合并') }}
+              {{ progressPercent >= 100 ? '正在完成' : (isCancelling ? '正在取消' : '取消合并') }}
             </v-button>
           </template>
           <template v-else>
@@ -331,7 +331,7 @@ const startMerge = async () => {
   isMerging.value = true;
   isCancelling.value = false;
   progressPercent.value = 0;
-  progressText.value = '正在准备合并...';
+  progressText.value = '正在准备合并';
 
   window.electronAPI.onVideoMergeProgress(taskId, (data) => {
     progressPercent.value = Math.min(100, Math.max(0, Math.round(data.percent)));

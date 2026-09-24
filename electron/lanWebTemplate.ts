@@ -746,21 +746,63 @@ export function getLanWebHtml(): string {
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     }
 
-    /* Toast */
-    .toast {
+    /* Toast Notification Container & Items (Top Staggered) */
+    .toast-container {
       position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
+      top: 20px;
+      left: 0;
+      right: 0;
+      z-index: 12000;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      max-height: calc(100vh - 40px);
+      overflow: visible;
+    }
+
+    .toast {
+      position: relative;
       background: var(--bg-surface);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
-      padding: 8px 18px;
-      border-radius: 20px;
-      font-size: 13px;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 14px;
       font-weight: 500;
-      z-index: 2000;
-      box-shadow: var(--shadow-soft);
+      box-shadow: var(--shadow-soft), 0 6px 20px rgba(0, 0, 0, 0.12);
+      pointer-events: auto;
+      cursor: pointer;
+      max-width: min(85vw, 560px);
+      min-width: 180px;
+      text-align: center;
+      word-break: break-word;
+      line-height: 1.45;
+      animation: toastInTop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: all 0.25s ease;
+      user-select: none;
+    }
+
+    .toast:hover {
+      box-shadow: var(--shadow-soft), 0 8px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .toast.toast-fadeout {
+      opacity: 0;
+      transform: translateY(-12px) scale(0.95);
+      pointer-events: none;
+    }
+
+    @keyframes toastInTop {
+      from {
+        opacity: 0;
+        transform: translateY(-18px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
     }
 
     .empty-state {
@@ -845,6 +887,308 @@ export function getLanWebHtml(): string {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    /* Multi-Select & Card Checkboxes */
+    .card-select-btn {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10;
+    }
+
+    .file-card:hover .card-select-btn,
+    .file-card.selected .card-select-btn,
+    body.is-selecting .card-select-btn {
+      opacity: 1;
+    }
+
+    .file-card.selected .card-select-btn {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: var(--color-accent-text);
+    }
+
+    .file-card.selected {
+      border-color: var(--color-accent);
+      background: var(--bg-surface-hover);
+    }
+
+    .multi-select-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: var(--shadow-soft);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      z-index: 900;
+      animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      max-width: 92vw;
+    }
+
+    @keyframes slideUp {
+      from { transform: translate(-50%, 20px); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+
+    .multi-select-count {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .multi-select-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+    }
+
+    /* Video Trimmer Modal */
+    .video-edit-modal-content {
+      max-width: 900px;
+      width: 100%;
+      height: 88vh;
+      max-height: 94vh;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .video-edit-modal-content .modal-header {
+      flex-shrink: 0;
+    }
+
+    .trimmer-video-wrap {
+      width: 100%;
+      max-height: 35vh;
+      min-height: 160px;
+      background: #000;
+      position: relative;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .trimmer-video-wrap video {
+      width: 100%;
+      height: 100%;
+      max-height: 35vh;
+      object-fit: contain;
+    }
+
+    .trimmer-controls {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--bg-app);
+      border-top: 1px solid var(--border-light);
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .video-edit-modal-content .modal-footer {
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-light);
+      z-index: 10;
+    }
+
+    .time-steppers {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      width: 100%;
+    }
+
+    .time-steppers .v-btn {
+      padding: 6px 4px;
+      font-size: 12px;
+      min-width: 0;
+      justify-content: center;
+    }
+
+    .trim-points-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .trim-points-row .v-btn {
+      justify-content: center;
+    }
+
+    .time-display {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      background: var(--bg-surface);
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      width: 100%;
+      text-align: center;
+      box-sizing: border-box;
+    }
+
+    .segment-chips-container {
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      min-height: 50px;
+      max-height: 120px;
+      overflow-y: auto;
+      padding: 8px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    .segment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+
+    .segment-chip:hover {
+      border-color: var(--color-accent);
+    }
+
+    .segment-chip .chip-remove {
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: bold;
+      padding: 0 2px;
+    }
+
+    .segment-chip .chip-remove:hover {
+      color: var(--color-error);
+    }
+
+    /* Merge Modal */
+    .merge-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .merge-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--bg-app);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .merge-item-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 8px;
+    }
+
+    .merge-item-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    /* Compress Presets */
+    .compress-presets {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .preset-btn {
+      padding: 8px 4px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-app);
+      color: var(--text-primary);
+      cursor: pointer;
+      text-align: center;
+      font-size: 12px;
+      transition: all 0.15s;
+      outline: none;
+    }
+
+    .preset-btn.active {
+      border-color: var(--color-accent);
+      background: var(--accent-light);
+      color: var(--color-accent);
+      font-weight: 600;
+    }
+
+    /* Progress Modal */
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--color-accent) 0%, #3b82f6 100%);
+      width: 0%;
+      transition: width 0.25s ease;
+      border-radius: 4px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
     }
   </style>
 </head>
@@ -983,6 +1327,182 @@ export function getLanWebHtml(): string {
         <div class="modal-footer" id="action-modal-footer"></div>
       </div>
     </div>
+
+    <!-- Multi-Select Floating Bar -->
+    <div id="multi-select-bar" class="multi-select-bar" style="display:none;">
+      <span id="multi-select-count" class="multi-select-count">已选 0 项</span>
+      <div class="multi-select-actions">
+        <button id="batch-merge-btn" class="v-btn v-btn-primary" style="display:none;" onclick="openBatchMergeModal()">
+          <span>合并视频</span>
+        </button>
+        <button id="batch-compress-btn" class="v-btn v-btn-secondary" style="display:none;" onclick="openBatchCompressModal()">
+          <span>压缩视频</span>
+        </button>
+        <button class="v-btn v-btn-secondary" onclick="clearSelection()">取消选择</button>
+      </div>
+    </div>
+
+    <!-- Dedicated Fullscreen Video Trimmer Modal -->
+    <div id="video-edit-modal" class="modal-overlay" style="display:none;">
+      <div class="video-edit-modal-content">
+        <div class="modal-header">
+          <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+            <span id="video-edit-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:15px; font-weight:600;">视频剪辑</span>
+          </div>
+          <button class="v-btn v-btn-icon" onclick="closeVideoEditModal()">✕</button>
+        </div>
+        <div class="trimmer-video-wrap">
+          <video id="trimmer-video" playsinline controls></video>
+        </div>
+        <div class="trimmer-controls">
+          <div id="trimmer-time-display" class="time-display">00:00.0 / 00:00.0</div>
+
+          <div class="time-steppers">
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-5)">-5s</button>
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-1)">-1s</button>
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-0.1)">-0.1s</button>
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(0.1)">+0.1s</button>
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(1)">+1s</button>
+            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(5)">+5s</button>
+          </div>
+
+          <div class="trim-points-row">
+            <button class="v-btn v-btn-secondary" onclick="markTrimStart()">设为起点</button>
+            <button class="v-btn v-btn-secondary" onclick="markTrimEnd()">设为终点</button>
+          </div>
+
+          <button class="v-btn v-btn-primary" style="width:100%;" onclick="addTrimSegment()">+ 添加为片段</button>
+
+          <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-top:2px;">已选片段清单：</div>
+          <div id="trimmer-segments-list" class="segment-chips-container">
+            <span style="font-size:12px; color:var(--text-muted);">暂未添加多片段，默认全时长</span>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
+            <label style="font-size:12px; color:var(--text-secondary);">保存模式</label>
+            <select id="trim-save-mode" class="v-input" style="width:100%;" onchange="toggleTrimSaveMode()">
+              <option value="replace" selected>覆盖保存</option>
+              <option value="saveAs">另存为</option>
+            </select>
+          </div>
+          <div id="trim-filename-wrap" style="display:none; flex-direction:column; gap:4px;">
+            <label style="font-size:12px; color:var(--text-secondary);">导出文件名</label>
+            <input type="text" id="trim-filename-input" class="v-input" placeholder="输入输出文件名" style="width:100%;">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="v-btn v-btn-secondary" onclick="closeVideoEditModal()">取消</button>
+          <button class="v-btn v-btn-primary" onclick="submitVideoCut()">开始剪辑</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Merge Modal -->
+    <div id="video-merge-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-content" style="max-width:560px;">
+        <div class="modal-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"></path><path d="M4 18V4a2 2 0 0 1 2-2h14"></path></svg>
+            <h3>合并视频</h3>
+          </div>
+          <button class="v-btn v-btn-icon" onclick="closeVideoMergeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:12px; color:var(--text-secondary); margin:0;">系统将按从上到下的顺序拼接视频，可点击上下箭头调整拼接次序：</p>
+          <div id="merge-video-items" class="merge-list"></div>
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">
+            <label style="font-size:12px; color:var(--text-secondary);">合并产物文件名</label>
+            <input type="text" id="merge-filename-input" class="v-input" placeholder="输入合并文件名" style="width:100%;">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="v-btn v-btn-secondary" onclick="closeVideoMergeModal()">取消</button>
+          <button class="v-btn v-btn-primary" id="start-merge-btn" onclick="submitVideoMerge()">开始合并</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Compress Modal -->
+    <div id="video-compress-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+            <h3 id="compress-modal-title">压缩视频</h3>
+          </div>
+          <button class="v-btn v-btn-icon" onclick="closeVideoCompressModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <label style="font-size:12px; color:var(--text-secondary);">目标码率档位：</label>
+          <div class="compress-presets">
+            <button class="preset-btn" id="preset-1000" onclick="selectCompressPreset(1000)">流畅 (1000k)</button>
+            <button class="preset-btn active" id="preset-2000" onclick="selectCompressPreset(2000)">标准 (2000k)</button>
+            <button class="preset-btn" id="preset-3500" onclick="selectCompressPreset(3500)">高清 (3500k)</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="font-size:12px; color:var(--text-secondary);">自定义码率 (kbps)</label>
+            <input type="number" id="compress-bitrate-input" class="v-input" value="2000" min="300" max="20000" style="width:100%;">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="font-size:12px; color:var(--text-secondary);">保存方式</label>
+            <select id="compress-mode-select" class="v-input" style="width:100%;" onchange="toggleCompressSaveMode()">
+              <option value="saveAs">另存为新文件</option>
+              <option value="replace">覆盖保存原文件</option>
+            </select>
+          </div>
+          <div id="compress-filename-wrap" style="display:flex; flex-direction:column; gap:4px;">
+            <label style="font-size:12px; color:var(--text-secondary);">导出文件名</label>
+            <input type="text" id="compress-filename-input" class="v-input" placeholder="输入输出文件名" style="width:100%;">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="v-btn v-btn-secondary" onclick="closeVideoCompressModal()">取消</button>
+          <button class="v-btn v-btn-primary" onclick="submitVideoCompress()">开始压缩</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Task Progress Modal -->
+    <div id="task-progress-modal" class="modal-overlay" style="display:none;">
+      <div class="modal-content" style="max-width:420px;">
+        <div class="modal-header">
+          <h3 id="task-progress-title">正在处理</h3>
+        </div>
+        <div class="modal-body">
+          <div class="progress-header">
+            <span id="task-progress-status" style="color:var(--text-secondary);">正在初始化</span>
+            <strong id="task-progress-percent" style="font-family:monospace;">0%</strong>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="task-progress-fill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="task-cancel-btn" class="v-btn v-btn-danger-soft" onclick="cancelCurrentTask()">取消任务</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Dialog Modal (Alert / Confirm / Prompt) -->
+    <div id="custom-dialog-modal" class="modal-overlay" style="display:none; z-index:1100;">
+      <div class="modal-content" style="max-width:400px; width:100%;">
+        <div class="modal-header">
+          <h3 id="custom-dialog-title">提示</h3>
+          <button class="v-btn v-btn-icon" onclick="closeCustomDialog(null)">✕</button>
+        </div>
+        <div class="modal-body" style="padding:18px 20px;">
+          <p id="custom-dialog-message" style="margin:0; font-size:14px; line-height:1.5; color:var(--text-primary);"></p>
+          <input type="text" id="custom-dialog-input" class="v-input" style="width:100%; margin-top:10px; display:none;">
+        </div>
+        <div class="modal-footer">
+          <button id="custom-dialog-cancel-btn" class="v-btn v-btn-secondary" onclick="closeCustomDialog(false)">取消</button>
+          <button id="custom-dialog-confirm-btn" class="v-btn v-btn-primary" onclick="confirmCustomDialog()">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container (Top Staggered) -->
+    <div id="toast-container" class="toast-container"></div>
   </div>
 
   <script>
@@ -1008,8 +1528,52 @@ export function getLanWebHtml(): string {
       items: [],
       search: '',
       sort: 'mtime-desc',
-      theme: localStorage.getItem('velora_theme') || 'light'
+      theme: localStorage.getItem('velora_theme') || 'light',
+      selectedPaths: new Set(),
+      // Trimmer
+      trimSegments: [],
+      trimStart: 0,
+      trimEnd: 0,
+      trimDuration: 0,
+      currentTrimPath: '',
+      currentTrimName: '',
+      // Merge
+      mergeVideos: [],
+      // Compress
+      compressFilePath: '',
+      compressFileName: '',
+      compressBitrate: 2000,
+      // Task SSE
+      currentTaskId: '',
+      currentEventSource: null
     };
+
+    function getFilteredAndSortedItems() {
+      var list = state.items.slice();
+      if (state.search.trim()) {
+        var q = state.search.trim().toLowerCase();
+        list = list.filter(function(i) { return i.name.toLowerCase().includes(q); });
+      }
+
+      var parts = state.sort.split('-');
+      var field = parts[0];
+      var order = parts[1];
+      var isAsc = order === 'asc';
+      list.sort(function(a, b) {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        if (field === 'name') {
+          var cmp = a.name.localeCompare(b.name, 'zh-CN');
+          return isAsc ? cmp : -cmp;
+        } else if (field === 'mtime') {
+          return isAsc ? a.mtime - b.mtime : b.mtime - a.mtime;
+        } else if (field === 'size') {
+          return isAsc ? a.size - b.size : b.size - a.size;
+        }
+        return 0;
+      });
+      return list;
+    }
 
     // DOM Elements
     var fileGrid = document.getElementById('file-grid');
@@ -1090,14 +1654,164 @@ export function getLanWebHtml(): string {
       });
     });
 
-    // Toast
-    function showToast(msg) {
+    // Toast (Top Staggered Notification)
+    function dismissToast(el) {
+      if (!el || el.classList.contains('toast-fadeout')) return;
+      el.classList.add('toast-fadeout');
+      setTimeout(function() {
+        if (el && el.parentNode) {
+          el.parentNode.removeChild(el);
+        }
+      }, 250);
+    }
+
+    function showToast(msg, duration) {
+      var container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+      }
+
       var el = document.createElement('div');
       el.className = 'toast';
       el.innerText = msg;
-      document.body.appendChild(el);
-      setTimeout(function() { el.remove(); }, 2500);
+
+      var stayDuration = typeof duration === 'number' ? duration : 2500;
+
+      container.appendChild(el);
+
+      var timer = setTimeout(function() {
+        dismissToast(el);
+      }, stayDuration);
+
+      el.addEventListener('click', function() {
+        clearTimeout(timer);
+        dismissToast(el);
+      });
     }
+
+    // Custom Dialog Modal (Alert / Confirm / Prompt)
+    var customDialogResolve = null;
+
+    window.closeCustomDialog = function(result) {
+      var modal = document.getElementById('custom-dialog-modal');
+      if (modal) modal.style.display = 'none';
+      if (customDialogResolve) {
+        var resolve = customDialogResolve;
+        customDialogResolve = null;
+        resolve(result);
+      }
+    };
+
+    window.confirmCustomDialog = function() {
+      var input = document.getElementById('custom-dialog-input');
+      var isPrompt = input && input.style.display !== 'none';
+      if (isPrompt) {
+        var val = input.value;
+        window.closeCustomDialog(val);
+      } else {
+        window.closeCustomDialog(true);
+      }
+    };
+
+    window.showAlert = function(options) {
+      return new Promise(function(resolve) {
+        var opts = typeof options === 'string' ? { message: options } : (options || {});
+        customDialogResolve = function() { resolve(); };
+
+        document.getElementById('custom-dialog-title').innerText = opts.title || '提示';
+        document.getElementById('custom-dialog-message').innerText = opts.message || '';
+
+        var input = document.getElementById('custom-dialog-input');
+        input.style.display = 'none';
+        input.onkeydown = null;
+
+        var cancelBtn = document.getElementById('custom-dialog-cancel-btn');
+        cancelBtn.style.display = 'none';
+
+        var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
+        confirmBtn.className = 'v-btn v-btn-primary';
+        confirmBtn.innerText = opts.okText || '确定';
+
+        document.getElementById('custom-dialog-modal').style.display = 'flex';
+        confirmBtn.focus();
+      });
+    };
+
+    window.showConfirm = function(options) {
+      return new Promise(function(resolve) {
+        var opts = typeof options === 'string' ? { message: options } : (options || {});
+        customDialogResolve = function(res) { resolve(!!res); };
+
+        document.getElementById('custom-dialog-title').innerText = opts.title || '确认';
+        document.getElementById('custom-dialog-message').innerText = opts.message || '';
+
+        var input = document.getElementById('custom-dialog-input');
+        input.style.display = 'none';
+        input.onkeydown = null;
+
+        var cancelBtn = document.getElementById('custom-dialog-cancel-btn');
+        cancelBtn.style.display = '';
+        cancelBtn.innerText = opts.cancelText || '取消';
+
+        var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
+        confirmBtn.className = opts.danger ? 'v-btn v-btn-danger-soft' : 'v-btn v-btn-primary';
+        confirmBtn.innerText = opts.confirmText || '确定';
+
+        document.getElementById('custom-dialog-modal').style.display = 'flex';
+        confirmBtn.focus();
+      });
+    };
+
+    window.showPrompt = function(options) {
+      return new Promise(function(resolve) {
+        var opts = typeof options === 'string' ? { message: options } : (options || {});
+        customDialogResolve = function(res) {
+          if (res === null || res === false) {
+            resolve(null);
+          } else {
+            resolve(String(res));
+          }
+        };
+
+        document.getElementById('custom-dialog-title').innerText = opts.title || '输入';
+        document.getElementById('custom-dialog-message').innerText = opts.message || '';
+
+        var input = document.getElementById('custom-dialog-input');
+        input.style.display = 'block';
+        input.value = opts.defaultValue || '';
+        input.placeholder = opts.placeholder || '';
+        input.onkeydown = function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            window.confirmCustomDialog();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            window.closeCustomDialog(null);
+          }
+        };
+
+        var cancelBtn = document.getElementById('custom-dialog-cancel-btn');
+        cancelBtn.style.display = '';
+        cancelBtn.innerText = opts.cancelText || '取消';
+
+        var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
+        confirmBtn.className = 'v-btn v-btn-primary';
+        confirmBtn.innerText = opts.confirmText || opts.okText || '确定';
+
+        document.getElementById('custom-dialog-modal').style.display = 'flex';
+        setTimeout(function() {
+          input.focus();
+          input.select();
+        }, 50);
+      });
+    };
+
+    window.alert = function(msg) {
+      return window.showAlert(msg);
+    };
 
     // API Helper
     async function apiFetch(url, options) {
@@ -1363,29 +2077,7 @@ export function getLanWebHtml(): string {
     }
 
     function renderFileGrid() {
-      var list = state.items.slice();
-      if (state.search.trim()) {
-        var q = state.search.trim().toLowerCase();
-        list = list.filter(function(i) { return i.name.toLowerCase().includes(q); });
-      }
-
-      var parts = state.sort.split('-');
-      var field = parts[0];
-      var order = parts[1];
-      var isAsc = order === 'asc';
-      list.sort(function(a, b) {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        if (field === 'name') {
-          var cmp = a.name.localeCompare(b.name, 'zh-CN');
-          return isAsc ? cmp : -cmp;
-        } else if (field === 'mtime') {
-          return isAsc ? a.mtime - b.mtime : b.mtime - a.mtime;
-        } else if (field === 'size') {
-          return isAsc ? a.size - b.size : b.size - a.size;
-        }
-        return 0;
-      });
+      var list = getFilteredAndSortedItems();
 
       if (list.length === 0) {
         fileGrid.innerHTML = '<div class="empty-state"><span>未找到文件或目录为空</span></div>';
@@ -1401,8 +2093,11 @@ export function getLanWebHtml(): string {
         var encodedPath = encodeURIComponent(item.path);
         var timeStr = formatTime(item.mtime);
         var extBadge = item.isDirectory ? '' : '<span class="ext-badge">' + (item.ext || 'FILE').toUpperCase() + '</span>';
+        var isSelected = state.selectedPaths.has(item.path);
+        var cardClass = 'file-card' + (isSelected ? ' selected' : '');
 
-        html += '<div class="file-card" onclick="handleCardClick(' + idx + ')">' +
+        html += '<div class="' + cardClass + '" onclick="handleCardClick(' + idx + ')">' +
+          (state.allowEdit ? '<div class="card-select-btn" onclick="event.stopPropagation(); toggleCardSelection(' + idx + ', event)">✓</div>' : '') +
           '<div class="card-icon-wrap">' +
           iconSvg +
           extBadge +
@@ -1418,32 +2113,69 @@ export function getLanWebHtml(): string {
       fileGrid.innerHTML = html;
     }
 
-    window.handleCardClick = function(idx) {
-      var list = state.items.slice();
-      if (state.search.trim()) {
-        var q = state.search.trim().toLowerCase();
-        list = list.filter(function(i) { return i.name.toLowerCase().includes(q); });
-      }
-      var parts = state.sort.split('-');
-      var field = parts[0];
-      var order = parts[1];
-      var isAsc = order === 'asc';
-      list.sort(function(a, b) {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        if (field === 'name') {
-          var cmp = a.name.localeCompare(b.name, 'zh-CN');
-          return isAsc ? cmp : -cmp;
-        } else if (field === 'mtime') {
-          return isAsc ? a.mtime - b.mtime : b.mtime - a.mtime;
-        } else if (field === 'size') {
-          return isAsc ? a.size - b.size : b.size - a.size;
-        }
-        return 0;
-      });
-
+    window.toggleCardSelection = function(idx, event) {
+      if (event) event.stopPropagation();
+      var list = getFilteredAndSortedItems();
       var item = list[idx];
       if (!item) return;
+
+      if (state.selectedPaths.has(item.path)) {
+        state.selectedPaths.delete(item.path);
+      } else {
+        state.selectedPaths.add(item.path);
+      }
+      updateMultiSelectBar();
+      renderFileGrid();
+    };
+
+    window.clearSelection = function() {
+      state.selectedPaths.clear();
+      updateMultiSelectBar();
+      renderFileGrid();
+    };
+
+    function updateMultiSelectBar() {
+      var bar = document.getElementById('multi-select-bar');
+      var countEl = document.getElementById('multi-select-count');
+      var mergeBtn = document.getElementById('batch-merge-btn');
+      var compressBtn = document.getElementById('batch-compress-btn');
+
+      var size = state.selectedPaths.size;
+      if (size === 0) {
+        bar.style.display = 'none';
+        document.body.classList.remove('is-selecting');
+        return;
+      }
+
+      document.body.classList.add('is-selecting');
+      bar.style.display = 'flex';
+      countEl.innerText = '已选 ' + size + ' 项';
+
+      var selectedItems = state.items.filter(function(i) { return state.selectedPaths.has(i.path); });
+      var videoItems = selectedItems.filter(function(i) { return getFileCategory(i) === 'video'; });
+
+      if (state.allowEdit && videoItems.length >= 2) {
+        mergeBtn.style.display = 'inline-flex';
+      } else {
+        mergeBtn.style.display = 'none';
+      }
+
+      if (state.allowEdit && videoItems.length > 0) {
+        compressBtn.style.display = 'inline-flex';
+      } else {
+        compressBtn.style.display = 'none';
+      }
+    }
+
+    window.handleCardClick = function(idx) {
+      var list = getFilteredAndSortedItems();
+      var item = list[idx];
+      if (!item) return;
+
+      if (state.selectedPaths.size > 0) {
+        toggleCardSelection(idx);
+        return;
+      }
 
       if (item.isDirectory) {
         loadDirectory(item.path);
@@ -1612,12 +2344,27 @@ export function getLanWebHtml(): string {
     };
 
     window.openItemActions = function(encodedPath, isDir, name) {
+      var itemPath = decodeURIComponent(encodedPath);
+      var item = state.items.find(function(i) { return i.path === itemPath; });
+      var isVideo = item ? getFileCategory(item) === 'video' : false;
+
       actionModalTitle.innerText = '管理: ' + name;
-      actionModalBody.innerHTML = '<div style="display:flex; flex-direction:column; gap:8px;">' +
-        '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\', \\'' + name + '\\')">移动</button>' +
-        '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\', \\'' + name + '\\')">重命名</button>' +
-        '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\', ' + isDir + ', \\'' + name + '\\')">删除</button>' +
+      var html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+
+      if (isVideo) {
+        html += '<button class="v-btn v-btn-primary" onclick="closeActionModal(); openVideoEditModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">' +
+          '<span>视频剪辑</span></button>';
+
+        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoCompressModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">' +
+          '<span>压缩视频</span></button>';
+      }
+
+      html += '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">移动</button>' +
+        '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">重命名</button>' +
+        '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\', ' + isDir + ', \\'' + escapeHtml(name) + '\\')">删除</button>' +
         '</div>';
+
+      actionModalBody.innerHTML = html;
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">关闭</button>';
       actionModal.style.display = 'flex';
     };
@@ -1706,9 +2453,13 @@ export function getLanWebHtml(): string {
       renderMoveTree();
     };
 
-    window.openMoveNewSubfolderModal = function() {
+    window.openMoveNewSubfolderModal = async function() {
       if (!state.moveSelectedTarget) return;
-      var subfolderName = prompt('在当前所选目录下创建新子目录：');
+      var subfolderName = await window.showPrompt({
+        title: '新建子目录',
+        message: '在当前所选目录下创建新子目录：',
+        placeholder: '请输入文件夹名称'
+      });
       if (!subfolderName || !subfolderName.trim()) return;
 
       apiFetch('/api/create-folder', {
@@ -1805,6 +2556,438 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('删除异常');
+      }
+    };
+
+    // ==========================================
+    // Video Editing, Merge & Compression Methods
+    // ==========================================
+
+    function formatTimeSec(sec) {
+      if (typeof sec !== 'number' || isNaN(sec) || sec < 0) sec = 0;
+      var m = Math.floor(sec / 60);
+      var s = Math.floor(sec % 60);
+      var ms = Math.floor((sec % 1) * 10);
+      var pad = function(n) { return n.toString().padStart(2, '0'); };
+      return pad(m) + ':' + pad(s) + '.' + ms;
+    }
+
+    // Video Trimmer Modal
+    window.openVideoEditModal = function(encodedPath, name) {
+      var filePath = decodeURIComponent(encodedPath);
+      state.currentTrimPath = filePath;
+      state.currentTrimName = name;
+      state.trimSegments = [];
+      state.trimStart = 0;
+      state.trimEnd = 0;
+
+      document.getElementById('video-edit-title').innerText = '视频剪辑: ' + name;
+      var video = document.getElementById('trimmer-video');
+      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(filePath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+      video.src = streamUrl;
+
+      var baseWithoutExt = name.replace(/\.[^/.]+$/, '');
+      document.getElementById('trim-filename-input').value = baseWithoutExt + '_cut.mp4';
+      document.getElementById('trim-save-mode').value = 'replace';
+      toggleTrimSaveMode();
+
+      video.onloadedmetadata = function() {
+        state.trimDuration = video.duration || 0;
+        state.trimEnd = video.duration || 0;
+        updateTrimmerTimeLabels();
+      };
+
+      video.ontimeupdate = function() {
+        updateTrimmerTimeLabels();
+      };
+
+      renderTrimSegments();
+      document.getElementById('video-edit-modal').style.display = 'flex';
+    };
+
+    function updateTrimmerTimeLabels() {
+      var video = document.getElementById('trimmer-video');
+      var curr = video ? video.currentTime : 0;
+      var dur = state.trimDuration || (video ? video.duration : 0) || 0;
+      var display = document.getElementById('trimmer-time-display');
+      if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
+    }
+
+    window.closeVideoEditModal = function() {
+      var video = document.getElementById('trimmer-video');
+      if (video) {
+        video.pause();
+        video.src = '';
+      }
+      document.getElementById('video-edit-modal').style.display = 'none';
+    };
+
+    window.seekTrimmer = function(delta) {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      var target = Math.max(0, Math.min(video.duration || 0, video.currentTime + delta));
+      video.currentTime = target;
+    };
+
+    window.markTrimStart = function() {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      state.trimStart = video.currentTime;
+      if (state.trimEnd < state.trimStart) {
+        state.trimEnd = video.duration || state.trimStart;
+      }
+      updateTrimmerTimeLabels();
+      showToast('已标记入点: ' + formatTimeSec(state.trimStart));
+    };
+
+    window.markTrimEnd = function() {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      state.trimEnd = video.currentTime;
+      if (state.trimStart > state.trimEnd) {
+        state.trimStart = 0;
+      }
+      updateTrimmerTimeLabels();
+      showToast('已标记出点: ' + formatTimeSec(state.trimEnd));
+    };
+
+    window.addTrimSegment = function() {
+      if (state.trimStart >= state.trimEnd) {
+        showToast('入点时间必须小于出点时间');
+        return;
+      }
+      state.trimSegments.push({
+        start: Math.round(state.trimStart * 100) / 100,
+        end: Math.round(state.trimEnd * 100) / 100
+      });
+      renderTrimSegments();
+      showToast('已添加选段');
+    };
+
+    window.removeTrimSegment = function(idx) {
+      state.trimSegments.splice(idx, 1);
+      renderTrimSegments();
+    };
+
+    function renderTrimSegments() {
+      var listEl = document.getElementById('trimmer-segments-list');
+      if (!listEl) return;
+
+      if (state.trimSegments.length === 0) {
+        listEl.innerHTML = '<span style="font-size:12px; color:var(--text-muted);">暂未添加多片段，默认导出入点至出点范围 (' + formatTimeSec(state.trimStart) + ' - ' + formatTimeSec(state.trimEnd) + ')</span>';
+        return;
+      }
+
+      var html = '';
+      for (var i = 0; i < state.trimSegments.length; i++) {
+        var seg = state.trimSegments[i];
+        html += '<div class="segment-chip" onclick="seekToSegment(' + seg.start + ')">' +
+          '<span>片段 ' + (i + 1) + ': ' + formatTimeSec(seg.start) + ' ~ ' + formatTimeSec(seg.end) + '</span>' +
+          '<span class="chip-remove" onclick="event.stopPropagation(); removeTrimSegment(' + i + ')">✕</span>' +
+          '</div>';
+      }
+      listEl.innerHTML = html;
+    }
+
+    window.seekToSegment = function(startSec) {
+      var video = document.getElementById('trimmer-video');
+      if (video) video.currentTime = startSec;
+    };
+
+    window.toggleTrimSaveMode = function() {
+      var mode = document.getElementById('trim-save-mode').value;
+      var wrap = document.getElementById('trim-filename-wrap');
+      if (wrap) {
+        wrap.style.display = mode === 'saveAs' ? 'flex' : 'none';
+      }
+    };
+
+    window.submitVideoCut = async function() {
+      var mode = document.getElementById('trim-save-mode').value;
+      var cutMode = 'keep';
+      var filename = document.getElementById('trim-filename-input').value.trim();
+
+      if (mode === 'replace') {
+        var ok = await window.showConfirm({
+          title: '覆盖保存确认',
+          message: '确定要覆盖保存原视频文件吗？此操作将直接修改源文件。',
+          confirmText: '覆盖保存',
+          danger: true
+        });
+        if (!ok) return;
+      }
+
+      var segs = state.trimSegments.length > 0 ? state.trimSegments : [{ start: state.trimStart, end: state.trimEnd }];
+      var taskId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+      try {
+        var res = await apiFetch('/api/video-cut', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId: taskId,
+            sourcePath: state.currentTrimPath,
+            segments: segs,
+            cutMode: cutMode,
+            mode: mode,
+            customFilename: filename
+          })
+        });
+
+        if (res.success) {
+          closeVideoEditModal();
+          showTaskProgress(taskId, '正在剪辑视频');
+        } else {
+          showToast(res.error || '剪辑发起失败');
+        }
+      } catch (err) {
+        showToast('请求异常');
+      }
+    };
+
+    // Video Merge Modal
+    window.openBatchMergeModal = function() {
+      var selectedItems = state.items.filter(function(i) { return state.selectedPaths.has(i.path); });
+      var videoItems = selectedItems.filter(function(i) { return getFileCategory(i) === 'video'; });
+
+      if (videoItems.length < 2) {
+        showToast('请至少选择 2 个视频文件进行合并');
+        return;
+      }
+
+      state.mergeVideos = videoItems.map(function(v) { return { path: v.path, name: v.name, size: v.size }; });
+      var firstName = state.mergeVideos[0].name.replace(/\.[^/.]+$/, '');
+      document.getElementById('merge-filename-input').value = firstName + '_merged.mp4';
+      renderMergeList();
+      document.getElementById('video-merge-modal').style.display = 'flex';
+    };
+
+    window.closeVideoMergeModal = function() {
+      document.getElementById('video-merge-modal').style.display = 'none';
+    };
+
+    function renderMergeList() {
+      var container = document.getElementById('merge-video-items');
+      if (!container) return;
+
+      var html = '';
+      for (var i = 0; i < state.mergeVideos.length; i++) {
+        var item = state.mergeVideos[i];
+        html += '<div class="merge-item">' +
+          '<div class="merge-item-title" title="' + escapeHtml(item.name) + '">' + (i + 1) + '. ' + escapeHtml(item.name) + ' (' + formatBytes(item.size) + ')</div>' +
+          '<div class="merge-item-btns">' +
+          '<button class="v-btn v-btn-secondary" style="padding:2px 8px; font-size:11px;" ' + (i === 0 ? 'disabled' : '') + ' onclick="moveMergeItem(' + i + ', -1)">↑</button>' +
+          '<button class="v-btn v-btn-secondary" style="padding:2px 8px; font-size:11px;" ' + (i === state.mergeVideos.length - 1 ? 'disabled' : '') + ' onclick="moveMergeItem(' + i + ', 1)">↓</button>' +
+          '<button class="v-btn v-btn-danger-soft" style="padding:2px 8px; font-size:11px;" ' + (state.mergeVideos.length <= 2 ? 'disabled' : '') + ' onclick="removeMergeItem(' + i + ')">✕</button>' +
+          '</div>' +
+          '</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    window.moveMergeItem = function(idx, dir) {
+      var target = idx + dir;
+      if (target < 0 || target >= state.mergeVideos.length) return;
+      var item = state.mergeVideos.splice(idx, 1)[0];
+      state.mergeVideos.splice(target, 0, item);
+      renderMergeList();
+    };
+
+    window.removeMergeItem = function(idx) {
+      if (state.mergeVideos.length <= 2) return;
+      state.mergeVideos.splice(idx, 1);
+      renderMergeList();
+    };
+
+    window.submitVideoMerge = async function() {
+      if (state.mergeVideos.length < 2) return;
+      var filename = document.getElementById('merge-filename-input').value.trim();
+      var taskId = 'merge_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+      try {
+        var res = await apiFetch('/api/video-merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId: taskId,
+            videoPaths: state.mergeVideos.map(function(v) { return v.path; }),
+            customFilename: filename
+          })
+        });
+
+        if (res.success) {
+          closeVideoMergeModal();
+          clearSelection();
+          showTaskProgress(taskId, '正在合并视频');
+        } else {
+          showToast(res.error || '合并发起失败');
+        }
+      } catch (err) {
+        showToast('请求异常');
+      }
+    };
+
+    // Video Compress Modal
+    window.openVideoCompressModal = function(encodedPath, name) {
+      var filePath = decodeURIComponent(encodedPath);
+      state.compressFilePath = filePath;
+      state.compressFileName = name;
+
+      document.getElementById('compress-modal-title').innerText = '压缩视频: ' + name;
+      var baseWithoutExt = name.replace(/\.[^/.]+$/, '');
+      document.getElementById('compress-filename-input').value = baseWithoutExt + '_compressed.mp4';
+      document.getElementById('compress-mode-select').value = 'saveAs';
+      selectCompressPreset(2000);
+      toggleCompressSaveMode();
+      document.getElementById('video-compress-modal').style.display = 'flex';
+    };
+
+    window.openBatchCompressModal = function() {
+      var selectedItems = state.items.filter(function(i) { return state.selectedPaths.has(i.path); });
+      var videoItems = selectedItems.filter(function(i) { return getFileCategory(i) === 'video'; });
+
+      if (videoItems.length === 0) {
+        showToast('请选择视频文件进行压缩');
+        return;
+      }
+
+      openVideoCompressModal(encodeURIComponent(videoItems[0].path), videoItems[0].name);
+    };
+
+    window.closeVideoCompressModal = function() {
+      document.getElementById('video-compress-modal').style.display = 'none';
+    };
+
+    window.selectCompressPreset = function(kbps) {
+      state.compressBitrate = kbps;
+      var presets = [1000, 2000, 3500];
+      for (var i = 0; i < presets.length; i++) {
+        var p = presets[i];
+        var btn = document.getElementById('preset-' + p);
+        if (btn) {
+          if (p === kbps) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      }
+      var input = document.getElementById('compress-bitrate-input');
+      if (input) input.value = kbps;
+    };
+
+    window.toggleCompressSaveMode = function() {
+      var mode = document.getElementById('compress-mode-select').value;
+      var wrap = document.getElementById('compress-filename-wrap');
+      if (wrap) {
+        wrap.style.display = mode === 'saveAs' ? 'flex' : 'none';
+      }
+    };
+
+    window.submitVideoCompress = async function() {
+      var mode = document.getElementById('compress-mode-select').value;
+      var bitrate = parseInt(document.getElementById('compress-bitrate-input').value, 10) || 2000;
+      var filename = document.getElementById('compress-filename-input').value.trim();
+
+      if (mode === 'replace') {
+        var ok = await window.showConfirm({
+          title: '覆盖保存确认',
+          message: '确定要覆盖保存原视频文件吗？此操作将以压缩后内容替换原文件。',
+          confirmText: '覆盖保存',
+          danger: true
+        });
+        if (!ok) return;
+      }
+
+      var taskId = 'compress_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+      try {
+        var res = await apiFetch('/api/video-compress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId: taskId,
+            filePath: state.compressFilePath,
+            targetBitrateKbps: bitrate,
+            mode: mode,
+            customFilename: filename
+          })
+        });
+
+        if (res.success) {
+          closeVideoCompressModal();
+          clearSelection();
+          showTaskProgress(taskId, '正在压缩视频');
+        } else {
+          showToast(res.error || '压缩发起失败');
+        }
+      } catch (err) {
+        showToast('请求异常');
+      }
+    };
+
+    // Task Progress & SSE Handling
+    window.showTaskProgress = function(taskId, title) {
+      state.currentTaskId = taskId;
+      document.getElementById('task-progress-title').innerText = title || '正在处理';
+      document.getElementById('task-progress-status').innerText = '正在启动任务';
+      document.getElementById('task-progress-percent').innerText = '0%';
+      document.getElementById('task-progress-fill').style.width = '0%';
+      document.getElementById('task-progress-modal').style.display = 'flex';
+
+      if (state.currentEventSource) {
+        state.currentEventSource.close();
+      }
+
+      var sseUrl = '/api/task-progress?taskId=' + encodeURIComponent(taskId) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+      var es = new EventSource(sseUrl);
+      state.currentEventSource = es;
+
+      es.onmessage = function(event) {
+        try {
+          var data = JSON.parse(event.data);
+          if (data.type === 'progress') {
+            var pct = Math.min(100, Math.max(0, Math.round(data.percent || 0)));
+            document.getElementById('task-progress-percent').innerText = pct + '%';
+            document.getElementById('task-progress-fill').style.width = pct + '%';
+            if (data.text) {
+              document.getElementById('task-progress-status').innerText = data.text;
+            }
+          } else if (data.type === 'complete') {
+            es.close();
+            state.currentEventSource = null;
+            document.getElementById('task-progress-modal').style.display = 'none';
+            showToast('处理完成！');
+            loadDirectory(state.currentPath, { preserveScroll: true });
+          } else if (data.type === 'error') {
+            es.close();
+            state.currentEventSource = null;
+            document.getElementById('task-progress-modal').style.display = 'none';
+            showToast('处理失败: ' + (data.error || '未知错误'));
+          } else if (data.type === 'cancelled') {
+            es.close();
+            state.currentEventSource = null;
+            document.getElementById('task-progress-modal').style.display = 'none';
+            showToast('操作已取消');
+          }
+        } catch (e) {
+          // ignore
+        }
+      };
+
+      es.onerror = function() {
+        // SSE error or completed
+      };
+    };
+
+    window.cancelCurrentTask = async function() {
+      if (!state.currentTaskId) return;
+      try {
+        await apiFetch('/api/task-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: state.currentTaskId })
+        });
+        showToast('已请求取消任务');
+      } catch (err) {
+        showToast('取消失败');
       }
     };
 

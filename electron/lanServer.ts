@@ -6,6 +6,14 @@ import crypto from 'crypto';
 import { logger } from './logger';
 import { getLanWebHtml } from './lanWebTemplate';
 import { scanDirectory, resolveAppIconPath } from './utils/fileSystem';
+import {
+  editVideoSegments,
+  mergeVideos,
+  compressVideo,
+  cancelVideoEdit,
+  cancelVideoMerge,
+  cancelVideoCompress
+} from './videoEditor';
 
 export interface LanServerConfig {
   enabled: boolean;
@@ -20,6 +28,15 @@ export interface ResourceInfo {
   path: string;
 }
 
+export interface TaskEvent {
+  type: 'progress' | 'complete' | 'error' | 'cancelled';
+  percent?: number;
+  text?: string;
+  outputPath?: string;
+  newSize?: number;
+  error?: string;
+}
+
 export class LanServer {
   private server: http.Server | null = null;
   private currentPort = 8899;
@@ -28,6 +45,8 @@ export class LanServer {
   private allowEdit = false;
   private validTokens = new Set<string>();
   private getResourcesCallback: () => Promise<ResourceInfo[]> = async () => [];
+  private sseSubscribers = new Map<string, Set<http.ServerResponse>>();
+  private latestTaskEvents = new Map<string, TaskEvent>();
 
   constructor() {}
 
@@ -494,12 +513,248 @@ export class LanServer {
         }
       }
 
+      // Task Progress Event Stream (SSE)
+      if (pathname === '/api/task-progress') {
+        const taskId = urlObj.searchParams.get('taskId');
+        if (!taskId) {
+          return this.sendJson(res, 400, { success: false, error: '缺少 taskId 参数' });
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        });
+
+        if (!this.sseSubscribers.has(taskId)) {
+          this.sseSubscribers.set(taskId, new Set());
+        }
+        const subs = this.sseSubscribers.get(taskId)!;
+        subs.add(res);
+
+        const latest = this.latestTaskEvents.get(taskId);
+        if (latest) {
+          res.write(`data: ${JSON.stringify(latest)}\n\n`);
+        } else {
+          res.write(`data: ${JSON.stringify({ type: 'progress', percent: 0, text: '连接已就绪...' })}\n\n`);
+        }
+
+        const heartbeat = setInterval(() => {
+          try {
+            res.write(': heartbeat\n\n');
+          } catch {
+            clearInterval(heartbeat);
+          }
+        }, 15000);
+
+        req.on('close', () => {
+          clearInterval(heartbeat);
+          subs.delete(res);
+          if (subs.size === 0) {
+            this.sseSubscribers.delete(taskId);
+          }
+        });
+        return;
+      }
+
+      // Video Editing Operations (Protected by allowEdit flag)
+      if (pathname === '/api/video-cut' || pathname === '/api/video-merge' || pathname === '/api/video-compress' || pathname === '/api/task-cancel') {
+        if (!this.allowEdit) {
+          return this.sendJson(res, 403, { success: false, error: '未开启局域网编辑权限，当前为只读模式' });
+        }
+
+        const body = await this.readRequestBody(req);
+        const params = JSON.parse(body || '{}');
+
+        // Cancel video task
+        if (pathname === '/api/task-cancel') {
+          const { taskId } = params;
+          if (!taskId) return this.sendJson(res, 400, { success: false, error: '缺少 taskId 参数' });
+          cancelVideoEdit(taskId);
+          this.broadcastTaskEvent(taskId, { type: 'cancelled' });
+          return this.sendJson(res, 200, { success: true });
+        }
+
+        // Cut video segments
+        if (pathname === '/api/video-cut') {
+          const { taskId, sourcePath, segments, cutMode, mode, customFilename } = params;
+          if (!sourcePath || !Array.isArray(segments) || segments.length === 0) {
+            return this.sendJson(res, 400, { success: false, error: '参数缺失' });
+          }
+          const isAllowed = await this.isPathInAllowedResources(sourcePath);
+          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+
+          const editMode: 'replace' | 'saveAs' = mode === 'replace' ? 'replace' : 'saveAs';
+          let targetPath = sourcePath;
+
+          if (editMode === 'saveAs') {
+            const dir = path.dirname(sourcePath);
+            const ext = path.extname(sourcePath) || '.mp4';
+            const baseName = path.basename(sourcePath, ext);
+            const fileName = (customFilename || '').trim() || `${baseName}_cut${ext}`;
+            targetPath = path.join(dir, fileName);
+            const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
+            if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+          }
+
+          const effectiveTaskId = taskId || `cut_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
+
+          // Async run background processing
+          editVideoSegments(
+            {
+              taskId: effectiveTaskId,
+              sourcePath,
+              segments,
+              cutMode: cutMode || 'keep',
+              mode: editMode,
+              outputPath: editMode === 'saveAs' ? targetPath : undefined
+            },
+            (percent, text) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
+            }
+          )
+            .then((result) => {
+              if (result.success) {
+                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
+              } else {
+                if (result.error === '操作已取消') {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
+                } else {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
+                }
+              }
+            })
+            .catch((err: any) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频剪辑异常' });
+            });
+          return;
+        }
+
+        // Merge multiple videos
+        if (pathname === '/api/video-merge') {
+          const { taskId, videoPaths, customFilename } = params;
+          if (!Array.isArray(videoPaths) || videoPaths.length < 2) {
+            return this.sendJson(res, 400, { success: false, error: '至少需要 2 个视频文件进行合并' });
+          }
+          for (const vp of videoPaths) {
+            const isAllowed = await this.isPathInAllowedResources(vp);
+            if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+          }
+
+          const dir = path.dirname(videoPaths[0]);
+          const fileName = (customFilename || '').trim() || `velora_merge_${Date.now()}.mp4`;
+          const targetPath = path.join(dir, fileName);
+          const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
+          if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+
+          const effectiveTaskId = taskId || `merge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
+
+          mergeVideos(
+            {
+              taskId: effectiveTaskId,
+              videoPaths,
+              outputPath: targetPath
+            },
+            (percent, text) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
+            }
+          )
+            .then((result) => {
+              if (result.success) {
+                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
+              } else {
+                if (result.error === '操作已取消') {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
+                } else {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
+                }
+              }
+            })
+            .catch((err: any) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频合并异常' });
+            });
+          return;
+        }
+
+        // Compress video
+        if (pathname === '/api/video-compress') {
+          const { taskId, filePath, targetBitrateKbps, mode, customFilename } = params;
+          if (!filePath || !targetBitrateKbps) {
+            return this.sendJson(res, 400, { success: false, error: '参数缺失' });
+          }
+          const isAllowed = await this.isPathInAllowedResources(filePath);
+          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+
+          const compressMode: 'replace' | 'saveAs' = mode === 'replace' ? 'replace' : 'saveAs';
+          let targetPath = filePath;
+
+          if (compressMode === 'saveAs') {
+            const dir = path.dirname(filePath);
+            const ext = path.extname(filePath) || '.mp4';
+            const baseName = path.basename(filePath, ext);
+            const fileName = (customFilename || '').trim() || `${baseName}_compressed${ext}`;
+            targetPath = path.join(dir, fileName);
+            const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
+            if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+          }
+
+          const effectiveTaskId = taskId || `compress_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
+
+          compressVideo(
+            {
+              taskId: effectiveTaskId,
+              filePath,
+              targetBitrateKbps: Number(targetBitrateKbps) || 2000,
+              outputPath: compressMode === 'saveAs' ? targetPath : undefined,
+              mode: compressMode
+            },
+            (percent, text) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
+            }
+          )
+            .then((result) => {
+              if (result.success) {
+                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath, newSize: result.newSize });
+              } else {
+                if (result.error === '操作已取消') {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
+                } else {
+                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
+                }
+              }
+            })
+            .catch((err: any) => {
+              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频压缩异常' });
+            });
+          return;
+        }
+      }
+
       res.writeHead(404);
       res.end('Not Found');
     } catch (err: any) {
       logger.error('LanServer', `Request handle error: ${err.message}`);
       res.writeHead(500);
       res.end('Internal Server Error');
+    }
+  }
+
+  private broadcastTaskEvent(taskId: string, event: TaskEvent): void {
+    this.latestTaskEvents.set(taskId, event);
+    const subscribers = this.sseSubscribers.get(taskId);
+    if (subscribers && subscribers.size > 0) {
+      const dataStr = `data: ${JSON.stringify(event)}\n\n`;
+      for (const clientRes of subscribers) {
+        try {
+          clientRes.write(dataStr);
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 

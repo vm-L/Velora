@@ -207,7 +207,7 @@ export async function editVideoSegments(
     if (cleanSegments.length === 1) {
       const seg = cleanSegments[0]
       const segDuration = seg.end - seg.start
-      onProgress?.(10, '正在截取视频片段...')
+      onProgress?.(10, '正在截取视频片段')
 
       // 优先快速流复制模式
       const copyArgs = [
@@ -223,7 +223,7 @@ export async function editVideoSegments(
 
       let result = await runFfmpegCommand(taskId, copyArgs, (sec) => {
         const pct = Math.min(95, Math.round(10 + (sec / (segDuration || 1)) * 80))
-        onProgress?.(pct, '正在截取视频片段...')
+        onProgress?.(pct, '正在截取视频片段')
       })
 
       // 若流复制失败则自动降级为 GPU 优先硬件加速重新编码
@@ -260,7 +260,7 @@ export async function editVideoSegments(
 
           result = await runFfmpegCommand(taskId, encodeArgs, (sec) => {
             const pct = Math.min(95, Math.round(10 + (sec / (segDuration || 1)) * 80))
-            onProgress?.(pct, `正在重新编码剪辑视频 (${isGpu ? 'GPU加速' : 'CPU'})...`)
+            onProgress?.(pct, `正在重新编码剪辑视频 (${isGpu ? 'GPU加速' : 'CPU'})`)
           })
 
           if (result.success && fs.existsSync(tempOutputFile) && fs.statSync(tempOutputFile).size > 0) {
@@ -289,7 +289,7 @@ export async function editVideoSegments(
 
         const startPct = Math.round(10 + (i / cleanSegments.length) * 60)
         const endPct = Math.round(10 + ((i + 1) / cleanSegments.length) * 60)
-        onProgress?.(startPct, `正在截取片段 ${i + 1}/${cleanSegments.length}...`)
+        onProgress?.(startPct, `正在截取片段 ${i + 1}/${cleanSegments.length}`)
 
         // 先尝试流复制切片
         let segArgs = [
@@ -305,7 +305,7 @@ export async function editVideoSegments(
 
         let segRes = await runFfmpegCommand(taskId, segArgs, (sec) => {
           const currentPct = Math.min(endPct, Math.round(startPct + (sec / (segDuration || 1)) * (endPct - startPct)))
-          onProgress?.(currentPct, `正在截取片段 ${i + 1}/${cleanSegments.length}...`)
+          onProgress?.(currentPct, `正在截取片段 ${i + 1}/${cleanSegments.length}`)
         })
 
         if (!segRes.success || !fs.existsSync(segFile) || fs.statSync(segFile).size === 0) {
@@ -349,7 +349,7 @@ export async function editVideoSegments(
         }
       }
 
-      onProgress?.(75, '正在合并多个片段...')
+      onProgress?.(75, '正在合并多个片段')
 
       // 生成 concat 描述文件
       const concatListFile = path.join(tmpDir, `velora_edit_${Date.now()}_concat.txt`)
@@ -373,7 +373,7 @@ export async function editVideoSegments(
 
       let concatRes = await runFfmpegCommand(taskId, concatArgs, (sec) => {
         const pct = Math.min(95, Math.round(75 + (sec / (totalSegmentDuration || 1)) * 20))
-        onProgress?.(pct, '正在合并所有片段...')
+        onProgress?.(pct, '正在合并所有片段')
       })
 
       if (!concatRes.success || !fs.existsSync(tempOutputFile) || fs.statSync(tempOutputFile).size === 0) {
@@ -422,7 +422,7 @@ export async function editVideoSegments(
       return { success: false, error: '生成剪辑文件失败，文件大小为 0' }
     }
 
-    onProgress?.(98, mode === 'replace' ? '正在覆盖保存原文件...' : '正在写入目标文件...')
+    onProgress?.(98, mode === 'replace' ? '正在覆盖保存原文件' : '正在写入目标文件')
 
     let finalTargetPath = sourcePath
     if (mode === 'saveAs' && outputPath) {
@@ -661,7 +661,7 @@ async function executeFilterComplexMerge(
       } else {
         pct = Math.min(90, Math.max(10, Math.round(10 + sec * 2)))
       }
-      onProgress?.(pct, `正在智能转码合并 (${isGpu ? 'GPU加速' : 'CPU'})...`)
+      onProgress?.(pct, `正在智能转码合并 (${isGpu ? 'GPU加速' : 'CPU'})`)
     })
 
     if (result.success && fs.existsSync(tempOutputFile) && fs.statSync(tempOutputFile).size > 0) {
@@ -702,7 +702,7 @@ export async function mergeVideos(
   const tempFilesToClean: string[] = [tempOutputFile, concatListFile]
 
   try {
-    onProgress?.(2, '正在分析视频时长与元数据...')
+    onProgress?.(2, '正在分析视频时长与元数据')
 
     const videoInfos: ProbeResult[] = []
     let totalDuration = 0
@@ -746,7 +746,7 @@ export async function mergeVideos(
       .join('\n')
     fs.writeFileSync(concatListFile, concatContent, 'utf-8')
 
-    onProgress?.(5, '正在合并视频...')
+    onProgress?.(5, '正在合并视频')
 
     // 1. 尝试快速无损流复制合并 (-c copy)
     const copyArgs = [
@@ -767,7 +767,7 @@ export async function mergeVideos(
       } else {
         pct = Math.min(90, Math.max(5, Math.round(5 + sec * 5)))
       }
-      onProgress?.(pct, '正在合并视频...')
+      onProgress?.(pct, '正在合并视频')
     })
 
     // 严密校验流复制产物的时长是否准确（防止 DTS/PTS 漂移导致尾部产生大量不可播放空白）
@@ -791,7 +791,7 @@ export async function mergeVideos(
         try { fs.unlinkSync(tempOutputFile) } catch {}
       }
 
-      onProgress?.(10, '正在智能转码合并 (保证精准时长与声画同步)...')
+      onProgress?.(10, '正在智能转码合并 (保证精准时长与声画同步)')
 
       const filterResult = await executeFilterComplexMerge(
         taskId,
@@ -818,7 +818,7 @@ export async function mergeVideos(
       return { success: false, error: '生成合并文件失败，文件大小为 0' }
     }
 
-    onProgress?.(98, '正在写入目标文件...')
+    onProgress?.(98, '正在写入目标文件')
 
     const outDir = path.dirname(outputPath)
     if (!fs.existsSync(outDir)) {
@@ -854,3 +854,138 @@ export async function mergeVideos(
     }
   }
 }
+
+export interface CompressVideoParams {
+  taskId: string
+  filePath: string
+  targetBitrateKbps: number
+  outputPath?: string
+  mode?: 'replace' | 'saveAs'
+}
+
+export const cancelVideoCompress = cancelVideoEdit
+
+/**
+ * 视频单片/目标码率压缩处理函数 (支持 GPU 硬件加速优先与 CPU 自动回退)
+ */
+export async function compressVideo(
+  params: CompressVideoParams,
+  onProgress?: (percent: number, text: string) => void
+): Promise<{ success: boolean; outputPath?: string; newSize?: number; error?: string }> {
+  const { taskId, filePath, targetBitrateKbps, outputPath, mode = 'saveAs' } = params
+
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { success: false, error: '源视频文件不存在' }
+  }
+
+  const tmpDir = getTempDir()
+  const outExt = path.extname(filePath) || '.mp4'
+  const tempOutputFile = path.join(tmpDir, `velora_compress_${Date.now()}_out${outExt}`)
+  const tempFilesToClean: string[] = [tempOutputFile]
+
+  let origStats: fs.Stats | null = null
+  try {
+    origStats = fs.statSync(filePath)
+  } catch {}
+
+  try {
+    onProgress?.(3, '正在分析视频时长与元数据')
+
+    const info = await probeVideo(filePath)
+    const duration = info.duration || 1
+
+    if (cancelledTasks.has(taskId)) {
+      return { success: false, error: '操作已取消' }
+    }
+
+    const encoders = await getAvailableEncoders()
+    let compressSuccess = false
+    let lastError = ''
+
+    for (const encoder of encoders) {
+      if (cancelledTasks.has(taskId)) {
+        return { success: false, error: '操作已取消' }
+      }
+      if (fs.existsSync(tempOutputFile)) {
+        try { fs.unlinkSync(tempOutputFile) } catch {}
+      }
+
+      const encArgs = getEncoderArgs(encoder, { mode: 'bitrate', bitrateKbps: targetBitrateKbps })
+      const args = [
+        '-y',
+        '-progress', 'pipe:1',
+        '-i', filePath,
+        ...encArgs,
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        tempOutputFile
+      ]
+
+      const isGpu = isGpuEncoder(encoder)
+      logger.info('VideoEditor', `压缩视频任务 [${taskId}] 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}) [目标码率: ${targetBitrateKbps}kbps]`)
+
+      const result = await runFfmpegCommand(taskId, args, (sec) => {
+        const pct = Math.min(95, Math.max(5, Math.round(5 + (sec / duration) * 90)))
+        onProgress?.(pct, `正在压缩视频 (${isGpu ? 'GPU加速' : 'CPU'})`)
+      })
+
+      if (result.success && fs.existsSync(tempOutputFile) && fs.statSync(tempOutputFile).size > 0) {
+        compressSuccess = true
+        break
+      } else {
+        lastError = result.error || result.stderr || ''
+        logger.warn('VideoEditor', `编码器 [${encoder}] 压缩失败: ${lastError}，尝试下一个可用编码器`)
+      }
+    }
+
+    if (!compressSuccess) {
+      if (cancelledTasks.has(taskId)) {
+        return { success: false, error: '操作已取消' }
+      }
+      return { success: false, error: `视频压缩失败: ${lastError}` }
+    }
+
+    const newSize = fs.statSync(tempOutputFile).size
+    if (newSize === 0) {
+      return { success: false, error: '压缩产物大小为 0' }
+    }
+
+    onProgress?.(98, mode === 'replace' ? '正在覆盖保存原文件' : '正在写入目标文件')
+
+    let finalTargetPath = filePath
+    if (mode === 'saveAs' && outputPath) {
+      finalTargetPath = outputPath
+      const outDir = path.dirname(outputPath)
+      if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true })
+      }
+      fs.copyFileSync(tempOutputFile, outputPath)
+    } else {
+      fs.copyFileSync(tempOutputFile, filePath)
+      if (origStats) {
+        try {
+          fs.utimesSync(filePath, origStats.atime, origStats.mtime)
+        } catch {}
+      }
+    }
+
+    onProgress?.(100, '压缩完成！')
+    return { success: true, outputPath: finalTargetPath, newSize }
+  } catch (err: any) {
+    logger.error('VideoEditor', `视频压缩异常: ${err.message}`)
+    return { success: false, error: err.message || '未知压缩错误' }
+  } finally {
+    cancelledTasks.delete(taskId)
+    for (const file of tempFilesToClean) {
+      if (fs.existsSync(file)) {
+        try {
+          fs.unlinkSync(file)
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+

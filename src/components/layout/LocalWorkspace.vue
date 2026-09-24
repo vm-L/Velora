@@ -1070,7 +1070,7 @@ const handleConfirmMove = async (targetDir: string) => {
       showMessage(`移动失败: ${err?.message}`, 'error');
     }
   } else {
-    const msgId = showMessage('正在移动选中的项目...', 'loading', 0);
+    const msgId = showMessage('正在移动选中的项目', 'loading', 0);
     let successCount = 0;
     let failCount = 0;
     for (const item of targetItems) {
