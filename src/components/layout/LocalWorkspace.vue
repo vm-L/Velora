@@ -71,7 +71,24 @@
     </div>
 
     <!-- Main Content Area: Grid View -->
-    <div class="workspace-body" @click="handleBodyClick" @contextmenu.prevent="onBodyContextMenu">
+    <div
+      ref="workspaceBodyRef"
+      class="workspace-body"
+      @mousedown="handleWorkspaceMouseDown"
+      @contextmenu.prevent="onBodyContextMenu"
+    >
+      <!-- Marquee Selection Box -->
+      <div
+        v-if="marqueeState.visible"
+        class="marquee-selection-box"
+        :style="{
+          left: `${marqueeState.left}px`,
+          top: `${marqueeState.top}px`,
+          width: `${marqueeState.width}px`,
+          height: `${marqueeState.height}px`
+        }"
+      ></div>
+
       <!-- Loading State -->
       <div v-if="loading" class="state-container">
         <div class="spinner"></div>
@@ -162,9 +179,19 @@
           @mousedown.stop
           @contextmenu.stop
         >
-          <!-- Multi-Selection Context Menu: Only Delete and Video Compress -->
+          <!-- Multi-Selection Context Menu: Delete, Video Compress and Video Merge -->
           <template v-if="selectedPaths.size > 1">
             <div
+              v-if="isAllSelectedVideos && selectedItems.length >= 2"
+              class="menu-action-item"
+              @click="openMergeVideoModal"
+            >
+              <VIcon name="merge" :size="14" />
+              <span>合并视频</span>
+            </div>
+
+            <div
+              v-if="isAllSelectedVideos"
               class="menu-action-item"
               @click="openBatchCompressModal"
             >
@@ -172,11 +199,16 @@
               <span>压缩视频</span>
             </div>
 
-            <div class="menu-divider"></div>
+            <div v-if="isAllSelectedVideos" class="menu-divider"></div>
+
+            <div class="menu-action-item" @click="openBatchMoveModal">
+              <VIcon name="folder-move" :size="14" />
+              <span>移动</span>
+            </div>
 
             <div class="menu-action-item danger" @click="handleBatchDelete">
               <VIcon name="trash" :size="14" />
-              <span>删除 ({{ selectedPaths.size }} 项)</span>
+              <span>删除</span>
             </div>
           </template>
 
@@ -314,8 +346,7 @@
     <MoveLocalFileDialog
       v-model:visible="moveDialog.visible"
       :rootPath="resourcePath"
-      :currentFilePath="moveDialog.item?.path || ''"
-      :fileName="moveDialog.item?.name || ''"
+      :items="moveDialog.items"
       @confirm="handleConfirmMove"
     />
 
@@ -359,6 +390,14 @@
       :tasks="batchCompressTasks"
       @confirm="handleConfirmBatchCompress"
     />
+
+    <!-- Merge Video Modal (Multi) -->
+    <MergeVideoDialog
+      v-model:visible="isMergeVideoDialogVisible"
+      :initial-videos="mergeVideosList"
+      :current-directory="currentPath"
+      @success="handleMergeSuccess"
+    />
   </div>
 </template>
 
@@ -374,6 +413,7 @@ import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
 import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
 import CompressVideoDialog from '@/components/features/CompressVideoDialog.vue';
 import BatchCompressVideoDialog from '@/components/features/BatchCompressVideoDialog.vue';
+import MergeVideoDialog, { MergeVideoItem } from '@/components/features/MergeVideoDialog.vue';
 import { useMessage } from '@/composables/useMessage';
 import { useConfirm } from '@/composables/useConfirm';
 import { logger } from '@/services/logger';
@@ -425,9 +465,9 @@ const renameModal = ref<{ visible: boolean; item: LocalFileItem | null; newName:
   newName: ''
 });
 
-const moveDialog = ref<{ visible: boolean; item: LocalFileItem | null }>({
+const moveDialog = ref<{ visible: boolean; items: LocalFileItem[] }>({
   visible: false,
-  item: null
+  items: []
 });
 
 const compressModal = ref<{ visible: boolean; task: any }>({
@@ -437,6 +477,25 @@ const compressModal = ref<{ visible: boolean; task: any }>({
 
 const isBatchCompressDialogVisible = ref<boolean>(false);
 const batchCompressTasks = ref<Array<{ id: string; name: string; savePath: string; totalBytes: number }>>([]);
+
+const isMergeVideoDialogVisible = ref<boolean>(false);
+const mergeVideosList = ref<MergeVideoItem[]>([]);
+
+// Marquee Selection state
+const workspaceBodyRef = ref<HTMLElement | null>(null);
+const marqueeState = ref<{
+  visible: boolean;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}>({
+  visible: false,
+  left: 0,
+  top: 0,
+  width: 0,
+  height: 0
+});
 
 // Context menu state
 const contextMenu = ref<{
@@ -530,6 +589,13 @@ onUnmounted(() => {
   window.removeEventListener('blur', closeContextMenu);
   window.removeEventListener('resize', closeContextMenu);
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('mousemove', handleWindowMouseMove);
+  window.removeEventListener('mouseup', handleWindowMouseUp);
+  if (autoScrollRafId !== null) {
+    cancelAnimationFrame(autoScrollRafId);
+    autoScrollRafId = null;
+  }
+  document.body.style.userSelect = '';
   closeContextMenu();
 });
 
@@ -612,6 +678,11 @@ const selectedItems = computed(() => {
   return items.value.filter(item => selectedPaths.value.has(item.path));
 });
 
+const isAllSelectedVideos = computed(() => {
+  if (selectedItems.value.length === 0) return false;
+  return selectedItems.value.every(item => !item.isDirectory && getFileCategory(item) === 'video');
+});
+
 const singleSelectedItem = computed(() => {
   return selectedItems.value.length === 1 ? selectedItems.value[0] : null;
 });
@@ -689,9 +760,202 @@ const onItemContextMenu = (e: MouseEvent, item: LocalFileItem, index: number) =>
   };
 };
 
-const handleBodyClick = () => {
-  selectedPaths.value.clear();
-  lastSelectedIndex.value = -1;
+// Marquee Selection Logic
+let isSelecting = false;
+let startClientX = 0;
+let startClientY = 0;
+let startContentX = 0;
+let startContentY = 0;
+let isCtrlSelection = false;
+let isShiftSelection = false;
+let initialSelectedPaths = new Set<string>();
+let cachedCardRects: Array<{ path: string; left: number; top: number; right: number; bottom: number }> = [];
+let autoScrollRafId: number | null = null;
+let currentClientX = 0;
+let currentClientY = 0;
+
+const updateMarqueeAndSelection = () => {
+  const container = workspaceBodyRef.value;
+  if (!container) return;
+
+  const containerRect = container.getBoundingClientRect();
+  const curContentX = currentClientX - containerRect.left + container.scrollLeft;
+  const curContentY = currentClientY - containerRect.top + container.scrollTop;
+
+  const boxLeft = Math.min(startContentX, curContentX);
+  const boxTop = Math.min(startContentY, curContentY);
+  const boxRight = Math.max(startContentX, curContentX);
+  const boxBottom = Math.max(startContentY, curContentY);
+  const boxWidth = Math.max(0, boxRight - boxLeft);
+  const boxHeight = Math.max(0, boxBottom - boxTop);
+
+  marqueeState.value = {
+    visible: true,
+    left: boxLeft,
+    top: boxTop,
+    width: boxWidth,
+    height: boxHeight
+  };
+
+  // Intersect collision detection (相交即选中)
+  const intersected = new Set<string>();
+  for (const card of cachedCardRects) {
+    const isIntersect = !(
+      card.right < boxLeft ||
+      card.left > boxRight ||
+      card.bottom < boxTop ||
+      card.top > boxBottom
+    );
+    if (isIntersect) {
+      intersected.add(card.path);
+    }
+  }
+
+  // Apply selection according to modifier keys
+  if (isShiftSelection) {
+    // Union / 累加
+    const newSet = new Set(initialSelectedPaths);
+    intersected.forEach(p => newSet.add(p));
+    selectedPaths.value = newSet;
+  } else if (isCtrlSelection) {
+    // Toggle / 增减选
+    const newSet = new Set(initialSelectedPaths);
+    for (const p of intersected) {
+      if (initialSelectedPaths.has(p)) {
+        newSet.delete(p);
+      } else {
+        newSet.add(p);
+      }
+    }
+    selectedPaths.value = newSet;
+  } else {
+    // Replace / 覆盖选中
+    selectedPaths.value = new Set(intersected);
+  }
+};
+
+const processAutoScroll = () => {
+  if (!isSelecting) return;
+  const container = workspaceBodyRef.value;
+  if (!container) return;
+
+  const containerRect = container.getBoundingClientRect();
+  const edgeZone = 36;
+  const maxSpeed = 16;
+
+  const distTop = currentClientY - containerRect.top;
+  const distBottom = containerRect.bottom - currentClientY;
+
+  let scrolled = false;
+
+  if (distTop < edgeZone && distTop >= -40) {
+    const ratio = Math.max(0, 1 - Math.max(0, distTop) / edgeZone);
+    const speed = Math.max(3, Math.round(maxSpeed * ratio));
+    container.scrollTop -= speed;
+    scrolled = true;
+  } else if (distBottom < edgeZone && distBottom >= -40) {
+    const ratio = Math.max(0, 1 - Math.max(0, distBottom) / edgeZone);
+    const speed = Math.max(3, Math.round(maxSpeed * ratio));
+    container.scrollTop += speed;
+    scrolled = true;
+  }
+
+  if (scrolled) {
+    updateMarqueeAndSelection();
+  }
+
+  autoScrollRafId = requestAnimationFrame(processAutoScroll);
+};
+
+const handleWindowMouseMove = (e: MouseEvent) => {
+  currentClientX = e.clientX;
+  currentClientY = e.clientY;
+
+  if (!isSelecting) {
+    const dist = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
+    if (dist >= 4) {
+      isSelecting = true;
+      document.body.style.userSelect = 'none';
+      autoScrollRafId = requestAnimationFrame(processAutoScroll);
+    }
+  }
+
+  if (isSelecting) {
+    updateMarqueeAndSelection();
+  }
+};
+
+const handleWindowMouseUp = (_e: MouseEvent) => {
+  window.removeEventListener('mousemove', handleWindowMouseMove);
+  window.removeEventListener('mouseup', handleWindowMouseUp);
+
+  if (autoScrollRafId !== null) {
+    cancelAnimationFrame(autoScrollRafId);
+    autoScrollRafId = null;
+  }
+
+  document.body.style.userSelect = '';
+
+  if (!isSelecting) {
+    // 单击空白区域：清空选择
+    if (!isCtrlSelection && !isShiftSelection) {
+      selectedPaths.value.clear();
+      lastSelectedIndex.value = -1;
+    }
+  }
+
+  isSelecting = false;
+  marqueeState.value.visible = false;
+};
+
+const handleWorkspaceMouseDown = (e: MouseEvent) => {
+  if (e.button !== 0) return;
+
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('.file-card, button, input, select, .nav-btn, .action-btn, .modal-overlay, .context-menu, .context-menu-backdrop')) {
+    return;
+  }
+
+  const container = workspaceBodyRef.value;
+  if (!container) return;
+
+  closeContextMenu();
+
+  const containerRect = container.getBoundingClientRect();
+  startClientX = e.clientX;
+  startClientY = e.clientY;
+  currentClientX = e.clientX;
+  currentClientY = e.clientY;
+
+  startContentX = e.clientX - containerRect.left + container.scrollLeft;
+  startContentY = e.clientY - containerRect.top + container.scrollTop;
+
+  isCtrlSelection = e.ctrlKey || e.metaKey;
+  isShiftSelection = e.shiftKey;
+  initialSelectedPaths = new Set(selectedPaths.value);
+
+  const cardEls = container.querySelectorAll<HTMLElement>('.file-card');
+  cachedCardRects = [];
+  cardEls.forEach((el, idx) => {
+    const item = filteredItems.value[idx];
+    if (item) {
+      const elRect = el.getBoundingClientRect();
+      const left = elRect.left - containerRect.left + container.scrollLeft;
+      const top = elRect.top - containerRect.top + container.scrollTop;
+      cachedCardRects.push({
+        path: item.path,
+        left,
+        top,
+        right: left + elRect.width,
+        bottom: top + elRect.height
+      });
+    }
+  });
+
+  isSelecting = false;
+
+  window.addEventListener('mousemove', handleWindowMouseMove);
+  window.addEventListener('mouseup', handleWindowMouseUp);
 };
 
 const onBodyContextMenu = (e: MouseEvent) => {
@@ -772,25 +1036,66 @@ const openMoveModal = (item: LocalFileItem) => {
   closeContextMenu();
   moveDialog.value = {
     visible: true,
-    item
+    items: [item]
+  };
+};
+
+const openBatchMoveModal = () => {
+  closeContextMenu();
+  if (selectedItems.value.length === 0) return;
+  moveDialog.value = {
+    visible: true,
+    items: [...selectedItems.value]
   };
 };
 
 const handleConfirmMove = async (targetDir: string) => {
-  const item = moveDialog.value.item;
-  if (!item || !targetDir || !window.electronAPI) return;
+  const targetItems = moveDialog.value.items;
+  if (!targetItems || targetItems.length === 0 || !targetDir || !window.electronAPI) return;
 
-  const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
-  try {
-    const res = await window.electronAPI.moveFile(item.path, newPath);
-    if (res && res.success) {
-      showMessage(`已将 "${item.name}" 移动至目标目录`, 'success');
-      await loadDirectory(currentPath.value);
-    } else {
-      showMessage(res?.error || '移动文件失败', 'error');
+  const count = targetItems.length;
+  if (count === 1) {
+    const item = targetItems[0];
+    const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
+    try {
+      const res = await window.electronAPI.moveFile(item.path, newPath);
+      if (res && res.success) {
+        showMessage(`已将 "${item.name}" 移动至目标目录`, 'success');
+        selectedPaths.value.delete(item.path);
+        await loadDirectory(currentPath.value);
+      } else {
+        showMessage(res?.error || '移动失败', 'error');
+      }
+    } catch (err: any) {
+      showMessage(`移动失败: ${err?.message}`, 'error');
     }
-  } catch (err: any) {
-    showMessage(`移动失败: ${err?.message}`, 'error');
+  } else {
+    const msgId = showMessage('正在移动选中的项目...', 'loading', 0);
+    let successCount = 0;
+    let failCount = 0;
+    for (const item of targetItems) {
+      const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
+      try {
+        const res = await window.electronAPI.moveFile(item.path, newPath);
+        if (res && res.success) {
+          successCount++;
+        } else {
+          failCount++;
+          logger.error('LocalWorkspace', `[BatchMove] 移动失败 "${item.name}": ${res?.error}`);
+        }
+      } catch (err: any) {
+        failCount++;
+        logger.error('LocalWorkspace', `[BatchMove] 移动异常 "${item.name}": ${err?.message}`);
+      }
+    }
+    removeMessage(msgId);
+    if (failCount === 0) {
+      showMessage('已成功移动选中的项目', 'success');
+    } else {
+      showMessage('移动完成，部分项目未能成功移动', 'warning');
+    }
+    selectedPaths.value = new Set();
+    await loadDirectory(currentPath.value);
   }
 };
 
@@ -848,6 +1153,36 @@ const handleCompressDirectory = async (item: LocalFileItem) => {
   }
 };
 
+// Merge Videos (Multi-selection)
+const openMergeVideoModal = async () => {
+  closeContextMenu();
+  if (!window.electronAPI || selectedPaths.value.size === 0) return;
+  const msgId = showMessage('正在扫描所选项目中的视频文件', 'loading', 0);
+  try {
+    const paths = Array.from(selectedPaths.value);
+    const res = await window.electronAPI.scanLocalVideos(paths);
+    if (res && res.success && res.videos && res.videos.length >= 2) {
+      removeMessage(msgId);
+      mergeVideosList.value = res.videos.map(v => ({
+        name: v.name,
+        path: v.path,
+        size: v.size
+      }));
+      isMergeVideoDialogVisible.value = true;
+    } else if (res && res.success && res.videos && res.videos.length === 1) {
+      showMessage('请至少选择 2 个视频文件进行合并', 'warning', 2500, undefined, msgId);
+    } else {
+      showMessage('所选项目中未发现足够的视频文件进行合并', 'warning', 2500, undefined, msgId);
+    }
+  } catch (err: any) {
+    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
+  }
+};
+
+const handleMergeSuccess = async (_outputPath: string) => {
+  await loadDirectory(currentPath.value);
+};
+
 // Batch Compress (Multi-selection: files and directories)
 const openBatchCompressModal = async () => {
   closeContextMenu();
@@ -875,8 +1210,7 @@ const openBatchCompressModal = async () => {
 
 const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbps }: { tasks: any[]; targetBitrateKbps: number }) => {
   if (targetTasks.length === 0 || !window.electronAPI) return;
-  const count = targetTasks.length;
-  showMessage(`已将 ${count} 个视频加入压缩处理队列`, 'info');
+  showMessage('已将选中的视频加入压缩处理队列', 'info');
   for (const t of targetTasks) {
     window.electronAPI.compressVideoTask(t.id, t.savePath, targetBitrateKbps).catch((err: any) => {
       logger.error('LocalWorkspace', `[BatchCompress] 异常: ${err?.message}`);
@@ -919,7 +1253,7 @@ const handleBatchDelete = async () => {
 
   const confirmed = await confirm({
     title: '批量删除',
-    message: `确定要永久删除选中的 ${count} 个文件/文件夹吗？此操作不可恢复。`,
+    message: '确定要永久删除选中的文件和文件夹吗？此操作不可恢复。',
     confirmText: '彻底删除',
     cancelText: '取消',
     type: 'danger'
@@ -935,7 +1269,7 @@ const handleBatchDelete = async () => {
       logger.error('LocalWorkspace', `[BatchDelete] 删除失败: ${p}`);
     }
   }
-  showMessage(`已成功删除 ${successCount} 项`, 'success');
+  showMessage('已成功删除选中项', 'success');
   selectedPaths.value = new Set();
   await loadDirectory(currentPath.value);
 };
@@ -1124,6 +1458,16 @@ const formatTime = (ts: number): string => {
   overflow-y: auto;
   padding: 16px;
   position: relative;
+
+  .marquee-selection-box {
+    position: absolute;
+    background: rgba(59, 130, 246, 0.16);
+    border: 1px solid var(--color-accent, #3b82f6);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 50;
+    transition: none;
+  }
 }
 
 .state-container {

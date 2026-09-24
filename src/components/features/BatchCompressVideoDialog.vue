@@ -43,7 +43,7 @@
         <div class="modal-footer">
           <v-button variant="secondary" size="small" @click="close">取消</v-button>
           <v-button variant="primary" size="small" @click="handleConfirm" :disabled="targetBitrateKbps <= 0">
-            开始压缩 ({{ tasks.length }}项)
+            开始压缩
           </v-button>
         </div>
       </div>

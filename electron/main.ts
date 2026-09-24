@@ -35,7 +35,7 @@ app.setPath('sessionData', path.join(localDataPath, 'session'));
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
 import { logger } from './logger'
-import { editVideoSegments, cancelVideoEdit, EditVideoParams } from './videoEditor'
+import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams } from './videoEditor'
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -956,6 +956,19 @@ ipcMain.handle('edit-video-segments', async (event, params: EditVideoParams) => 
 
 ipcMain.handle('cancel-video-edit', async (_event, taskId: string) => {
   return cancelVideoEdit(taskId);
+});
+
+ipcMain.handle('merge-videos', async (event, params: MergeVideosParams) => {
+  const sender = event.sender;
+  return await mergeVideos(params, (percent, text) => {
+    if (!sender.isDestroyed()) {
+      sender.send(`video-merge-progress-${params.taskId}`, { percent, text });
+    }
+  });
+});
+
+ipcMain.handle('cancel-video-merge', async (_event, taskId: string) => {
+  return cancelVideoMerge(taskId);
 });
 
 ipcMain.handle('show-save-dialog', async (event, options: { defaultPath?: string; title?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {

@@ -4,8 +4,8 @@
       <div class="modal-content move-dialog-content">
         <div class="modal-header">
           <div class="header-left">
-            <VIcon name="folder" :size="18" />
-            <h3>移动 "{{ fileName }}"</h3>
+            <VIcon name="folder-move" :size="18" />
+            <h3>{{ computedTitle }}</h3>
           </div>
           <v-button variant="icon" class="modal-close-btn" @click="close">
             <VIcon name="close" :size="18" />
@@ -49,7 +49,7 @@
 
         <div class="modal-footer">
           <v-button variant="secondary" @click="close">取消</v-button>
-          <v-button variant="primary" :disabled="!selectedDirPath || isCurrentLocation" @click="confirmMove">
+          <v-button variant="primary" :disabled="!selectedDirPath || isInvalidTarget" @click="confirmMove">
             确认移动
           </v-button>
         </div>
@@ -87,6 +87,12 @@ import VInput from '@/components/base/VInput.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import { useMessage } from '@/composables/useMessage';
 
+export interface MoveTargetItem {
+  name: string;
+  path: string;
+  isDirectory?: boolean;
+}
+
 interface DirNode {
   path: string;
   name: string;
@@ -96,8 +102,9 @@ interface DirNode {
 const props = defineProps<{
   visible: boolean;
   rootPath: string;
-  currentFilePath: string;
-  fileName: string;
+  currentFilePath?: string;
+  fileName?: string;
+  items?: MoveTargetItem[];
 }>();
 
 const emit = defineEmits<{
@@ -112,13 +119,44 @@ const selectedDirPath = ref<string>('');
 const showNewFolderModal = ref(false);
 const newFolderName = ref('');
 
-const isCurrentLocation = computed(() => {
-  if (!props.currentFilePath || !selectedDirPath.value) return false;
-  // Normalize slashes
-  const normCurrent = props.currentFilePath.replace(/\\/g, '/');
+const computedTitle = computed(() => {
+  if (props.items && props.items.length > 1) {
+    return '移动选中的项目';
+  }
+  return `移动 "${props.fileName || props.items?.[0]?.name || ''}"`;
+});
+
+const isInvalidTarget = computed(() => {
+  if (!selectedDirPath.value) return true;
   const normSelected = selectedDirPath.value.replace(/\\/g, '/');
-  const currentDir = normCurrent.substring(0, normCurrent.lastIndexOf('/'));
-  return currentDir === normSelected;
+
+  // 1. 单项路径校验
+  if (props.currentFilePath) {
+    const normCurrent = props.currentFilePath.replace(/\\/g, '/');
+    const currentDir = normCurrent.substring(0, normCurrent.lastIndexOf('/'));
+    if (currentDir === normSelected || normCurrent === normSelected) return true;
+  }
+
+  // 2. 多项路径校验与自包含循环校验
+  if (props.items && props.items.length > 0) {
+    const allAlreadyInTarget = props.items.every(item => {
+      const itemNorm = item.path.replace(/\\/g, '/');
+      const itemDir = itemNorm.substring(0, itemNorm.lastIndexOf('/'));
+      return itemDir === normSelected;
+    });
+    if (allAlreadyInTarget) return true;
+
+    for (const item of props.items) {
+      const itemNorm = item.path.replace(/\\/g, '/');
+      if (item.isDirectory) {
+        if (normSelected === itemNorm || normSelected.startsWith(`${itemNorm}/`)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 });
 
 const loadTree = async () => {

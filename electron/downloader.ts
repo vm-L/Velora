@@ -8,6 +8,7 @@ import { Readable } from 'stream'
 import { storeManager } from './store'
 import { logger } from './logger'
 import { clientManager } from './main'
+import { getAvailableEncoders, getEncoderArgs, VideoEncoder, isGpuEncoder } from './gpuAccelerator'
 
 export interface DownloadCommand {
   id: string
@@ -15,6 +16,7 @@ export interface DownloadCommand {
   savePath: string
   startBytes: number
   downloadedSegments?: number
+  totalSegments?: number
   referer?: string
   origin?: string
 }
@@ -398,6 +400,87 @@ class Downloader {
    */
   private async downloadM3U8Task(cmd: DownloadCommand, abortController: AbortController): Promise<{ filePath: string; fileSize: number; totalSegments: number }> {
     const { id, url, savePath } = cmd
+
+    const dir = path.dirname(savePath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+
+    let finalSavePath = savePath
+    if (!finalSavePath.toLowerCase().endsWith('.mp4')) {
+      if (finalSavePath.toLowerCase().endsWith('.m3u8') || finalSavePath.toLowerCase().endsWith('.ts')) {
+        finalSavePath = finalSavePath.replace(/\.(m3u8|ts)$/i, '.mp4')
+      } else {
+        finalSavePath = finalSavePath + '.mp4'
+      }
+    }
+    const isTargetMp4 = true
+    const workSavePath = finalSavePath + '.temp.ts'
+
+    // 1. 检查是否已有完整封装的目标 MP4（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
+    if (fs.existsSync(finalSavePath) && !fs.existsSync(workSavePath)) {
+      try {
+        const stat = fs.statSync(finalSavePath)
+        if (stat.size > 0) {
+          const info = await this.getVideoDurationAndBitrate(finalSavePath)
+          if (info.duration > 0) {
+            logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标 MP4 已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
+            return {
+              filePath: finalSavePath,
+              fileSize: stat.size,
+              totalSegments: cmd.totalSegments || cmd.downloadedSegments || 1
+            }
+          }
+        }
+      } catch (e: any) {
+        logger.warn('Downloader', `[M3U8Downloader] 检查已存在目标文件异常: ${e.message}`)
+      }
+    }
+
+    // 2. 检查临时 TS 文件是否已全量就绪（在格式转换阶段暂停后继续，跳过网络请求直接执行格式转换）
+    if (fs.existsSync(workSavePath)) {
+      try {
+        const stat = fs.statSync(workSavePath)
+        const isReadyForConvert = cmd.downloadedSegments !== undefined &&
+          cmd.downloadedSegments > 0 &&
+          (
+            (cmd.totalSegments !== undefined && cmd.downloadedSegments >= cmd.totalSegments) ||
+            (cmd.startBytes !== undefined && cmd.startBytes > 0 && stat.size >= cmd.startBytes)
+          ) &&
+          stat.size > 0
+
+        if (isReadyForConvert) {
+          logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 临时 TS 文件已完整落盘 (${stat.size} 字节, ${cmd.downloadedSegments}/${cmd.totalSegments || cmd.downloadedSegments} 分片)，直接进入格式转换`)
+          if (isTargetMp4) {
+            await this.convertTsToMp4(workSavePath, finalSavePath, abortController, id)
+          }
+          const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
+          const finalFileSize = fs.existsSync(targetVideoFile) ? fs.statSync(targetVideoFile).size : stat.size
+          logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 格式转换完成。文件大小: ${finalFileSize}`)
+          return {
+            filePath: targetVideoFile,
+            fileSize: finalFileSize,
+            totalSegments: cmd.totalSegments || cmd.downloadedSegments
+          }
+        }
+      } catch (e: any) {
+        if (e.name === 'AbortError') {
+          const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
+          this.sendProgress({
+            id,
+            totalBytes: 0,
+            receivedBytes: savedBytes,
+            downloadedSegments: cmd.downloadedSegments,
+            totalSegments: cmd.totalSegments || cmd.downloadedSegments,
+            speed: 0,
+            status: 'paused'
+          })
+          throw e
+        }
+        logger.warn('Downloader', `[M3U8Downloader] 检查临时 TS 转换就绪异常: ${e.message}，回退至正常解析流程`)
+      }
+    }
+
     logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
 
     let maxMemoryMB = 128
@@ -416,42 +499,6 @@ class Downloader {
     }
     logger.info('Downloader', `[M3U8Downloader] 成功解析出 ${segments.length} 个 TS 视频分片`)
 
-    const dir = path.dirname(savePath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-
-    let finalSavePath = savePath
-    if (!finalSavePath.toLowerCase().endsWith('.mp4')) {
-      if (finalSavePath.toLowerCase().endsWith('.m3u8') || finalSavePath.toLowerCase().endsWith('.ts')) {
-        finalSavePath = finalSavePath.replace(/\.(m3u8|ts)$/i, '.mp4')
-      } else {
-        finalSavePath = finalSavePath + '.mp4'
-      }
-    }
-    const isTargetMp4 = true
-    const workSavePath = finalSavePath + '.temp.ts'
-
-    // 检查是否已有完整封装的目标 MP4（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
-    if (fs.existsSync(finalSavePath) && !fs.existsSync(workSavePath)) {
-      try {
-        const stat = fs.statSync(finalSavePath)
-        if (stat.size > 0) {
-          const info = await this.getVideoDurationAndBitrate(finalSavePath)
-          if (info.duration > 0) {
-            logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标 MP4 已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
-            return {
-              filePath: finalSavePath,
-              fileSize: stat.size,
-              totalSegments: segments.length
-            }
-          }
-        }
-      } catch (e: any) {
-        logger.warn('Downloader', `[M3U8Downloader] 检查已存在目标文件异常: ${e.message}`)
-      }
-    }
-
     // 检查断点续传：目标文件是否已存在及大小
     let existingBytes = 0
     let skipSegments = 0
@@ -467,10 +514,10 @@ class Downloader {
             fileFlags = 'a'
             logger.info('Downloader', `[M3U8Downloader] 触发精准断点续传: 已落盘 ${existingBytes} 字节，跳过前 ${skipSegments}/${segments.length} 个分片`)
           } else {
-            // 已记录分片异常或已达总数但未完成封装，从头下载
-            skipSegments = 0
-            existingBytes = 0
-            fileFlags = 'w'
+            // 已记录分片已达总数且临时文件完整：跳过分片下载直接进入转封装
+            skipSegments = segments.length
+            fileFlags = 'a'
+            logger.info('Downloader', `[M3U8Downloader] 分片已全量就绪 (${segments.length}/${segments.length})，直接进入转封装步骤`)
           }
         } else {
           skipSegments = 0
@@ -609,28 +656,7 @@ class Downloader {
       fs.closeSync(fd)
 
       if (isTargetMp4) {
-        logger.info('Downloader', `[M3U8Downloader] 准备将 TS 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
-        this.sendProgress({ id, totalBytes: totalReceivedBytes, receivedBytes: totalReceivedBytes, status: 'converting', speed: 0 })
-        
-        await new Promise<void>((resolve, reject) => {
-          const ffmpegBin = 'ffmpeg'
-          const child = spawn(ffmpegBin, ['-y', '-i', workSavePath, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart', finalSavePath])
-          
-          child.on('close', (code) => {
-            if (code === 0) {
-              try { fs.unlinkSync(workSavePath) } catch {}
-              resolve()
-            } else {
-              reject(new Error(`FFmpeg exited with code ${code}`))
-            }
-          })
-          child.on('error', reject)
-          
-          abortController.signal.addEventListener('abort', () => {
-            child.kill('SIGKILL')
-            reject(new DOMException('User aborted download', 'AbortError'))
-          })
-        })
+        await this.convertTsToMp4(workSavePath, finalSavePath, abortController, id)
       }
 
       const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
@@ -661,6 +687,75 @@ class Downloader {
       }
       throw err
     }
+  }
+
+  /**
+   * 将分片合并落盘的 TS 临时视频无损封装为 MP4 格式 (消费 stdout/stderr 避免管道死锁)
+   */
+  private async convertTsToMp4(
+    workSavePath: string,
+    finalSavePath: string,
+    abortController: AbortController,
+    taskId: string
+  ): Promise<void> {
+    logger.info('Downloader', `[M3U8Downloader] 准备将 TS 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
+    const totalBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
+    this.sendProgress({
+      id: taskId,
+      totalBytes,
+      receivedBytes: totalBytes,
+      status: 'converting',
+      speed: 0
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const ffmpegBin = 'ffmpeg'
+      const child = spawn(ffmpegBin, [
+        '-y',
+        '-i', workSavePath,
+        '-c', 'copy',
+        '-bsf:a', 'aac_adtstoasc',
+        '-movflags', '+faststart',
+        finalSavePath
+      ])
+
+      let stderrBuffer = ''
+      child.stderr?.on('data', (chunk) => {
+        stderrBuffer += chunk.toString()
+        if (stderrBuffer.length > 5000) {
+          stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 5000)
+        }
+      })
+
+      child.stdout?.on('data', () => {
+        // 消费 stdout 避免管道挂起
+      })
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          try { fs.unlinkSync(workSavePath) } catch {}
+          resolve()
+        } else {
+          logger.error('Downloader', `[M3U8Downloader] FFmpeg 封装失败 (code ${code}): ${stderrBuffer}`)
+          reject(new Error(`FFmpeg exited with code ${code}: ${stderrBuffer.slice(-200)}`))
+        }
+      })
+
+      child.on('error', (err) => {
+        logger.error('Downloader', `[M3U8Downloader] FFmpeg 启动异常: ${err.message}`)
+        reject(err)
+      })
+
+      if (abortController.signal.aborted) {
+        child.kill('SIGKILL')
+        reject(new DOMException('User aborted download', 'AbortError'))
+      } else {
+        abortController.signal.addEventListener('abort', () => {
+          child.kill('SIGKILL')
+          reject(new DOMException('User aborted download', 'AbortError'))
+        })
+      }
+    })
   }
 
   /**
@@ -1296,14 +1391,15 @@ class Downloader {
         totalSegments: totalSegments
       })
 
-      const encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
+      const encoders = await getAvailableEncoders()
       let compressSuccess = false
       let usedEncoder = ''
       let lastCompressError = ''
 
       for (const encoder of encoders) {
         if (this.activeCompressController.signal.aborted) break
-        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 尝试使用编码器 [${encoder}] 压缩 (${targetBitrateKbps} kbps)`)
+        const isGpu = isGpuEncoder(encoder)
+        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}) 压缩 (${targetBitrateKbps} kbps)`)
         const result = await this.executeFfmpegCompress(
           filePath,
           tempCompressedPath,
@@ -1468,22 +1564,17 @@ class Downloader {
     abortController: AbortController
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
+      const encArgs = getEncoderArgs(encoder as VideoEncoder, { mode: 'bitrate', bitrateKbps: targetBitrateKbps })
       const args = [
         '-y',
         '-progress', 'pipe:1',
         '-i', inputPath,
-        '-c:v', encoder,
-        '-b:v', `${targetBitrateKbps}k`,
-        '-maxrate', `${Math.round(targetBitrateKbps * 1.5)}k`,
-        '-bufsize', `${Math.round(targetBitrateKbps * 2)}k`,
+        ...encArgs,
         '-c:a', 'aac',
         '-b:a', '128k',
         '-movflags', '+faststart',
         outputPath
       ]
-      if (encoder === 'libx264') {
-        args.splice(args.indexOf(encoder) + 1, 0, '-preset', 'fast')
-      }
 
       const proc = spawn('ffmpeg', args)
       const startTime = Date.now()

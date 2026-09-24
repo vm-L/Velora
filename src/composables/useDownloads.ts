@@ -309,6 +309,7 @@ export const useDownloads = () => {
         savePath: t.savePath, 
         startBytes: t.receivedBytes,
         downloadedSegments: t.downloadedSegments,
+        totalSegments: t.totalSegments,
         referer: t.referer
       })
     }

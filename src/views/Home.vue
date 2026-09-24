@@ -282,9 +282,8 @@ const openBatchCompressDialog = () => {
 const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbps }: { tasks: any[], targetBitrateKbps: number }) => {
   if (targetTasks.length === 0 || !window.electronAPI) return;
 
-  const count = targetTasks.length;
   selectedTasks.value = [];
-  showMessage(`已将 ${count} 个视频加入压缩处理队列`, 'info');
+  showMessage('已将选中的视频加入压缩处理队列', 'info');
 
   for (const t of targetTasks) {
     t.speed = 0;
@@ -478,10 +477,9 @@ const batchResume = () => {
 const batchDelete = async () => {
   if (selectedTasks.value.length === 0) return;
 
-  const count = selectedTasks.value.length;
   const { confirmed, checked } = await confirm({
     title: '批量删除',
-    message: `确定要删除选中的 ${count} 个任务记录吗？`,
+    message: '确定要删除选中的任务记录吗？',
     confirmText: '删除',
     cancelText: '取消',
     type: 'danger',
@@ -494,9 +492,9 @@ const batchDelete = async () => {
       await deleteTask(id, checked);
     }
     if (checked) {
-      showMessage(`已删除选中的 ${count} 个任务及对应文件`, 'success');
+      showMessage('已删除选中的任务及对应文件', 'success');
     } else {
-      showMessage(`已删除选中的 ${count} 个任务记录`, 'success');
+      showMessage('已删除选中的任务记录', 'success');
     }
     selectedTasks.value = [];
   }

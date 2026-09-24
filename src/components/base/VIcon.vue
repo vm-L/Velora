@@ -83,6 +83,9 @@ export type IconName =
   | 'chevron-right'
   | 'arrow-left'
   | 'arrow-right'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'merge'
   | 'code'
   | 'eye'
   | 'qrcode'
@@ -491,6 +494,25 @@ const iconsMap: Record<string, string> = {
   'arrow-right': `
     <line x1="5" y1="12" x2="19" y2="12"></line>
     <polyline points="12 5 19 12 12 19"></polyline>
+  `,
+
+  // 导航箭头 - 上
+  'arrow-up': `
+    <line x1="12" y1="19" x2="12" y2="5"></line>
+    <polyline points="5 12 12 5 19 12"></polyline>
+  `,
+
+  // 导航箭头 - 下
+  'arrow-down': `
+    <line x1="12" y1="5" x2="12" y2="19"></line>
+    <polyline points="19 12 12 19 5 12"></polyline>
+  `,
+
+  // 合并 / 汇聚
+  'merge': `
+    <circle cx="18" cy="18" r="3"></circle>
+    <circle cx="6" cy="6" r="3"></circle>
+    <path d="M6 21V9a9 9 0 0 0 9 9"></path>
   `,
 
   // 代码

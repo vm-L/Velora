@@ -62,6 +62,10 @@ interface Window {
     cancelVideoEdit: (taskId: string) => Promise<boolean>
     onVideoEditProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => void
     offVideoEditProgress: (taskId: string) => void
+    mergeVideos: (params: { taskId: string, videoPaths: string[], outputPath: string }) => Promise<{ success: boolean, outputPath?: string, error?: string }>
+    cancelVideoMerge: (taskId: string) => Promise<boolean>
+    onVideoMergeProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => void
+    offVideoMergeProgress: (taskId: string) => void
     showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => Promise<{ canceled: boolean, filePath?: string }>
   }
 }

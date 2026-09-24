@@ -68,5 +68,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   offVideoEditProgress: (taskId: string) => {
     ipcRenderer.removeAllListeners(`video-edit-progress-${taskId}`);
   },
+  mergeVideos: (params: { taskId: string, videoPaths: string[], outputPath: string }) => ipcRenderer.invoke('merge-videos', params),
+  cancelVideoMerge: (taskId: string) => ipcRenderer.invoke('cancel-video-merge', taskId),
+  onVideoMergeProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => {
+    ipcRenderer.on(`video-merge-progress-${taskId}`, (_event, data) => callback(data));
+  },
+  offVideoMergeProgress: (taskId: string) => {
+    ipcRenderer.removeAllListeners(`video-merge-progress-${taskId}`);
+  },
   showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => ipcRenderer.invoke('show-save-dialog', options)
 })
