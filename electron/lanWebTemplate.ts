@@ -1001,6 +1001,16 @@ export function getLanWebHtml(): string {
       object-fit: contain;
     }
 
+    .trimmer-video-wrap video::-webkit-media-controls-overlay-play-button,
+    .trimmer-video-wrap video::-webkit-media-controls-start-playback-button,
+    #trimmer-video::-webkit-media-controls-overlay-play-button,
+    #trimmer-video::-webkit-media-controls-start-playback-button {
+      display: none !important;
+      -webkit-appearance: none;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     .trimmer-controls {
       padding: 14px 18px;
       display: flex;
@@ -1373,7 +1383,7 @@ export function getLanWebHtml(): string {
             <button class="v-btn v-btn-secondary" onclick="markTrimEnd()">设为终点</button>
           </div>
 
-          <button class="v-btn v-btn-primary" style="width:100%;" onclick="addTrimSegment()">+ 添加为片段</button>
+          <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" style="width:100%;" onclick="addTrimSegment()">添加为片段 (00:00.0 - 00:00.0)</button>
 
           <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-top:2px;">已选片段清单：</div>
           <div id="trimmer-segments-list" class="segment-chips-container">
@@ -2613,6 +2623,11 @@ export function getLanWebHtml(): string {
       var dur = state.trimDuration || (video ? video.duration : 0) || 0;
       var display = document.getElementById('trimmer-time-display');
       if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
+
+      var addBtn = document.getElementById('trimmer-add-segment-btn');
+      if (addBtn) {
+        addBtn.innerText = '添加为片段 (' + formatTimeSec(state.trimStart) + ' - ' + formatTimeSec(state.trimEnd) + ')';
+      }
     }
 
     var seekHoldTimer = null;
@@ -2697,10 +2712,22 @@ export function getLanWebHtml(): string {
         showToast('入点时间必须小于出点时间');
         return;
       }
+      var newStart = Math.round(state.trimStart * 100) / 100;
+      var newEnd = Math.round(state.trimEnd * 100) / 100;
+
+      for (var i = 0; i < state.trimSegments.length; i++) {
+        var existing = state.trimSegments[i];
+        if (newStart < existing.end && newEnd > existing.start) {
+          showToast('当前片段与已有片段存在重叠');
+          return;
+        }
+      }
+
       state.trimSegments.push({
-        start: Math.round(state.trimStart * 100) / 100,
-        end: Math.round(state.trimEnd * 100) / 100
+        start: newStart,
+        end: newEnd
       });
+      state.trimSegments.sort(function(a, b) { return a.start - b.start; });
       renderTrimSegments();
       showToast('已添加选段');
     };
@@ -2722,7 +2749,7 @@ export function getLanWebHtml(): string {
       var html = '';
       for (var i = 0; i < state.trimSegments.length; i++) {
         var seg = state.trimSegments[i];
-        html += '<div class="segment-chip" onclick="seekToSegment(' + seg.start + ')">' +
+        html += '<div class="segment-chip" onclick="seekToSegment(' + seg.start + ', ' + seg.end + ')">' +
           '<span>片段 ' + (i + 1) + ': ' + formatTimeSec(seg.start) + ' ~ ' + formatTimeSec(seg.end) + '</span>' +
           '<span class="chip-remove" onclick="event.stopPropagation(); removeTrimSegment(' + i + ')">✕</span>' +
           '</div>';
@@ -2730,11 +2757,14 @@ export function getLanWebHtml(): string {
       listEl.innerHTML = html;
     }
 
-    window.seekToSegment = function(startSec) {
+    window.seekToSegment = function(startSec, endSec) {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
       var dur = state.trimDuration || (video.duration || 0) || 0;
-      var target = Math.max(0, Math.min(dur, startSec));
+      var current = typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0;
+      var isAtStart = Math.abs(current - startSec) < 0.05;
+      var target = isAtStart ? (typeof endSec === 'number' ? endSec : startSec) : startSec;
+      target = Math.max(0, Math.min(dur, target));
       video.currentTime = target;
       updateTrimmerTimeLabels();
     };
