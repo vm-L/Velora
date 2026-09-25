@@ -1034,6 +1034,8 @@ export function getLanWebHtml(): string {
       font-size: 12px;
       min-width: 0;
       justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     .trim-points-row {
@@ -1357,13 +1359,13 @@ export function getLanWebHtml(): string {
         <div class="trimmer-controls">
           <div id="trimmer-time-display" class="time-display">00:00.0 / 00:00.0</div>
 
-          <div class="time-steppers">
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-5)">-5s</button>
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-1)">-1s</button>
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(-0.1)">-0.1s</button>
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(0.1)">+0.1s</button>
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(1)">+1s</button>
-            <button class="v-btn v-btn-secondary" onclick="seekTrimmer(5)">+5s</button>
+          <div class="time-steppers" oncontextmenu="return false;">
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(-60, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(-60, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">-1m</button>
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(-1, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(-1, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">-1s</button>
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(-0.1, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(-0.1, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">-0.1s</button>
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(0.1, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(0.1, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">+0.1s</button>
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(1, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(1, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">+1s</button>
+            <button class="v-btn v-btn-secondary" onmousedown="startSeek(60, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(60, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">+1m</button>
           </div>
 
           <div class="trim-points-row">
@@ -2613,7 +2615,43 @@ export function getLanWebHtml(): string {
       if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
     }
 
+    var seekHoldTimer = null;
+    var seekIntervalTimer = null;
+
+    window.stopSeek = function() {
+      if (seekHoldTimer) {
+        clearTimeout(seekHoldTimer);
+        seekHoldTimer = null;
+      }
+      if (seekIntervalTimer) {
+        clearInterval(seekIntervalTimer);
+        seekIntervalTimer = null;
+      }
+    };
+
+    window.startSeek = function(delta, e) {
+      if (e) {
+        if (e.type === 'touchstart') {
+          if (e.cancelable) e.preventDefault();
+        } else if (e.button !== undefined && e.button !== 0) {
+          return;
+        }
+      }
+      window.stopSeek();
+      window.seekTrimmer(delta);
+      seekHoldTimer = setTimeout(function() {
+        seekIntervalTimer = setInterval(function() {
+          window.seekTrimmer(delta);
+        }, 100);
+      }, 350);
+    };
+
+    window.addEventListener('mouseup', window.stopSeek);
+    window.addEventListener('touchend', window.stopSeek);
+    window.addEventListener('touchcancel', window.stopSeek);
+
     window.closeVideoEditModal = function() {
+      window.stopSeek();
       var video = document.getElementById('trimmer-video');
       if (video) {
         video.pause();
@@ -2625,8 +2663,11 @@ export function getLanWebHtml(): string {
     window.seekTrimmer = function(delta) {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
-      var target = Math.max(0, Math.min(video.duration || 0, video.currentTime + delta));
+      var dur = state.trimDuration || (video.duration || 0) || 0;
+      var current = typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0;
+      var target = Math.max(0, Math.min(dur, current + delta));
       video.currentTime = target;
+      updateTrimmerTimeLabels();
     };
 
     window.markTrimStart = function() {
@@ -2691,7 +2732,11 @@ export function getLanWebHtml(): string {
 
     window.seekToSegment = function(startSec) {
       var video = document.getElementById('trimmer-video');
-      if (video) video.currentTime = startSec;
+      if (!video) return;
+      var dur = state.trimDuration || (video.duration || 0) || 0;
+      var target = Math.max(0, Math.min(dur, startSec));
+      video.currentTime = target;
+      updateTrimmerTimeLabels();
     };
 
     window.toggleTrimSaveMode = function() {

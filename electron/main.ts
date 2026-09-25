@@ -67,23 +67,81 @@ const mediaServer = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Accept-Ranges', 'bytes');
       
-      if (rangeHeader) {
-        const parts = rangeHeader.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+      if (rangeHeader && stat.size > 0) {
+        const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+        if (!match) {
+          res.writeHead(416, {
+            'Content-Range': `bytes */${stat.size}`,
+            'Access-Control-Allow-Origin': '*'
+          });
+          return res.end();
+        }
+
+        let start = match[1] ? parseInt(match[1], 10) : NaN;
+        let end = match[2] ? parseInt(match[2], 10) : NaN;
+
+        if (isNaN(start)) {
+          if (isNaN(end)) {
+            res.writeHead(416, {
+              'Content-Range': `bytes */${stat.size}`,
+              'Access-Control-Allow-Origin': '*'
+            });
+            return res.end();
+          }
+          start = Math.max(0, stat.size - end);
+          end = stat.size - 1;
+        } else if (isNaN(end)) {
+          end = stat.size - 1;
+        }
+
+        if (start >= stat.size || start < 0 || end < start) {
+          res.writeHead(416, {
+            'Content-Range': `bytes */${stat.size}`,
+            'Access-Control-Allow-Origin': '*'
+          });
+          return res.end();
+        }
+
+        end = Math.min(end, stat.size - 1);
         const chunksize = (end - start) + 1;
         
         res.writeHead(206, {
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Content-Length': chunksize,
+          'Content-Type': contentType,
+          'Access-Control-Allow-Origin': '*',
+          'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath, { start, end });
+        fileStream.on('error', (err) => {
+          logger.warn('Protocol', `Local media stream pipe error: ${err.message}`);
+          if (!res.headersSent) {
+            res.writeHead(500);
+          }
+          res.end();
+        });
+        req.on('close', () => {
+          fileStream.destroy();
+        });
         fileStream.pipe(res);
       } else {
         res.writeHead(200, {
           'Content-Length': stat.size,
+          'Content-Type': contentType,
+          'Access-Control-Allow-Origin': '*',
+          'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath);
+        fileStream.on('error', (err) => {
+          logger.warn('Protocol', `Local media full stream error: ${err.message}`);
+          if (!res.headersSent) {
+            res.writeHead(500);
+          }
+          res.end();
+        });
+        req.on('close', () => {
+          fileStream.destroy();
+        });
         fileStream.pipe(res);
       }
     } else {

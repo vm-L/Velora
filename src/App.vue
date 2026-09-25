@@ -86,46 +86,20 @@ watch(() => state.theme, (newTheme) => {
   document.documentElement.dataset.theme = newTheme;
 });
 
-// 后台并发预加载函数
+// 后台并发预加载函数 (仅预加载本地文件夹资源，外部网站与 CMS 改为点击时按需懒加载)
 const preloadAllResources = () => {
   if (Array.isArray(state.localResources)) {
     state.localResources.forEach(local => {
       openLocal(local.id, local.path || local.url, local.name);
     });
   }
-  if (Array.isArray(state.cmsResources)) {
-    state.cmsResources.forEach(cms => {
-      openCMS(cms.id, cms.url);
-    });
-  }
-  if (Array.isArray(state.externalSites)) {
-    state.externalSites.forEach(site => {
-      openResource(site.id, site.url);
-    });
-  }
 };
 
-// 监听配置变更，动态同步预加载资源
+// 监听配置变更，动态同步预加载本地资源
 watch(() => state.localResources, (newList) => {
   if (Array.isArray(newList)) {
     newList.forEach(local => {
       openLocal(local.id, local.path || local.url, local.name);
-    });
-  }
-}, { deep: true });
-
-watch(() => state.cmsResources, (newList) => {
-  if (Array.isArray(newList)) {
-    newList.forEach(cms => {
-      openCMS(cms.id, cms.url);
-    });
-  }
-}, { deep: true });
-
-watch(() => state.externalSites, (newList) => {
-  if (Array.isArray(newList)) {
-    newList.forEach(site => {
-      openResource(site.id, site.url);
     });
   }
 }, { deep: true });
