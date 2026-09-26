@@ -1030,6 +1030,10 @@ export function getLanWebHtml(): string {
       background: var(--bg-surface);
       border-top: 1px solid var(--border-light);
       z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     .time-steppers {
@@ -1105,6 +1109,18 @@ export function getLanWebHtml(): string {
 
     .segment-chip:hover {
       border-color: var(--color-accent);
+    }
+
+    .segment-chip.active {
+      border-color: var(--color-accent);
+      background: var(--bg-hover);
+      box-shadow: 0 0 0 1px var(--color-accent);
+      font-weight: 600;
+    }
+
+    .segment-chip.invalid {
+      border-style: dashed;
+      color: var(--text-muted);
     }
 
     .segment-chip .chip-remove {
@@ -1383,7 +1399,7 @@ export function getLanWebHtml(): string {
             <button class="v-btn v-btn-secondary" onclick="markTrimEnd()">设为终点</button>
           </div>
 
-          <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" style="width:100%;" onclick="addTrimSegment()">添加为片段 (00:00.0 - 00:00.0)</button>
+          <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" style="width:100%;" onclick="addNewSegment()">+ 新增片段</button>
 
           <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-top:2px;">已选片段清单：</div>
           <div id="trimmer-segments-list" class="segment-chips-container">
@@ -1403,8 +1419,11 @@ export function getLanWebHtml(): string {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="v-btn v-btn-secondary" onclick="closeVideoEditModal()">取消</button>
-          <button class="v-btn v-btn-primary" onclick="submitVideoCut()">开始剪辑</button>
+          <div id="trimmer-summary-display" style="font-size:12px; font-weight:500; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">总时长: 00:00.0 (-00:00.0)</div>
+          <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+            <button class="v-btn v-btn-secondary" onclick="closeVideoEditModal()">取消</button>
+            <button class="v-btn v-btn-primary" onclick="submitVideoCut()">确认</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2577,11 +2596,31 @@ export function getLanWebHtml(): string {
 
     function formatTimeSec(sec) {
       if (typeof sec !== 'number' || isNaN(sec) || sec < 0) sec = 0;
-      var m = Math.floor(sec / 60);
-      var s = Math.floor(sec % 60);
-      var ms = Math.floor((sec % 1) * 10);
+      var totalTenths = Math.round(sec * 10);
+      var ms = totalTenths % 10;
+      var totalSec = Math.floor(totalTenths / 10);
+      var m = Math.floor(totalSec / 60);
+      var s = totalSec % 60;
       var pad = function(n) { return n.toString().padStart(2, '0'); };
       return pad(m) + ':' + pad(s) + '.' + ms;
+    }
+
+    function updateTrimmerSummary() {
+      var summaryEl = document.getElementById('trimmer-summary-display');
+      if (!summaryEl) return;
+      var video = document.getElementById('trimmer-video');
+      var originalDur = state.trimDuration || (video ? video.duration : 0) || 0;
+      var totalDur = 0;
+      if (state.trimSegments && state.trimSegments.length > 0) {
+        for (var i = 0; i < state.trimSegments.length; i++) {
+          var s = state.trimSegments[i];
+          if (s.valid && s.start !== null && s.end !== null && s.end > s.start) {
+            totalDur += Math.max(0, s.end - s.start);
+          }
+        }
+      }
+      var reduced = Math.max(0, originalDur - totalDur);
+      summaryEl.innerText = '总时长: ' + formatTimeSec(totalDur) + ' (-' + formatTimeSec(reduced) + ')';
     }
 
     // Video Trimmer Modal
@@ -2590,6 +2629,7 @@ export function getLanWebHtml(): string {
       state.currentTrimPath = filePath;
       state.currentTrimName = name;
       state.trimSegments = [];
+      state.selectedSegmentIndex = 0;
       state.trimStart = 0;
       state.trimEnd = 0;
 
@@ -2604,8 +2644,18 @@ export function getLanWebHtml(): string {
       toggleTrimSaveMode();
 
       video.onloadedmetadata = function() {
-        state.trimDuration = video.duration || 0;
-        state.trimEnd = video.duration || 0;
+        var dur = video.duration || 0;
+        state.trimDuration = dur;
+        state.trimStart = 0;
+        state.trimEnd = dur;
+        state.trimSegments = [{
+          id: 1,
+          start: 0,
+          end: Math.round(dur * 100) / 100,
+          valid: true
+        }];
+        state.selectedSegmentIndex = 0;
+        renderTrimSegments();
         updateTrimmerTimeLabels();
       };
 
@@ -2624,10 +2674,7 @@ export function getLanWebHtml(): string {
       var display = document.getElementById('trimmer-time-display');
       if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
 
-      var addBtn = document.getElementById('trimmer-add-segment-btn');
-      if (addBtn) {
-        addBtn.innerText = '添加为片段 (' + formatTimeSec(state.trimStart) + ' - ' + formatTimeSec(state.trimEnd) + ')';
-      }
+      updateTrimmerSummary();
     }
 
     var seekHoldTimer = null;
@@ -2687,74 +2734,145 @@ export function getLanWebHtml(): string {
 
     window.markTrimStart = function() {
       var video = document.getElementById('trimmer-video');
-      if (!video) return;
-      state.trimStart = video.currentTime;
-      if (state.trimEnd < state.trimStart) {
-        state.trimEnd = video.duration || state.trimStart;
+      if (!video || !state.trimSegments || !state.trimSegments.length) return;
+      var idx = state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex < state.trimSegments.length ? state.selectedSegmentIndex : 0;
+      var seg = state.trimSegments[idx];
+      var newStart = Math.round(video.currentTime * 100) / 100;
+
+      if (seg.end !== null && newStart >= seg.end) {
+        showToast('起点时间必须小于当前片段终点');
+        return;
       }
+
+      if (seg.end !== null) {
+        for (var i = 0; i < state.trimSegments.length; i++) {
+          if (i === idx) continue;
+          var other = state.trimSegments[i];
+          if (other.valid && other.start !== null && other.end !== null) {
+            if (newStart < other.end && seg.end > other.start) {
+              showToast('当前片段与已有片段存在重叠');
+              return;
+            }
+          }
+        }
+      }
+
+      seg.start = newStart;
+      if (seg.start !== null && seg.end !== null && seg.start < seg.end) {
+        seg.valid = true;
+      }
+      state.trimStart = seg.start;
+      renderTrimSegments();
       updateTrimmerTimeLabels();
-      showToast('已标记入点: ' + formatTimeSec(state.trimStart));
+      showToast('已设为片段 ' + (idx + 1) + ' 起点: ' + formatTimeSec(newStart));
     };
 
     window.markTrimEnd = function() {
       var video = document.getElementById('trimmer-video');
-      if (!video) return;
-      state.trimEnd = video.currentTime;
-      if (state.trimStart > state.trimEnd) {
-        state.trimStart = 0;
-      }
-      updateTrimmerTimeLabels();
-      showToast('已标记出点: ' + formatTimeSec(state.trimEnd));
-    };
+      if (!video || !state.trimSegments || !state.trimSegments.length) return;
+      var idx = state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex < state.trimSegments.length ? state.selectedSegmentIndex : 0;
+      var seg = state.trimSegments[idx];
+      var newEnd = Math.round(video.currentTime * 100) / 100;
 
-    window.addTrimSegment = function() {
-      if (state.trimStart >= state.trimEnd) {
-        showToast('入点时间必须小于出点时间');
+      if (seg.start !== null && newEnd <= seg.start) {
+        showToast('终点时间必须大于当前片段起点');
         return;
       }
-      var newStart = Math.round(state.trimStart * 100) / 100;
-      var newEnd = Math.round(state.trimEnd * 100) / 100;
 
-      for (var i = 0; i < state.trimSegments.length; i++) {
-        var existing = state.trimSegments[i];
-        if (newStart < existing.end && newEnd > existing.start) {
-          showToast('当前片段与已有片段存在重叠');
-          return;
+      if (seg.start !== null) {
+        for (var i = 0; i < state.trimSegments.length; i++) {
+          if (i === idx) continue;
+          var other = state.trimSegments[i];
+          if (other.valid && other.start !== null && other.end !== null) {
+            if (seg.start < other.end && newEnd > other.start) {
+              showToast('当前片段与已有片段存在重叠');
+              return;
+            }
+          }
         }
       }
 
-      state.trimSegments.push({
-        start: newStart,
-        end: newEnd
-      });
-      state.trimSegments.sort(function(a, b) { return a.start - b.start; });
+      seg.end = newEnd;
+      if (seg.start !== null && seg.end !== null && seg.start < seg.end) {
+        seg.valid = true;
+      }
+      state.trimEnd = seg.end;
       renderTrimSegments();
-      showToast('已添加选段');
+      updateTrimmerTimeLabels();
+      showToast('已设为片段 ' + (idx + 1) + ' 终点: ' + formatTimeSec(newEnd));
+    };
+
+    window.addNewSegment = function() {
+      var newSeg = {
+        id: Date.now(),
+        start: null,
+        end: null,
+        valid: false
+      };
+      state.trimSegments.push(newSeg);
+      state.selectedSegmentIndex = state.trimSegments.length - 1;
+      renderTrimSegments();
+      updateTrimmerTimeLabels();
+      showToast('已新增片段 ' + state.trimSegments.length + '，请设置起点和终点');
     };
 
     window.removeTrimSegment = function(idx) {
+      if (!state.trimSegments || state.trimSegments.length <= 1) return;
       state.trimSegments.splice(idx, 1);
+      if (state.selectedSegmentIndex >= state.trimSegments.length) {
+        state.selectedSegmentIndex = state.trimSegments.length - 1;
+      } else if (state.selectedSegmentIndex > idx) {
+        state.selectedSegmentIndex--;
+      }
       renderTrimSegments();
+      updateTrimmerTimeLabels();
+    };
+
+    window.selectSegment = function(idx) {
+      if (!state.trimSegments || idx < 0 || idx >= state.trimSegments.length) return;
+      state.selectedSegmentIndex = idx;
+      var seg = state.trimSegments[idx];
+      if (seg.valid && seg.start !== null && seg.end !== null) {
+        seekToSegment(seg.start, seg.end);
+      }
+      renderTrimSegments();
+      updateTrimmerTimeLabels();
     };
 
     function renderTrimSegments() {
       var listEl = document.getElementById('trimmer-segments-list');
       if (!listEl) return;
 
-      if (state.trimSegments.length === 0) {
-        listEl.innerHTML = '<span style="font-size:12px; color:var(--text-muted);">暂未添加多片段，默认导出入点至出点范围 (' + formatTimeSec(state.trimStart) + ' - ' + formatTimeSec(state.trimEnd) + ')</span>';
+      if (!state.trimSegments || state.trimSegments.length === 0) {
+        listEl.innerHTML = '<span style="font-size:12px; color:var(--text-muted);">暂无片段</span>';
+        updateTrimmerSummary();
         return;
       }
 
       var html = '';
+      var isSingle = state.trimSegments.length <= 1;
+
       for (var i = 0; i < state.trimSegments.length; i++) {
         var seg = state.trimSegments[i];
-        html += '<div class="segment-chip" onclick="seekToSegment(' + seg.start + ', ' + seg.end + ')">' +
-          '<span>片段 ' + (i + 1) + ': ' + formatTimeSec(seg.start) + ' ~ ' + formatTimeSec(seg.end) + '</span>' +
-          '<span class="chip-remove" onclick="event.stopPropagation(); removeTrimSegment(' + i + ')">✕</span>' +
+        var isSelected = i === state.selectedSegmentIndex;
+        var timeText = '';
+        if (seg.valid && seg.start !== null && seg.end !== null) {
+          timeText = formatTimeSec(seg.start) + ' ~ ' + formatTimeSec(seg.end);
+        } else if (seg.start !== null) {
+          timeText = formatTimeSec(seg.start) + ' ~ 未设置';
+        } else if (seg.end !== null) {
+          timeText = '未设置 ~ ' + formatTimeSec(seg.end);
+        } else {
+          timeText = '未设置';
+        }
+
+        html += '<div class="segment-chip' + (isSelected ? ' active' : '') + (!seg.valid ? ' invalid' : '') + '" onclick="selectSegment(' + i + ')">' +
+          '<span>片段 ' + (i + 1) + ': ' + timeText + '</span>' +
+          (!isSingle ? '<span class="chip-remove" onclick="event.stopPropagation(); removeTrimSegment(' + i + ')">✕</span>' : '') +
           '</div>';
       }
       listEl.innerHTML = html;
+      updateTrimmerSummary();
     }
 
     window.seekToSegment = function(startSec, endSec) {
@@ -2782,6 +2900,37 @@ export function getLanWebHtml(): string {
       var cutMode = 'keep';
       var filename = document.getElementById('trim-filename-input').value.trim();
 
+      var validSegments = [];
+      var invalidCount = 0;
+      for (var i = 0; i < state.trimSegments.length; i++) {
+        var s = state.trimSegments[i];
+        if (s.valid && s.start !== null && s.end !== null && s.end > s.start) {
+          validSegments.push({
+            start: Math.round(s.start * 100) / 100,
+            end: Math.round(s.end * 100) / 100
+          });
+        } else {
+          invalidCount++;
+        }
+      }
+
+      if (validSegments.length === 0) {
+        showToast('请至少设置一个有效的剪辑片段');
+        return;
+      }
+
+      validSegments.sort(function(a, b) { return a.start - b.start; });
+
+      if (invalidCount > 0) {
+        var ok = await window.showConfirm({
+          title: '提示',
+          message: '检测到列表中包含 ' + invalidCount + ' 个未设置起止时间的无效片段，处理时将自动跳过这些片段。是否继续？',
+          confirmText: '继续',
+          cancelText: '取消'
+        });
+        if (!ok) return;
+      }
+
       if (mode === 'replace') {
         var ok = await window.showConfirm({
           title: '覆盖保存确认',
@@ -2792,7 +2941,6 @@ export function getLanWebHtml(): string {
         if (!ok) return;
       }
 
-      var segs = state.trimSegments.length > 0 ? state.trimSegments : [{ start: state.trimStart, end: state.trimEnd }];
       var taskId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
       try {
@@ -2802,7 +2950,7 @@ export function getLanWebHtml(): string {
           body: JSON.stringify({
             taskId: taskId,
             sourcePath: state.currentTrimPath,
-            segments: segs,
+            segments: validSegments,
             cutMode: cutMode,
             mode: mode,
             customFilename: filename
