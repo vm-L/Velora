@@ -664,6 +664,8 @@ export function getLanWebHtml(): string {
       justify-content: center;
       align-items: center;
       padding: 16px;
+      overscroll-behavior: contain;
+      touch-action: none;
     }
 
     .modal-content {
@@ -677,6 +679,7 @@ export function getLanWebHtml(): string {
       flex-direction: column;
       overflow: hidden;
       color: var(--text-primary);
+      overscroll-behavior: contain;
     }
 
     .modal-header {
@@ -694,6 +697,9 @@ export function getLanWebHtml(): string {
       display: flex;
       flex-direction: column;
       gap: 14px;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
     }
 
     .modal-footer {
@@ -847,6 +853,9 @@ export function getLanWebHtml(): string {
     .directory-tree-container {
       max-height: 280px;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       border: 1px solid var(--border-color);
       border-radius: 8px;
       background: var(--bg-app);
@@ -976,6 +985,7 @@ export function getLanWebHtml(): string {
       box-shadow: var(--shadow-soft);
       display: flex;
       flex-direction: column;
+      overscroll-behavior: contain;
     }
 
     .video-edit-modal-content .modal-header {
@@ -992,6 +1002,7 @@ export function getLanWebHtml(): string {
       display: flex;
       align-items: center;
       justify-content: center;
+      touch-action: none;
     }
 
     .trimmer-video-wrap video {
@@ -1014,6 +1025,7 @@ export function getLanWebHtml(): string {
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
     }
 
     .video-edit-modal-content .modal-footer {
@@ -1077,6 +1089,9 @@ export function getLanWebHtml(): string {
       min-height: 50px;
       max-height: 120px;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       padding: 8px 12px;
       background: var(--bg-surface);
       border: 1px solid var(--border-light);
@@ -1132,6 +1147,9 @@ export function getLanWebHtml(): string {
       gap: 6px;
       max-height: 260px;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
     }
 
     .merge-item {
