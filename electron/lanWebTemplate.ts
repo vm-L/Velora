@@ -984,8 +984,8 @@ export function getLanWebHtml(): string {
 
     .trimmer-video-wrap {
       width: 100%;
-      max-height: 35vh;
-      min-height: 160px;
+      max-height: 25vh;
+      min-height: 120px;
       background: #000;
       position: relative;
       flex-shrink: 0;
@@ -997,18 +997,9 @@ export function getLanWebHtml(): string {
     .trimmer-video-wrap video {
       width: 100%;
       height: 100%;
-      max-height: 35vh;
+      max-height: 25vh;
       object-fit: contain;
-    }
-
-    .trimmer-video-wrap video::-webkit-media-controls-overlay-play-button,
-    .trimmer-video-wrap video::-webkit-media-controls-start-playback-button,
-    #trimmer-video::-webkit-media-controls-overlay-play-button,
-    #trimmer-video::-webkit-media-controls-start-playback-button {
-      display: none !important;
-      -webkit-appearance: none;
-      opacity: 0;
-      pointer-events: none;
+      cursor: pointer;
     }
 
     .trimmer-controls {
@@ -1366,6 +1357,9 @@ export function getLanWebHtml(): string {
         <button id="batch-compress-btn" class="v-btn v-btn-secondary" style="display:none;" onclick="openBatchCompressModal()">
           <span>压缩视频</span>
         </button>
+        <button id="batch-move-btn" class="v-btn v-btn-secondary" style="display:none;" onclick="openBatchMoveModal()">
+          <span>移动</span>
+        </button>
         <button class="v-btn v-btn-secondary" onclick="clearSelection()">取消选择</button>
       </div>
     </div>
@@ -1380,7 +1374,7 @@ export function getLanWebHtml(): string {
           <button class="v-btn v-btn-icon" onclick="closeVideoEditModal()">✕</button>
         </div>
         <div class="trimmer-video-wrap">
-          <video id="trimmer-video" playsinline controls></video>
+          <video id="trimmer-video" playsinline muted onclick="toggleTrimmerPlay()"></video>
         </div>
         <div class="trimmer-controls">
           <div id="trimmer-time-display" class="time-display">00:00.0 / 00:00.0</div>
@@ -1401,7 +1395,13 @@ export function getLanWebHtml(): string {
 
           <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" style="width:100%;" onclick="addNewSegment()">+ 新增片段</button>
 
-          <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-top:2px;">已选片段清单：</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
+            <div style="font-size:12px; font-weight:600; color:var(--text-secondary);">已选片段清单：</div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button id="trim-move-prev-btn" class="v-btn v-btn-secondary" style="padding:2px 8px; font-size:11px; height:24px;" onclick="moveSelectedSegment(-1)">◀ 前移</button>
+              <button id="trim-move-next-btn" class="v-btn v-btn-secondary" style="padding:2px 8px; font-size:11px; height:24px;" onclick="moveSelectedSegment(1)">后移 ▶</button>
+            </div>
+          </div>
           <div id="trimmer-segments-list" class="segment-chips-container">
             <span style="font-size:12px; color:var(--text-muted);">暂未添加多片段，默认全时长</span>
           </div>
@@ -1574,6 +1574,13 @@ export function getLanWebHtml(): string {
       compressFilePath: '',
       compressFileName: '',
       compressBitrate: 2000,
+      // Move
+      moveSourcePath: '',
+      moveSourceName: '',
+      moveSourcePaths: [],
+      isBatchMove: false,
+      moveSelectedTarget: '',
+      moveDirList: [],
       // Task SSE
       currentTaskId: '',
       currentEventSource: null
@@ -2170,6 +2177,7 @@ export function getLanWebHtml(): string {
       var countEl = document.getElementById('multi-select-count');
       var mergeBtn = document.getElementById('batch-merge-btn');
       var compressBtn = document.getElementById('batch-compress-btn');
+      var moveBtn = document.getElementById('batch-move-btn');
 
       var size = state.selectedPaths.size;
       if (size === 0) {
@@ -2195,6 +2203,12 @@ export function getLanWebHtml(): string {
         compressBtn.style.display = 'inline-flex';
       } else {
         compressBtn.style.display = 'none';
+      }
+
+      if (state.allowEdit && size > 0) {
+        if (moveBtn) moveBtn.style.display = 'inline-flex';
+      } else {
+        if (moveBtn) moveBtn.style.display = 'none';
       }
     }
 
@@ -2400,10 +2414,41 @@ export function getLanWebHtml(): string {
       actionModal.style.display = 'flex';
     };
 
+    window.openBatchMoveModal = async function() {
+      var selectedList = Array.from(state.selectedPaths);
+      if (selectedList.length === 0) return;
+
+      state.isBatchMove = true;
+      state.moveSourcePaths = selectedList;
+      state.moveSourcePath = '';
+      state.moveSourceName = '';
+      state.moveSelectedTarget = '';
+      state.moveDirList = [];
+
+      actionModalTitle.innerText = '移动 (已选 ' + selectedList.length + ' 项)';
+      actionModalBody.innerHTML = '<div style="display:flex; flex-direction:column; gap:12px;">' +
+        '<div class="tree-toolbar">' +
+        '<span class="selected-target-hint">目标目录: <strong id="move-target-label">未选择</strong></span>' +
+        '<button class="v-btn v-btn-secondary" id="move-new-subfolder-btn" disabled onclick="openMoveNewSubfolderModal()" style="font-size:12px; height:28px; padding:2px 8px;">+ 新建子目录</button>' +
+        '</div>' +
+        '<div class="directory-tree-container" id="move-tree-container">' +
+        '<div class="empty-state" style="padding:30px 10px;"><span>正在扫描目录树</span></div>' +
+        '</div>' +
+        '</div>';
+
+      actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
+        '<button class="v-btn v-btn-primary" id="move-confirm-btn" disabled onclick="submitMove()">确认移动</button>';
+
+      actionModal.style.display = 'flex';
+      await loadMoveDirTree();
+    };
+
     window.openMoveModal = async function(encodedPath, name) {
       var sourcePath = decodeURIComponent(encodedPath);
+      state.isBatchMove = false;
       state.moveSourcePath = sourcePath;
       state.moveSourceName = name;
+      state.moveSourcePaths = [];
       state.moveSelectedTarget = '';
       state.moveDirList = [];
 
@@ -2421,6 +2466,7 @@ export function getLanWebHtml(): string {
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-primary" id="move-confirm-btn" disabled onclick="submitMove()">确认移动</button>';
 
+      actionModal.style.display = 'flex';
       await loadMoveDirTree();
     };
 
@@ -2447,7 +2493,7 @@ export function getLanWebHtml(): string {
         return;
       }
 
-      var currentDir = state.currentPath.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      var currentDir = state.currentPath.replace(/\\/g, '/').replace(/\/+$/, '');
       var html = '';
       for (var i = 0; i < state.moveDirList.length; i++) {
         var item = state.moveDirList[i];
@@ -2472,8 +2518,8 @@ export function getLanWebHtml(): string {
       var newSubBtn = document.getElementById('move-new-subfolder-btn');
       if (newSubBtn) newSubBtn.disabled = false;
 
-      var currentDir = state.currentPath.replace(/\\\\/g, '/').replace(/\\/+$/, '');
-      var selectedNorm = item.path.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      var currentDir = state.currentPath.replace(/\\/g, '/').replace(/\/+$/, '');
+      var selectedNorm = item.path.replace(/\\/g, '/').replace(/\/+$/, '');
       var isSameAsCurrent = currentDir === selectedNorm;
 
       var confirmBtn = document.getElementById('move-confirm-btn');
@@ -2510,19 +2556,37 @@ export function getLanWebHtml(): string {
     };
 
     window.submitMove = async function() {
-      if (!state.moveSourcePath || !state.moveSelectedTarget) return;
+      if (!state.moveSelectedTarget) return;
+
+      var payload = {};
+      if (state.isBatchMove) {
+        if (!state.moveSourcePaths || state.moveSourcePaths.length === 0) return;
+        payload = {
+          sourcePaths: state.moveSourcePaths,
+          targetDirPath: state.moveSelectedTarget
+        };
+      } else {
+        if (!state.moveSourcePath) return;
+        payload = {
+          sourcePath: state.moveSourcePath,
+          targetDirPath: state.moveSelectedTarget
+        };
+      }
+
       try {
         var res = await apiFetch('/api/move', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sourcePath: state.moveSourcePath,
-            targetDirPath: state.moveSelectedTarget
-          })
+          body: JSON.stringify(payload)
         });
 
         if (res.success) {
-          showToast('移动成功');
+          if (state.isBatchMove) {
+            showToast('已成功移动 ' + (res.movedCount || state.moveSourcePaths.length) + ' 项');
+            clearSelection();
+          } else {
+            showToast('移动成功');
+          }
           closeActionModal();
           loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
@@ -2722,6 +2786,22 @@ export function getLanWebHtml(): string {
       document.getElementById('video-edit-modal').style.display = 'none';
     };
 
+    window.toggleTrimmerPlay = function() {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      if (video.paused || video.ended) {
+        if (video.ended || (video.duration && video.currentTime >= video.duration - 0.05)) {
+          video.currentTime = 0;
+        }
+        var p = video.play();
+        if (p && p.catch) {
+          p.catch(function() {});
+        }
+      } else {
+        video.pause();
+      }
+    };
+
     window.seekTrimmer = function(delta) {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
@@ -2828,6 +2908,20 @@ export function getLanWebHtml(): string {
       updateTrimmerTimeLabels();
     };
 
+    window.moveSelectedSegment = function(dir) {
+      if (!state.trimSegments || state.trimSegments.length <= 1) return;
+      var currentIdx = state.selectedSegmentIndex;
+      if (typeof currentIdx !== 'number' || currentIdx < 0 || currentIdx >= state.trimSegments.length) return;
+      var targetIdx = currentIdx + dir;
+      if (targetIdx < 0 || targetIdx >= state.trimSegments.length) return;
+
+      var item = state.trimSegments.splice(currentIdx, 1)[0];
+      state.trimSegments.splice(targetIdx, 0, item);
+      state.selectedSegmentIndex = targetIdx;
+      renderTrimSegments();
+      updateTrimmerTimeLabels();
+    };
+
     window.selectSegment = function(idx) {
       if (!state.trimSegments || idx < 0 || idx >= state.trimSegments.length) return;
       state.selectedSegmentIndex = idx;
@@ -2841,16 +2935,27 @@ export function getLanWebHtml(): string {
 
     function renderTrimSegments() {
       var listEl = document.getElementById('trimmer-segments-list');
+      var prevBtn = document.getElementById('trim-move-prev-btn');
+      var nextBtn = document.getElementById('trim-move-next-btn');
       if (!listEl) return;
 
       if (!state.trimSegments || state.trimSegments.length === 0) {
         listEl.innerHTML = '<span style="font-size:12px; color:var(--text-muted);">暂无片段</span>';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
         updateTrimmerSummary();
         return;
       }
 
       var html = '';
       var isSingle = state.trimSegments.length <= 1;
+
+      if (prevBtn) {
+        prevBtn.disabled = isSingle || state.selectedSegmentIndex <= 0;
+      }
+      if (nextBtn) {
+        nextBtn.disabled = isSingle || state.selectedSegmentIndex >= state.trimSegments.length - 1;
+      }
 
       for (var i = 0; i < state.trimSegments.length; i++) {
         var seg = state.trimSegments[i];
@@ -2918,8 +3023,6 @@ export function getLanWebHtml(): string {
         showToast('请至少设置一个有效的剪辑片段');
         return;
       }
-
-      validSegments.sort(function(a, b) { return a.start - b.start; });
 
       if (invalidCount > 0) {
         var ok = await window.showConfirm({

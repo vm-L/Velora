@@ -524,51 +524,100 @@ export class LanServer {
         }
 
         if (pathname === '/api/move') {
-          const { sourcePath, targetDirPath } = params;
-          if (!sourcePath || !targetDirPath) {
+          const { sourcePath, sourcePaths, targetDirPath } = params;
+          const pathsToMove: string[] = Array.isArray(sourcePaths)
+            ? sourcePaths.filter((p: any) => typeof p === 'string' && p.trim())
+            : (sourcePath && typeof sourcePath === 'string' && sourcePath.trim() ? [sourcePath.trim()] : []);
+
+          if (pathsToMove.length === 0 || !targetDirPath) {
             return this.sendJson(res, 400, { success: false, error: '参数缺失' });
           }
-          const isSourceAllowed = await this.isPathInAllowedResources(sourcePath);
+
           const isTargetAllowed = await this.isPathInAllowedResources(targetDirPath);
-          if (!isSourceAllowed || !isTargetAllowed) {
+          if (!isTargetAllowed) {
             return this.sendJson(res, 403, { success: false, error: '越界操作' });
           }
 
-          if (!fs.existsSync(sourcePath)) {
-            return this.sendJson(res, 404, { success: false, error: '源文件不存在' });
+          if (!fs.existsSync(targetDirPath)) {
+            return this.sendJson(res, 404, { success: false, error: '目标目录不存在' });
           }
 
-          const baseName = path.basename(sourcePath);
-          let destPath = path.join(targetDirPath, baseName);
-
-          if (path.resolve(sourcePath) === path.resolve(destPath)) {
-            return this.sendJson(res, 400, { success: false, error: '目标位置与源位置相同' });
+          const targetStat = await fs.promises.stat(targetDirPath);
+          if (!targetStat.isDirectory()) {
+            return this.sendJson(res, 400, { success: false, error: '目标路径不是文件夹' });
           }
 
-          if (fs.existsSync(destPath)) {
-            const ext = path.extname(baseName);
-            const nameWithoutExt = path.basename(baseName, ext);
-            destPath = path.join(targetDirPath, `${nameWithoutExt}_moved_${Date.now()}${ext}`);
-          }
+          const movedPaths: string[] = [];
+          const errors: string[] = [];
 
-          try {
-            await fs.promises.rename(sourcePath, destPath);
-          } catch (err: any) {
-            if (err.code === 'EXDEV') {
-              const stat = await fs.promises.stat(sourcePath);
-              if (stat.isDirectory()) {
-                await fs.promises.cp(sourcePath, destPath, { recursive: true });
-                await fs.promises.rm(sourcePath, { recursive: true, force: true });
-              } else {
-                await fs.promises.copyFile(sourcePath, destPath);
-                await fs.promises.unlink(sourcePath);
+          for (let i = 0; i < pathsToMove.length; i++) {
+            const src = pathsToMove[i];
+            const isSourceAllowed = await this.isPathInAllowedResources(src);
+            if (!isSourceAllowed) {
+              errors.push(`权限不足: ${path.basename(src)}`);
+              continue;
+            }
+
+            if (!fs.existsSync(src)) {
+              errors.push(`源文件不存在: ${path.basename(src)}`);
+              continue;
+            }
+
+            const srcStat = await fs.promises.stat(src);
+            const resolvedSrc = path.resolve(src);
+            const resolvedTargetDir = path.resolve(targetDirPath);
+
+            if (srcStat.isDirectory()) {
+              const relative = path.relative(resolvedSrc, resolvedTargetDir);
+              if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+                errors.push(`无法将文件夹移动到其子目录中: ${path.basename(src)}`);
+                continue;
               }
-            } else {
-              throw err;
+            }
+
+            const baseName = path.basename(src);
+            let destPath = path.join(targetDirPath, baseName);
+
+            if (resolvedSrc === path.resolve(destPath)) {
+              continue;
+            }
+
+            if (fs.existsSync(destPath)) {
+              const ext = path.extname(baseName);
+              const nameWithoutExt = path.basename(baseName, ext);
+              destPath = path.join(targetDirPath, `${nameWithoutExt}_moved_${Date.now()}_${i}${ext}`);
+            }
+
+            try {
+              await fs.promises.rename(src, destPath);
+              movedPaths.push(destPath.replace(/\\/g, '/'));
+            } catch (err: any) {
+              if (err.code === 'EXDEV') {
+                if (srcStat.isDirectory()) {
+                  await fs.promises.cp(src, destPath, { recursive: true });
+                  await fs.promises.rm(src, { recursive: true, force: true });
+                } else {
+                  await fs.promises.copyFile(src, destPath);
+                  await fs.promises.unlink(src);
+                }
+                movedPaths.push(destPath.replace(/\\/g, '/'));
+              } else {
+                errors.push(`移动失败: ${baseName} (${err.message || '未知原因'})`);
+              }
             }
           }
 
-          return this.sendJson(res, 200, { success: true, newPath: destPath.replace(/\\/g, '/') });
+          if (movedPaths.length === 0 && errors.length > 0) {
+            return this.sendJson(res, 400, { success: false, error: errors.join('; ') });
+          }
+
+          return this.sendJson(res, 200, {
+            success: true,
+            movedCount: movedPaths.length,
+            totalCount: pathsToMove.length,
+            newPath: movedPaths[0] || '',
+            errors: errors.length > 0 ? errors : undefined
+          });
         }
       }
 
