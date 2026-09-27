@@ -2145,7 +2145,7 @@ export function getLanWebHtml(): string {
           '<span class="card-size">' + metaSize + '</span>' +
           '<span class="card-time">' + timeStr + '</span>' +
           '</div>' +
-          (state.allowEdit ? '<button class="card-actions-btn" onclick="event.stopPropagation(); openItemActions(\\'' + encodedPath + '\\', ' + item.isDirectory + ', \\'' + item.name + '\\')">⋮</button>' : '') +
+          (state.allowEdit ? '<button class="card-actions-btn" onclick="event.stopPropagation(); openItemActions(\\'' + encodedPath + '\\')">⋮</button>' : '') +
           '</div>';
       }
       fileGrid.innerHTML = html;
@@ -2388,25 +2388,27 @@ export function getLanWebHtml(): string {
       }
     };
 
-    window.openItemActions = function(encodedPath, isDir, name) {
+    window.openItemActions = function(encodedPath) {
       var itemPath = decodeURIComponent(encodedPath);
       var item = state.items.find(function(i) { return i.path === itemPath; });
-      var isVideo = item ? getFileCategory(item) === 'video' : false;
+      if (!item) return;
 
-      actionModalTitle.innerText = '管理: ' + name;
+      var isVideo = getFileCategory(item) === 'video';
+
+      actionModalTitle.innerText = '管理: ' + item.name;
       var html = '<div style="display:flex; flex-direction:column; gap:8px;">';
 
       if (isVideo) {
-        html += '<button class="v-btn v-btn-primary" onclick="closeActionModal(); openVideoEditModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">' +
+        html += '<button class="v-btn v-btn-primary" onclick="closeActionModal(); openVideoEditModal(\\'' + encodedPath + '\\')">' +
           '<span>视频剪辑</span></button>';
 
-        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoCompressModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">' +
+        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoCompressModal(\\'' + encodedPath + '\\')">' +
           '<span>压缩视频</span></button>';
       }
 
-      html += '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">移动</button>' +
-        '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\', \\'' + escapeHtml(name) + '\\')">重命名</button>' +
-        '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\', ' + isDir + ', \\'' + escapeHtml(name) + '\\')">删除</button>' +
+      html += '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\')">移动</button>' +
+        '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\')">重命名</button>' +
+        '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\')">删除</button>' +
         '</div>';
 
       actionModalBody.innerHTML = html;
@@ -2445,14 +2447,17 @@ export function getLanWebHtml(): string {
 
     window.openMoveModal = async function(encodedPath, name) {
       var sourcePath = decodeURIComponent(encodedPath);
+      var item = state.items.find(function(i) { return i.path === sourcePath; });
+      var finalName = name || (item ? item.name : (sourcePath.split(/[\\\\/]/).pop() || ''));
+
       state.isBatchMove = false;
       state.moveSourcePath = sourcePath;
-      state.moveSourceName = name;
+      state.moveSourceName = finalName;
       state.moveSourcePaths = [];
       state.moveSelectedTarget = '';
       state.moveDirList = [];
 
-      actionModalTitle.innerText = '移动 "' + name + '"';
+      actionModalTitle.innerText = '移动 "' + finalName + '"';
       actionModalBody.innerHTML = '<div style="display:flex; flex-direction:column; gap:12px;">' +
         '<div class="tree-toolbar">' +
         '<span class="selected-target-hint">目标目录: <strong id="move-target-label">未选择</strong></span>' +
@@ -2493,7 +2498,7 @@ export function getLanWebHtml(): string {
         return;
       }
 
-      var currentDir = state.currentPath.replace(/\\/g, '/').replace(/\/+$/, '');
+      var currentDir = state.currentPath.replace(/\\\\/g, '/').replace(/\\/+$/, '');
       var html = '';
       for (var i = 0; i < state.moveDirList.length; i++) {
         var item = state.moveDirList[i];
@@ -2518,8 +2523,8 @@ export function getLanWebHtml(): string {
       var newSubBtn = document.getElementById('move-new-subfolder-btn');
       if (newSubBtn) newSubBtn.disabled = false;
 
-      var currentDir = state.currentPath.replace(/\\/g, '/').replace(/\/+$/, '');
-      var selectedNorm = item.path.replace(/\\/g, '/').replace(/\/+$/, '');
+      var currentDir = state.currentPath.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      var selectedNorm = item.path.replace(/\\\\/g, '/').replace(/\\/+$/, '');
       var isSameAsCurrent = currentDir === selectedNorm;
 
       var confirmBtn = document.getElementById('move-confirm-btn');
@@ -2598,10 +2603,15 @@ export function getLanWebHtml(): string {
     };
 
     window.openRenameModal = function(encodedPath, oldName) {
+      var targetPath = decodeURIComponent(encodedPath);
+      var item = state.items.find(function(i) { return i.path === targetPath; });
+      var finalName = oldName || (item ? item.name : (targetPath.split(/[\\\\/]/).pop() || ''));
+
       actionModalTitle.innerText = '重命名';
-      actionModalBody.innerHTML = '<input type="text" id="rename-input" class="v-input" value="' + oldName + '" style="width:100%;">';
+      actionModalBody.innerHTML = '<input type="text" id="rename-input" class="v-input" value="' + escapeHtml(finalName) + '" style="width:100%;">';
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-primary" onclick="submitRename(\\'' + encodedPath + '\\')">保存</button>';
+      actionModal.style.display = 'flex';
       setTimeout(function() { document.getElementById('rename-input').focus(); }, 50);
     };
 
@@ -2628,10 +2638,16 @@ export function getLanWebHtml(): string {
     };
 
     window.openDeleteModal = function(encodedPath, isDir, name) {
+      var targetPath = decodeURIComponent(encodedPath);
+      var item = state.items.find(function(i) { return i.path === targetPath; });
+      var finalName = name || (item ? item.name : (targetPath.split(/[\\\\/]/).pop() || ''));
+      var isDirectory = typeof isDir === 'boolean' ? isDir : (item ? item.isDirectory : false);
+
       actionModalTitle.innerText = '确认删除';
-      actionModalBody.innerHTML = '<p style="color:var(--color-error); font-size:14px;">确定要永久删除 ' + (isDir ? '文件夹' : '文件') + ' "<strong>' + name + '</strong>" 吗？此操作不可恢复。</p>';
+      actionModalBody.innerHTML = '<p style="color:var(--color-error); font-size:14px;">确定要永久删除 ' + (isDirectory ? '文件夹' : '文件') + ' "<strong>' + escapeHtml(finalName) + '</strong>" 吗？此操作不可恢复。</p>';
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-danger-soft" onclick="submitDelete(\\'' + encodedPath + '\\')">确认删除</button>';
+      actionModal.style.display = 'flex';
     };
 
     window.submitDelete = async function(encodedPath) {
@@ -2690,19 +2706,21 @@ export function getLanWebHtml(): string {
     // Video Trimmer Modal
     window.openVideoEditModal = function(encodedPath, name) {
       var filePath = decodeURIComponent(encodedPath);
+      var item = state.items.find(function(i) { return i.path === filePath; });
+      var finalName = name || (item ? item.name : (filePath.split(/[\\\\/]/).pop() || ''));
       state.currentTrimPath = filePath;
-      state.currentTrimName = name;
+      state.currentTrimName = finalName;
       state.trimSegments = [];
       state.selectedSegmentIndex = 0;
       state.trimStart = 0;
       state.trimEnd = 0;
 
-      document.getElementById('video-edit-title').innerText = '视频剪辑: ' + name;
+      document.getElementById('video-edit-title').innerText = '视频剪辑: ' + finalName;
       var video = document.getElementById('trimmer-video');
       var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(filePath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
       video.src = streamUrl;
 
-      var baseWithoutExt = name.replace(/\.[^/.]+$/, '');
+      var baseWithoutExt = finalName.replace(/\\.[^/.]+$/, '');
       document.getElementById('trim-filename-input').value = baseWithoutExt + '_cut.mp4';
       document.getElementById('trim-save-mode').value = 'replace';
       toggleTrimSaveMode();
@@ -3082,7 +3100,7 @@ export function getLanWebHtml(): string {
       }
 
       state.mergeVideos = videoItems.map(function(v) { return { path: v.path, name: v.name, size: v.size }; });
-      var firstName = state.mergeVideos[0].name.replace(/\.[^/.]+$/, '');
+      var firstName = state.mergeVideos[0].name.replace(/\\.[^/.]+$/, '');
       document.getElementById('merge-filename-input').value = firstName + '_merged.mp4';
       renderMergeList();
       document.getElementById('video-merge-modal').style.display = 'flex';
@@ -3156,11 +3174,14 @@ export function getLanWebHtml(): string {
     // Video Compress Modal
     window.openVideoCompressModal = function(encodedPath, name) {
       var filePath = decodeURIComponent(encodedPath);
-      state.compressFilePath = filePath;
-      state.compressFileName = name;
+      var item = state.items.find(function(i) { return i.path === filePath; });
+      var finalName = name || (item ? item.name : (filePath.split(/[\\\\/]/).pop() || ''));
 
-      document.getElementById('compress-modal-title').innerText = '压缩视频: ' + name;
-      var baseWithoutExt = name.replace(/\.[^/.]+$/, '');
+      state.compressFilePath = filePath;
+      state.compressFileName = finalName;
+
+      document.getElementById('compress-modal-title').innerText = '压缩视频: ' + finalName;
+      var baseWithoutExt = finalName.replace(/\\.[^/.]+$/, '');
       document.getElementById('compress-filename-input').value = baseWithoutExt + '_compressed.mp4';
       document.getElementById('compress-mode-select').value = 'saveAs';
       selectCompressPreset(2000);
