@@ -664,8 +664,6 @@ export function getLanWebHtml(): string {
       justify-content: center;
       align-items: center;
       padding: 16px;
-      overscroll-behavior: contain;
-      touch-action: none;
     }
 
     .modal-content {
@@ -679,7 +677,6 @@ export function getLanWebHtml(): string {
       flex-direction: column;
       overflow: hidden;
       color: var(--text-primary);
-      overscroll-behavior: contain;
     }
 
     .modal-header {
@@ -697,9 +694,6 @@ export function getLanWebHtml(): string {
       display: flex;
       flex-direction: column;
       gap: 14px;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
     }
 
     .modal-footer {
@@ -853,9 +847,6 @@ export function getLanWebHtml(): string {
     .directory-tree-container {
       max-height: 280px;
       overflow-y: auto;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
       border: 1px solid var(--border-color);
       border-radius: 8px;
       background: var(--bg-app);
@@ -985,7 +976,6 @@ export function getLanWebHtml(): string {
       box-shadow: var(--shadow-soft);
       display: flex;
       flex-direction: column;
-      overscroll-behavior: contain;
     }
 
     .video-edit-modal-content .modal-header {
@@ -1002,7 +992,6 @@ export function getLanWebHtml(): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      touch-action: none;
     }
 
     .trimmer-video-wrap video {
@@ -1025,7 +1014,6 @@ export function getLanWebHtml(): string {
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
     }
 
     .video-edit-modal-content .modal-footer {
@@ -1089,9 +1077,6 @@ export function getLanWebHtml(): string {
       min-height: 50px;
       max-height: 120px;
       overflow-y: auto;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
       padding: 8px 12px;
       background: var(--bg-surface);
       border: 1px solid var(--border-light);
@@ -1147,9 +1132,6 @@ export function getLanWebHtml(): string {
       gap: 6px;
       max-height: 260px;
       overflow-y: auto;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
     }
 
     .merge-item {
@@ -2303,6 +2285,50 @@ export function getLanWebHtml(): string {
         });
       }
     }
+
+    // Prevent Mobile Touch & Wheel Scroll Penetration on Modals
+    var modalTouchStartY = 0;
+    document.addEventListener('touchstart', function(e) {
+      if (e.touches && e.touches[0]) {
+        modalTouchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function(e) {
+      var modal = e.target.closest ? e.target.closest('.modal-overlay') : null;
+      if (!modal || modal.style.display === 'none') return;
+
+      var scrollEl = e.target.closest ? e.target.closest('.trimmer-controls, .directory-tree-container, .segment-chips-container, .merge-list, .modal-body') : null;
+      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) {
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
+      var deltaY = e.touches && e.touches[0] ? e.touches[0].clientY - modalTouchStartY : 0;
+      var atTop = scrollEl.scrollTop <= 0 && deltaY > 0;
+      var atBottom = (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1) && deltaY < 0;
+      if (atTop || atBottom) {
+        if (e.cancelable) e.preventDefault();
+      }
+    }, { passive: false });
+
+    document.addEventListener('wheel', function(e) {
+      var modal = e.target.closest ? e.target.closest('.modal-overlay') : null;
+      if (!modal || modal.style.display === 'none') return;
+
+      var scrollEl = e.target.closest ? e.target.closest('.trimmer-controls, .directory-tree-container, .segment-chips-container, .merge-list, .modal-body') : null;
+      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) {
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
+      var deltaY = e.deltaY;
+      var atTop = scrollEl.scrollTop <= 0 && deltaY < 0;
+      var atBottom = (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1) && deltaY > 0;
+      if (atTop || atBottom) {
+        if (e.cancelable) e.preventDefault();
+      }
+    }, { passive: false });
 
     // Video Player
     function openVideoModal(item) {
