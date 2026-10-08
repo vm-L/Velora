@@ -221,7 +221,6 @@
       :resource-id="resourceId"
       :rules="currentResourceDuplicateRules"
       @pick-mount="onPickMountElement"
-      @pick-title="onPickTitleElement"
       @preview="onPreviewDuplicateRule"
       @save="onSaveDuplicateRules"
       @delete="onDeleteDuplicateRule"
@@ -2446,33 +2445,6 @@ const onPickMountElement = async () => {
     endElementPickingSession();
     if (sel && duplicateMarkDialogRef.value) {
       duplicateMarkDialogRef.value.setMountSelector(sel);
-    }
-  } catch (e) {
-    cancelDuplicatePicking();
-  }
-};
-
-const onPickTitleElement = async () => {
-  duplicatePickingType.value = 'title';
-  startElementPickingSession();
-
-  const tabId = activeTab.value?.id;
-  if (!tabId) {
-    cancelDuplicatePicking();
-    return;
-  }
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) {
-    cancelDuplicatePicking();
-    return;
-  }
-
-  try {
-    const sel: string = await webview.executeJavaScript(getPickerScript('selector'));
-    duplicatePickingType.value = null;
-    endElementPickingSession();
-    if (sel && duplicateMarkDialogRef.value) {
-      duplicateMarkDialogRef.value.setTitleSelector(sel);
     }
   } catch (e) {
     cancelDuplicatePicking();

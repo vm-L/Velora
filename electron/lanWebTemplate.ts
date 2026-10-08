@@ -588,19 +588,19 @@ export function getLanWebHtml(): string {
 
     .recent-badge {
       position: absolute;
-      top: -3px;
-      right: -5px;
-      background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+      top: 6px;
+      right: 6px;
+      background: color-mix(in srgb, var(--color-success) 12%, var(--bg-surface));
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-      border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+      border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
       border-radius: 9999px;
-      padding: 1px 5px;
+      padding: 1px 6px;
       font-size: 10px;
       font-weight: 600;
       line-height: 1.3;
-      color: var(--color-accent);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      color: var(--color-success);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
       user-select: none;
       pointer-events: none;
       white-space: nowrap;
@@ -608,10 +608,14 @@ export function getLanWebHtml(): string {
     }
 
     [data-theme='dark'] .recent-badge {
-      background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
-      border-color: color-mix(in srgb, var(--border-color) 80%, transparent);
-      color: var(--color-accent);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+      background: color-mix(in srgb, var(--color-success) 18%, var(--bg-surface));
+      border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+      color: var(--color-success);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .file-card.has-actions .recent-badge {
+      right: 28px;
     }
 
     .card-info {
@@ -2167,14 +2171,14 @@ export function getLanWebHtml(): string {
         var extBadge = item.isDirectory ? '' : '<span class="ext-badge">' + (item.ext || 'FILE').toUpperCase() + '</span>';
         var recentBadge = isRecentFile(item) ? '<span class="recent-badge">近期新增</span>' : '';
         var isSelected = state.selectedPaths.has(item.path);
-        var cardClass = 'file-card' + (isSelected ? ' selected' : '');
+        var cardClass = 'file-card' + (isSelected ? ' selected' : '') + (state.allowEdit ? ' has-actions' : '');
 
         html += '<div class="' + cardClass + '" onclick="handleCardClick(' + idx + ')">' +
           (state.allowEdit ? '<div class="card-select-btn" onclick="event.stopPropagation(); toggleCardSelection(' + idx + ', event)">✓</div>' : '') +
+          recentBadge +
           '<div class="card-icon-wrap">' +
           iconSvg +
           extBadge +
-          recentBadge +
           '</div>' +
           '<div class="card-info">' +
           '<span class="card-name" title="' + item.name + '">' + item.name + '</span>' +

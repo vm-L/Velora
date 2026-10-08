@@ -92,6 +92,7 @@ export interface DuplicateMarkRule {
   domain: string;
   mountSelector: string;
   titleSelector: string;
+  titleAttribute?: string;
   offsetX: number;
   offsetY: number;
   enabled?: boolean;

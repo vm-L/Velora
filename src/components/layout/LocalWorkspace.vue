@@ -121,6 +121,9 @@
           @dblclick="handleItemDblClick(item)"
           @contextmenu.prevent.stop="onItemContextMenu($event, item, index)"
         >
+          <!-- Recent Added Badge -->
+          <span v-if="isRecentFile(item)" class="recent-badge">近期新增</span>
+
           <!-- Thumbnail / Icon Area -->
           <div class="card-icon-wrap" :class="getFileCategory(item)">
             <!-- Folder Icon -->
@@ -137,9 +140,6 @@
 
             <!-- Extension Badge for non-folders -->
             <span v-if="!item.isDirectory && item.ext" class="ext-badge">{{ item.ext.toUpperCase() }}</span>
-
-            <!-- Recent Added Badge -->
-            <span v-if="isRecentFile(item)" class="recent-badge">近期新增</span>
           </div>
 
           <!-- Title & Meta (3 Lines) -->
@@ -1601,27 +1601,27 @@ const isRecentFile = (item: LocalFileItem): boolean => {
       border-radius: 3px;
       letter-spacing: 0.5px;
     }
+  }
 
-    .recent-badge {
-      position: absolute;
-      top: -3px;
-      right: -5px;
-      background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
-      border-radius: 9999px;
-      padding: 1px 5px;
-      font-size: 10px;
-      font-weight: 600;
-      line-height: 1.3;
-      color: var(--color-accent);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-      user-select: none;
-      pointer-events: none;
-      white-space: nowrap;
-      z-index: 2;
-    }
+  .recent-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: color-mix(in srgb, var(--color-success) 12%, var(--bg-surface));
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
+    border-radius: 9999px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--color-success);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    user-select: none;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 2;
   }
 
   .card-info {

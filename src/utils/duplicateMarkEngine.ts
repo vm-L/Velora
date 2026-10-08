@@ -475,32 +475,38 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
           }
           if (!mountNodes || mountNodes.length === 0) return;
 
-          var hasTitleSelector = !!(rule.titleSelector && rule.titleSelector.trim());
-          var trimmedTitleSelector = hasTitleSelector ? rule.titleSelector.trim() : '';
+          var titleSelector = (rule.titleSelector || '').trim();
+          var titleAttr = (rule.titleAttribute || 'innerText').trim() || 'innerText';
 
           mountNodes.forEach(function(mountEl) {
             var existingBadge = mountEl.querySelector(':scope > .velora-dup-badge');
             
-            var text = '';
-            if (hasTitleSelector) {
-              var titleEl = null;
+            var targetEl = mountEl;
+            if (titleSelector) {
               try {
-                if (mountEl.matches && mountEl.matches(trimmedTitleSelector)) {
-                  titleEl = mountEl;
+                if (mountEl.matches && mountEl.matches(titleSelector)) {
+                  targetEl = mountEl;
                 } else {
-                  titleEl = mountEl.querySelector(trimmedTitleSelector);
+                  targetEl = mountEl.querySelector(titleSelector);
                 }
-              } catch (e) {}
-              if (!titleEl) {
-                if (existingBadge) existingBadge.remove();
-                return;
+              } catch (e) {
+                targetEl = null;
               }
-              text = titleEl.innerText || titleEl.textContent || '';
-            } else {
-              text = mountEl.innerText || mountEl.textContent || '';
             }
 
-            text = text ? text.trim() : '';
+            if (!targetEl) {
+              if (existingBadge) existingBadge.remove();
+              return;
+            }
+
+            var rawVal = targetEl[titleAttr];
+            if (rawVal === undefined || rawVal === null) {
+              if (typeof targetEl.getAttribute === 'function') {
+                rawVal = targetEl.getAttribute(titleAttr);
+              }
+            }
+
+            var text = (rawVal != null) ? String(rawVal).trim() : '';
             if (!text) {
               if (existingBadge) existingBadge.remove();
               return;

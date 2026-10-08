@@ -76,19 +76,22 @@
             </div>
           </div>
 
-          <!-- 标题元素选择器 -->
+          <!-- 标题元素选择器与属性 -->
           <div class="info-row">
             <span class="label">标题元素</span>
-            <div class="field-control selector-group">
+            <div class="field-control title-element-group">
               <v-input
                 v-model="currentRule.titleSelector"
-                class="value-input mono-input flex-1"
-                placeholder="需为挂载元素的子元素，留空获取innerText"
+                class="value-input mono-input title-selector-input"
+                placeholder="子选择器(留空为挂载元素)"
               />
-              <v-button variant="secondary" size="small" class="action-btn-inline pick-btn" @click="emit('pick-title')" title="在网页中拾取标题元素">
-                <VIcon name="magic" :size="12" style="margin-right: 4px;" />
-                选取
-              </v-button>
+              <VInputSelect
+                v-model="currentRule.titleAttribute"
+                :options="titleAttributeOptions"
+                :allow-input="true"
+                class="value-input mono-input title-attr-select"
+                placeholder="属性(默认innerText)"
+              />
             </div>
           </div>
 
@@ -176,10 +179,17 @@ const emit = defineEmits([
   'delete',
   'preview',
   'pick-mount',
-  'pick-title',
   'interaction-start',
   'interaction-end'
 ]);
+
+const titleAttributeOptions: InputSelectOption[] = [
+  { label: 'innerText (默认)', value: 'innerText' },
+  { label: 'textContent', value: 'textContent' },
+  { label: 'title', value: 'title' },
+  { label: 'alt', value: 'alt' },
+  { label: 'aria-label', value: 'aria-label' }
+];
 
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
@@ -192,12 +202,23 @@ const { position, startDrag, resetPosition } = useDraggableDialog({
   onInteractionEnd: () => emit('interaction-end')
 });
 
-const currentRule = reactive<DuplicateMarkRule>({
+const currentRule = reactive<{
+  id: string;
+  name: string;
+  domain: string;
+  mountSelector: string;
+  titleSelector: string;
+  titleAttribute: string;
+  offsetX: number;
+  offsetY: number;
+  enabled: boolean;
+}>({
   id: '',
   name: '',
   domain: '',
   mountSelector: '',
   titleSelector: '',
+  titleAttribute: 'innerText',
   offsetX: 8,
   offsetY: 8,
   enabled: true
@@ -222,7 +243,8 @@ const loadRule = (rule: DuplicateMarkRule) => {
   currentRule.name = rule.name || '';
   currentRule.domain = rule.domain;
   currentRule.mountSelector = rule.mountSelector;
-  currentRule.titleSelector = rule.titleSelector;
+  currentRule.titleSelector = rule.titleSelector || '';
+  currentRule.titleAttribute = (rule.titleAttribute && rule.titleAttribute.trim()) ? rule.titleAttribute.trim() : 'innerText';
   currentRule.offsetX = typeof rule.offsetX === 'number' ? rule.offsetX : 8;
   currentRule.offsetY = typeof rule.offsetY === 'number' ? rule.offsetY : 8;
   currentRule.enabled = rule.enabled !== false;
@@ -236,6 +258,7 @@ const resetToNewRule = () => {
   currentRule.domain = defaultDomain;
   currentRule.mountSelector = '';
   currentRule.titleSelector = '';
+  currentRule.titleAttribute = 'innerText';
   currentRule.offsetX = 8;
   currentRule.offsetY = 8;
   currentRule.enabled = true;
@@ -340,7 +363,8 @@ const save = () => {
     name: (currentRule.name || '').trim(),
     domain: currentRule.domain.trim(),
     mountSelector: currentRule.mountSelector.trim(),
-    titleSelector: currentRule.titleSelector.trim(),
+    titleSelector: (currentRule.titleSelector || '').trim(),
+    titleAttribute: (currentRule.titleAttribute || '').trim() || 'innerText',
     offsetX: typeof currentRule.offsetX === 'number' ? currentRule.offsetX : 8,
     offsetY: typeof currentRule.offsetY === 'number' ? currentRule.offsetY : 8,
     enabled: currentRule.enabled !== false
@@ -453,11 +477,22 @@ defineExpose({
 }
 
 .rule-switch-group,
-.selector-group {
+.selector-group,
+.title-element-group {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+
+.title-selector-input {
+  flex: 6 6 0%;
+  min-width: 0;
+}
+
+.title-attr-select {
+  flex: 4 4 0%;
+  min-width: 0;
 }
 
 .action-btn-inline {
