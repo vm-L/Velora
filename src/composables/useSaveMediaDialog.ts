@@ -54,7 +54,7 @@ export const useSaveMediaDialog = () => {
     const cascadeOffset = (dialogs.value.length % 8) * 30;
 
     let initX = Math.round((winWidth - baseWidth) / 2) + cascadeOffset;
-    let initY = Math.round((winHeight - baseHeight) / 2) + cascadeOffset;
+    let initY = Math.max(40, Math.round(winHeight * 0.15)) + cascadeOffset;
 
     // 边界钳制，确保不会出现在屏幕外
     initX = Math.max(20, Math.min(initX, winWidth - baseWidth - 20));

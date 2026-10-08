@@ -26,7 +26,8 @@ class StoreManager {
         lanShareEnabled: false,
         lanSharePort: 8899,
         lanSharePassword: '',
-        lanShareAllowEdit: false
+        lanShareAllowEdit: false,
+        customDuplicateRules: {}
       }
     })
   }

@@ -86,6 +86,17 @@ export interface WaterfallRule {
   enabled?: boolean;
 }
 
+export interface DuplicateMarkRule {
+  id: string;
+  name?: string;
+  domain: string;
+  mountSelector: string;
+  titleSelector: string;
+  offsetX: number;
+  offsetY: number;
+  enabled?: boolean;
+}
+
 export interface SettingsState {
   closeBehavior: string
   theme: string
@@ -106,6 +117,7 @@ export interface SettingsState {
   customScripts: Record<string, CustomScript[]>
   customParseRules: Record<string, ParseRule[]>
   customWaterfallRules: Record<string, WaterfallRule[]>
+  customDuplicateRules: Record<string, DuplicateMarkRule[]>
   adBlockSources: AdBlockSource[]
   lanShareEnabled: boolean
   lanSharePort: number
@@ -134,6 +146,7 @@ export const state = reactive<SettingsState>({
   customScripts: {} as Record<string, CustomScript[]>,
   customParseRules: {} as Record<string, ParseRule[]>,
   customWaterfallRules: {} as Record<string, WaterfallRule[]>,
+  customDuplicateRules: {} as Record<string, DuplicateMarkRule[]>,
   adBlockSources: [] as AdBlockSource[],
   lanShareEnabled: false,
   lanSharePort: 8899,
@@ -170,6 +183,7 @@ export const useSettings = () => {
     state.customScripts = all['customScripts'] || {}
     state.customParseRules = all['customParseRules'] || {}
     state.customWaterfallRules = all['customWaterfallRules'] || {}
+    state.customDuplicateRules = all['customDuplicateRules'] || {}
     state.lanShareEnabled = all['lanShareEnabled'] === true
     state.lanSharePort = typeof all['lanSharePort'] === 'number' ? all['lanSharePort'] : 8899
     state.lanSharePassword = all['lanSharePassword'] || ''
@@ -302,6 +316,11 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('customWaterfallRules', JSON.parse(JSON.stringify(rules)))
   }
 
+  const saveCustomDuplicateRules = async (rules: Record<string, DuplicateMarkRule[]>) => {
+    state.customDuplicateRules = rules
+    await window.electronAPI.setSetting('customDuplicateRules', JSON.parse(JSON.stringify(rules)))
+  }
+
   const saveAdBlockSources = async (sources: AdBlockSource[]) => {
     state.adBlockSources = sources;
     await window.electronAPI.setSetting('adBlockSources', JSON.parse(JSON.stringify(sources)));
@@ -425,6 +444,7 @@ export const useSettings = () => {
       payload.data.customScripts = JSON.parse(JSON.stringify(state.customScripts || {}));
       payload.data.customStyles = JSON.parse(JSON.stringify(state.customStyles || {}));
       payload.data.customWaterfallRules = JSON.parse(JSON.stringify(state.customWaterfallRules || {}));
+      payload.data.customDuplicateRules = JSON.parse(JSON.stringify(state.customDuplicateRules || {}));
     }
 
     if (selectedKeys.includes('adBlockSources')) {
@@ -549,15 +569,17 @@ export const useSettings = () => {
       }
     }
 
-    // 9. 自定义注入脚本与样式及瀑布流规则
+    // 9. 自定义注入脚本与样式及瀑布流规则与标记重复规则
     const newScripts: Record<string, CustomScript[]> = data.customScripts || {};
     const newStyles: Record<string, Record<string, string>> = data.customStyles || {};
     const newWaterfallRules: Record<string, WaterfallRule[]> = data.customWaterfallRules || {};
+    const newDuplicateRules: Record<string, DuplicateMarkRule[]> = data.customDuplicateRules || {};
     if (selectedKeys.includes('customScripts')) {
       if (mode === 'overwrite') {
         if (data.customScripts) await saveCustomScripts(newScripts);
         if (data.customStyles) await saveCustomStyles(newStyles);
         if (data.customWaterfallRules) await saveCustomWaterfallRules(newWaterfallRules);
+        if (data.customDuplicateRules) await saveCustomDuplicateRules(newDuplicateRules);
       } else {
         if (data.customScripts) {
           const mergedScripts: Record<string, CustomScript[]> = { ...(state.customScripts || {}) };
@@ -594,6 +616,22 @@ export const useSettings = () => {
             }
           }
           await saveCustomWaterfallRules(mergedWfRules);
+        }
+        if (data.customDuplicateRules) {
+          const mergedDupRules: Record<string, DuplicateMarkRule[]> = { ...(state.customDuplicateRules || {}) };
+          for (const [resId, dupRules] of Object.entries(newDuplicateRules)) {
+            if (!mergedDupRules[resId]) {
+              mergedDupRules[resId] = dupRules;
+            } else {
+              const existingIds = new Set(mergedDupRules[resId].map(r => r.id));
+              for (const r of dupRules) {
+                if (!existingIds.has(r.id)) {
+                  mergedDupRules[resId].push(r);
+                }
+              }
+            }
+          }
+          await saveCustomDuplicateRules(mergedDupRules);
         }
       }
     }
@@ -697,6 +735,7 @@ export const useSettings = () => {
     saveCustomScripts,
     saveCustomParseRules,
     saveCustomWaterfallRules,
+    saveCustomDuplicateRules,
     saveAdBlockSources,
     syncAdBlockSourceItem,
     syncAllAdBlockSources,

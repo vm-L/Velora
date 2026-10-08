@@ -150,35 +150,93 @@ export function calculateSimilarity(candidate: string, target: string): Similari
 }
 
 /**
+ * 提取文件开头的番号/编号（严格遵循连字符番号格式，如 example-001, FC2-12345, ABC-001）
+ * 不允许判断 01, 第01集 等简易序号
+ */
+export function extractLeadingCode(str: string): string | null {
+  if (!str) return null;
+  const clean = str.trim();
+  const codeMatch = clean.match(/^([a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)+)/i);
+  if (codeMatch) {
+    return codeMatch[1].toLowerCase();
+  }
+  return null;
+}
+
+/**
  * 智能判断已有文件与待下载文件是否高度相似（同一文件的重复下载）
  * 
- * 判定规则（严格遵循对齐规范）：
- * 1. 若两个文件有效字符完全一致，则直接判定为同一文件；
- * 2. 避免误判：已有文件名有效字符数必须 >= 3 字（如“盗梦空间”），防止 2 字导演/演员名（如“诺兰”）发生误判；
- * 3. 顺序覆盖度 coverage >= 0.8（即已有文件名中 80% 以上字符按顺序连续出现在待下载文件名中）；
- * 4. 且最大连续成词命中数 maxConsecutive >= 3。
+ * 判定规则：
+ * 1. 开头番号判断：必须严格遵循连字符番号格式（如 example-001），双方均有番号时必须严格相等才判断为同作品；
+ * 2. 纯英文/拉丁字母文本进行单词完整度检查，避免单字散落误判（如 image.jpg 误判 Montagem Nada Tropica）；
+ * 3. 综合双向 Dice 相似度系数 (>= 0.75) 与长短串包含关系。
  */
 export function isSimilarExistingFile(existingFileName: string, newFileName: string): boolean {
+  if (!existingFileName || !newFileName) return false;
+
+  // 1. 先对开头番号进行正则提取判断
+  const code1 = extractLeadingCode(existingFileName);
+  const code2 = extractLeadingCode(newFileName);
+
+  if (code1 && code2) {
+    // 编号必须严格相等才判断为同作品
+    return code1 === code2;
+  }
+
+  // 2. 提取有效字符
   const existingChars = extractEffectiveChars(existingFileName);
   const newChars = extractEffectiveChars(newFileName);
 
   if (existingChars.length === 0 || newChars.length === 0) return false;
 
-  // 1. 若有效字符完全相同，则无论字数多少均判定为完全相同文件
-  if (existingChars.join('') === newChars.join('')) {
+  const str1 = existingChars.join('');
+  const str2 = newChars.join('');
+
+  // 3. 完全相同
+  if (str1 === str2) {
     return true;
   }
 
-  // 2. 长短匹配判重：已有文件名必须 >= 3 字，避免单个 2 字人名/标签误判
-  if (existingChars.length < 3) {
+  // 4. 长度太短（<3）避免无意义误判
+  const len1 = existingChars.length;
+  const len2 = newChars.length;
+  const minLen = Math.min(len1, len2);
+  const maxLen = Math.max(len1, len2);
+  if (minLen < 3) {
     return false;
   }
 
-  const result = calculateSimilarity(existingFileName, newFileName);
+  // 5. 英文/拉丁单词级别重叠校验（如果纯拉丁字母文本且长度差异大，避免单字零散匹配）
+  const isLatinOnly = (s: string) => /^[a-z0-9\s_-]+$/i.test(s.replace(/\.[^.]+$/, ''));
+  if (isLatinOnly(existingFileName) && isLatinOnly(newFileName)) {
+    const words1 = existingFileName.toLowerCase().replace(/\.[^.]+$/, '').split(/[^a-z0-9]+/i).filter(w => w.length >= 2);
+    const words2 = newFileName.toLowerCase().replace(/\.[^.]+$/, '').split(/[^a-z0-9]+/i).filter(w => w.length >= 2);
+    const set2 = new Set(words2);
+    const commonWords = words1.filter(w => set2.has(w));
+    if (commonWords.length === 0) {
+      return false;
+    }
+  }
 
-  // 3. 覆盖度 >= 80%
-  if (result.coverage < 0.8) return false;
+  // 6. 综合 LCS 与连续字长计算
+  const { lcsLength, maxConsecutive } = calculateLCSAndConsecutive(existingChars, newChars);
 
-  // 4. 必须至少连续命中 3 个字
-  return result.maxConsecutive >= 3;
+  // 双向 Dice 相似度系数
+  const dice = (2 * lcsLength) / (len1 + len2);
+
+  // 短串连续覆盖率（最大连续子串占短串的比例）
+  const consecutiveRatio = maxConsecutive / minLen;
+
+  // 判定规则：
+  // 规则 A: 双向 Dice 相似度 >= 0.75 且 最大连续成词 >= 3
+  if (dice >= 0.75 && maxConsecutive >= 3) {
+    return true;
+  }
+
+  // 规则 B: 短串 >=95% 完整连续包含在长串中（如 "自由的你" 包含在 "自由的你 (官方版)" 中），且长度差异在合理范围内（短串占长串 >= 50%）
+  if (consecutiveRatio >= 0.95 && (minLen / maxLen) >= 0.5 && maxConsecutive >= 3) {
+    return true;
+  }
+
+  return false;
 }

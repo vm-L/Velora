@@ -316,12 +316,12 @@ const clearPrivacyData = async () => {
     logger.error('Privacy', `Failed to clear privacy data: ${e.message}`)
   }
 }
-export const globalMediaPageMap = new Map<string, string>();
-export const globalHostPageMap = new Map<string, string>();
-export const webContentsUrlMap = new Map<number, string>();
+const globalMediaPageMap = new Map<string, string>();
+const globalHostPageMap = new Map<string, string>();
+const webContentsUrlMap = new Map<number, string>();
 const MAX_REFERER_CACHE_SIZE = 1000;
 
-export function isLocalUrl(urlStr?: string): boolean {
+function isLocalUrl(urlStr?: string): boolean {
   if (!urlStr) return true;
   try {
     const u = new URL(urlStr);
@@ -332,7 +332,7 @@ export function isLocalUrl(urlStr?: string): boolean {
   }
 }
 
-export function registerMediaReferer(mediaUrl: string, pageUrl: string) {
+function registerMediaReferer(mediaUrl: string, pageUrl: string) {
   if (!mediaUrl || !pageUrl || isLocalUrl(pageUrl)) return;
   let targetOrigin = pageUrl;
   try {
@@ -642,10 +642,6 @@ function setupIpcHandlers() {
   
   ipcMain.on('log-message', (_, { level, scope, message }: { level: 'info' | 'warn' | 'error' | 'perf', scope: string, message: string }) => {
     logger[level || 'info'](scope || 'Renderer', message || '')
-  })
-
-  ipcMain.on('write-log', (_, message: string) => {
-    logger.info('Renderer', message)
   })
   
   ipcMain.on('start-download', (_, cmd) => {
@@ -1298,6 +1294,62 @@ ipcMain.handle('scan-directory-media-files', async (_event, rootDir: string, max
     return results;
   } catch (err: any) {
     logger.error('Main', `Failed to scan media files for ${rootDir}: ${err.message}`);
+    return [];
+  }
+});
+
+ipcMain.handle('scan-directories-all-files', async (_event, rootDirs: string[], maxDepth: number = 5) => {
+  try {
+    if (!Array.isArray(rootDirs) || rootDirs.length === 0) {
+      return [];
+    }
+
+    const uniqueRoots = Array.from(new Set(rootDirs.filter(d => typeof d === 'string' && d.trim() && fs.existsSync(d))));
+    if (uniqueRoots.length === 0) {
+      return [];
+    }
+
+    interface ScannedFile {
+      name: string;
+      path: string;
+    }
+
+    const results: ScannedFile[] = [];
+    const visitedPaths = new Set<string>();
+
+    const scan = async (currentDir: string, depth: number) => {
+      if (depth > maxDepth) return;
+      try {
+        const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue;
+          const fullPath = path.join(currentDir, entry.name);
+          const normalizedPath = fullPath.replace(/\\/g, '/');
+
+          if (visitedPaths.has(normalizedPath)) continue;
+          visitedPaths.add(normalizedPath);
+
+          if (entry.isDirectory()) {
+            await scan(fullPath, depth + 1);
+          } else if (entry.isFile()) {
+            if (/\.(temp|tmp|crdownload|velora)(\.[a-zA-Z0-9]+)?$/i.test(entry.name)) {
+              continue;
+            }
+            results.push({
+              name: entry.name,
+              path: normalizedPath
+            });
+          }
+        }
+      } catch (err: any) {
+        logger.warn('Main', `Error scanning directory ${currentDir}: ${err.message}`);
+      }
+    };
+
+    await Promise.all(uniqueRoots.map(root => scan(root, 1)));
+    return results;
+  } catch (err: any) {
+    logger.error('Main', `Failed to batch scan directories for files: ${err.message}`);
     return [];
   }
 });

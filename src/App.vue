@@ -42,6 +42,7 @@ const CMSWorkspace = defineAsyncComponent(() => import('@/components/layout/CMSW
 const LocalWorkspace = defineAsyncComponent(() => import('@/components/layout/LocalWorkspace.vue'));
 import { useSettings } from '@/composables/useSettings';
 import { useDownloads } from '@/composables/useDownloads';
+import { useFileDeduplication } from '@/composables/useFileDeduplication';
 import { useOpenedResources } from '@/composables/useOpenedResources';
 import { useOpenedCMS } from '@/composables/useOpenedCMS';
 import { useOpenedLocal } from '@/composables/useOpenedLocal';
@@ -49,6 +50,7 @@ import { useOpenedLocal } from '@/composables/useOpenedLocal';
 const route = useRoute();
 const { state, loadSettings } = useSettings();
 const { loadTasks, initListeners, isInitialized, auditDiskFiles } = useDownloads();
+const { initFileIndex } = useFileDeduplication();
 const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 const { openedLocal, openLocal } = useOpenedLocal();
@@ -69,6 +71,9 @@ onMounted(async () => {
     await loadTasks();
     initListeners();
   }
+
+  // 异步初始化建立全局文件去重内存 Map
+  initFileIndex();
 
   // 通知主进程首屏已就绪，可以安全平滑地淡出 Splash 悬浮窗并展示主窗口
   if (window.electronAPI && window.electronAPI.notifyFirstScreenReady) {
@@ -281,6 +286,11 @@ textarea {
   z-index: -9999 !important;
   pointer-events: none !important;
   visibility: hidden !important;
+}
+
+.flex-1 {
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
 }
 
 </style>

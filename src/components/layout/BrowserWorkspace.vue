@@ -59,6 +59,10 @@
           <VIcon name="css" size="16" />
         </v-button>
 
+        <v-button variant="icon" class="func-btn" :class="{ 'active': duplicateMarkVisible }" v-tooltip="'标记重复'" @click="toggleDuplicateMark">
+          <VIcon name="duplicate-mark" size="16" />
+        </v-button>
+
         <WaterfallDropdown
           :rules="currentDomainWaterfallRules"
           :selected-rule-id="selectedWaterfallRuleId"
@@ -115,6 +119,17 @@
       <v-button size="small" variant="secondary" @click="cancelWaterfallPicking">取消</v-button>
     </div>
 
+    <!-- Duplicate Picking Banner -->
+    <div v-if="duplicatePickingType" class="waterfall-picking-banner">
+      <div class="banner-content">
+        <span class="picking-badge">元素拾取</span>
+        <span class="picking-instruction">
+          {{ duplicatePickingType === 'mount' ? '请在网页中点击【挂载元素 / 卡片容器】(Alt+滚轮可微调选择范围)' : '请在网页中点击【标题元素】(Alt+滚轮可微调选择范围)' }}
+        </span>
+      </div>
+      <v-button size="small" variant="secondary" @click="cancelDuplicatePicking">取消</v-button>
+    </div>
+
     <!-- Webviews -->
     <div class="webview-container" :class="{ 'pointer-disabled': isInteracting || isDraggingAnyDialog }">
       <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
@@ -155,19 +170,26 @@
     </div>
 
     <!-- Audio Player Dialog -->
-    <AudioPlayerDialog v-if="activeAudioPreview" :url="activeAudioPreview" :page-url="getCurrentPageOrigin()" @close="activeAudioPreview = null"
+    <AudioPlayerDialog v-if="activeAudioPreview" v-show="!isElementPickingActive" :url="activeAudioPreview" :page-url="getCurrentPageOrigin()" @close="activeAudioPreview = null"
       @download="onDownloadAudio" />
 
     <!-- Video Player Dialog -->
-    <VideoPlayerDialog v-if="activeVideoPreview" :url="activeVideoPreview" :page-url="getCurrentPageOrigin()" @close="activeVideoPreview = null"
+    <VideoPlayerDialog v-if="activeVideoPreview" v-show="!isElementPickingActive" :url="activeVideoPreview" :page-url="getCurrentPageOrigin()" @close="activeVideoPreview = null"
       @download="onDownloadVideo" />
 
     <!-- Parse Rule Dialog -->
-    <ParseRuleDialog v-model="parseRuleVisible" :resource-id="resourceId" :current-url="getCurrentPageUrl()" />
+    <ParseRuleDialog
+      v-model="parseRuleVisible"
+      v-show="!isElementPickingActive"
+      :resource-id="resourceId"
+      :current-url="getCurrentPageUrl()"
+      @save="onSaveParseRule"
+    />
 
     <!-- Waterfall Wizard Modal -->
     <WaterfallWizardModal
       v-model:visible="waterfallWizardVisible"
+      v-show="!isElementPickingActive"
       :step="waterfallWizardStep"
       :initial-domain="wizardTempDomain"
       :initial-next-selector="wizardTempNextSelector"
@@ -180,22 +202,41 @@
     />
 
     <!-- Script Injector Dialog -->
-    <ScriptInjectorDialog v-model="scriptInjectorVisible" :url="getCurrentPageUrl()"
+    <ScriptInjectorDialog v-model="scriptInjectorVisible" v-show="!isElementPickingActive" :url="getCurrentPageUrl()"
       :scripts="settingsState.customScripts[resourceId] || []" @executeScript="onExecuteScript" @save="onSaveScript"
+      @delete="onDeleteScript"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <!-- Inspector Dialog -->
-    <InspectorDialog v-model="inspectorVisible" :url="getCurrentPageUrl()"
+    <InspectorDialog v-model="inspectorVisible" v-show="!isElementPickingActive" :url="getCurrentPageUrl()"
       :domain-rules="settingsState.customStyles[resourceId] || {}" @applyPreview="onApplyPreview" @save="onSaveRules"
+      @delete="onDeleteStyle"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
+    <!-- Duplicate Mark Dialog -->
+    <DuplicateMarkDialog
+      ref="duplicateMarkDialogRef"
+      v-model="duplicateMarkVisible"
+      :url="getCurrentPageUrl()"
+      :resource-id="resourceId"
+      :rules="currentResourceDuplicateRules"
+      @pick-mount="onPickMountElement"
+      @pick-title="onPickTitleElement"
+      @preview="onPreviewDuplicateRule"
+      @save="onSaveDuplicateRules"
+      @delete="onDeleteDuplicateRule"
+      @interaction-start="isInteracting = true"
+      @interaction-end="isInteracting = false"
+    />
+
     <!-- Image Preview Dialogs -->
-    <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" :id="img.id" :url="img.url" :urls="img.urls"
+    <ImagePreviewDialog v-for="img in activeImagePreviews" :key="img.id" v-show="!isElementPickingActive" :id="img.id" :url="img.url" :urls="img.urls"
       :zIndex="img.zIndex" :initialX="img.x" :initialY="img.y" :page-url="getCurrentPageOrigin()" @close="onClosePreview" @focus="onFocusPreview"
       @interaction-start="isInteracting = true" @interaction-end="isInteracting = false" />
 
     <ParseRuleSelectDialog
       v-model:visible="ruleSelectModalVisible"
+      v-show="!isElementPickingActive"
       :rules="pendingMatchingRules"
       @select="onRuleSelected"
       @cancel="onRuleSelectCancelled"
@@ -231,6 +272,7 @@ import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 const InspectorDialog = defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'));
 const ScriptInjectorDialog = defineAsyncComponent(() => import('@/components/features/ScriptInjectorDialog.vue'));
+const DuplicateMarkDialog = defineAsyncComponent(() => import('@/components/features/DuplicateMarkDialog.vue'));
 import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
 import ParseRuleSelectDialog from '@/components/features/ParseRuleSelectDialog.vue';
 import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
@@ -248,8 +290,14 @@ import {
   getWaterfallDestroyScript,
   type WaterfallExtractResult
 } from '@/utils/waterfallEngine';
+import {
+  getDuplicateMarkScript,
+  getDuplicateMarkCleanupScript
+} from '@/utils/duplicateMarkEngine';
 import { isUrlMatchPattern, getDefaultUrlPattern } from '@/utils/urlMatcher';
-import type { WaterfallRule } from '@/composables/useSettings';
+import type { WaterfallRule, DuplicateMarkRule } from '@/composables/useSettings';
+import { useFileDeduplication } from '@/composables/useFileDeduplication';
+import { useElementPickerSession } from '@/composables/useElementPickerSession';
 
 
 import { useMessage } from '@/composables/useMessage';
@@ -269,8 +317,10 @@ const toggleParseRule = () => {
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 const { openSaveMediaDialog, isDraggingAnyDialog } = useSaveMediaDialog();
+const { isElementPickingActive, startElementPickingSession, endElementPickingSession } = useElementPickerSession();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveCustomScripts, saveCustomWaterfallRules, saveExternalSites, saveCmsResources } = useSettings();
+const { state: settingsState, saveCustomStyles, saveCustomScripts, saveCustomWaterfallRules, saveCustomDuplicateRules, saveExternalSites, saveCmsResources } = useSettings();
+const { fileIndexMap, isReady: isDupIndexReady } = useFileDeduplication();
 
 const contextMenuVisible = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
@@ -954,6 +1004,7 @@ onUnmounted(() => {
   document.removeEventListener('click', hideAllContextMenus);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
+  endElementPickingSession();
   activeWaterfallSessions.value.forEach((_, tabId) => {
     destroyWaterfallSession(tabId);
   });
@@ -1184,6 +1235,7 @@ const onDomReady = async (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
   refreshWebviewScripts(tabId, 'dom-ready');
   await injectTabBaseScripts(tabId);
+  await applyDuplicateMarksToTab(tabId);
 
   // 检查并自动应用已开启的瀑布流规则
   const webview = document.getElementById(`webview-${tabId}`) as any;
@@ -1391,6 +1443,7 @@ const onStopLoading = (tabId: string) => {
   updateTab(props.resourceId, tabId, { loading: false });
   refreshWebviewScripts(tabId, 'document-end');
   checkAutoApplyWaterfall(tabId);
+  applyDuplicateMarksToTab(tabId);
 };
 
 const onTitleUpdated = (event: any, tabId: string) => {
@@ -1652,6 +1705,7 @@ const onSaveScript = async (script: any) => {
       await saveCustomScripts(currentScripts);
       showMessage('脚本已成功合并保存！', 'success');
       scriptInjectorVisible.value = false;
+      onRefresh();
       return;
     }
   }
@@ -1667,6 +1721,16 @@ const onSaveScript = async (script: any) => {
   await saveCustomScripts(currentScripts);
   showMessage('脚本保存成功', 'success');
   scriptInjectorVisible.value = false;
+  onRefresh();
+};
+
+const onDeleteScript = async (scriptId: string) => {
+  const currentScripts = { ...settingsState.customScripts };
+  if (currentScripts[props.resourceId]) {
+    currentScripts[props.resourceId] = currentScripts[props.resourceId].filter((s: any) => s.id !== scriptId);
+    await saveCustomScripts(currentScripts);
+    showMessage('自定义脚本已删除', 'success');
+  }
 };
 
 
@@ -1683,9 +1747,16 @@ const deactivateOtherFeatures = async (exclude: string) => {
   if (exclude !== 'css' && inspectorVisible.value) {
     inspectorVisible.value = false;
   }
+  if (exclude !== 'duplicateMark' && duplicateMarkVisible.value) {
+    duplicateMarkVisible.value = false;
+  }
+  if (exclude !== 'duplicatePicking' && duplicatePickingType.value) {
+    cancelDuplicatePicking();
+  }
   const webview = activeWebview();
   if (exclude !== 'image' && isPickingElementImage.value) {
     isPickingElementImage.value = false;
+    endElementPickingSession();
     if (webview) {
       try {
         await webview.executeJavaScript(getPickerCancelScript());
@@ -1694,6 +1765,7 @@ const deactivateOtherFeatures = async (exclude: string) => {
   }
   if (exclude !== 'text' && isPickingElementText.value) {
     isPickingElementText.value = false;
+    endElementPickingSession();
     if (webview) {
       try {
         await webview.executeJavaScript(getPickerCancelScript());
@@ -1771,11 +1843,18 @@ const onStartWaterfallWizard = async () => {
 const onStartPickingNext = async () => {
   waterfallWizardVisible.value = false;
   waterfallPickingStep.value = 2;
+  startElementPickingSession();
 
   const tabId = activeTab.value?.id;
-  if (!tabId) return;
+  if (!tabId) {
+    cancelWaterfallPicking();
+    return;
+  }
   const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) return;
+  if (!webview) {
+    cancelWaterfallPicking();
+    return;
+  }
 
   try {
     const nextSel: string = await webview.executeJavaScript(getPickerScript('selector'));
@@ -1798,6 +1877,7 @@ const onStartPickingNext = async () => {
     waterfallPickingStep.value = 0;
     waterfallWizardStep.value = 4;
     waterfallWizardVisible.value = true;
+    endElementPickingSession();
   } catch (e) {
     cancelWaterfallPicking();
   }
@@ -1810,6 +1890,7 @@ const onRestartPicking = () => {
 const cancelWaterfallPicking = async () => {
   waterfallPickingStep.value = 0;
   waterfallWizardVisible.value = false;
+  endElementPickingSession();
   const tabId = activeTab.value?.id;
   if (tabId) {
     const webview = document.getElementById(`webview-${tabId}`) as any;
@@ -1819,6 +1900,11 @@ const cancelWaterfallPicking = async () => {
       } catch (e) {}
     }
   }
+};
+
+const onSaveParseRule = async () => {
+  parseRuleVisible.value = false;
+  onRefresh();
 };
 
 const onConfirmWaterfallRule = async (ruleData: Omit<WaterfallRule, 'id'>) => {
@@ -1836,11 +1922,8 @@ const onConfirmWaterfallRule = async (ruleData: Omit<WaterfallRule, 'id'>) => {
   await saveCustomWaterfallRules(allRulesObj);
   selectedWaterfallRuleId.value = newRule.id;
   showMessage('瀑布流规则已保存并开启！', 'success');
-
-  const tabId = activeTab.value?.id;
-  if (tabId) {
-    applyWaterfallToTab(tabId, newRule);
-  }
+  waterfallWizardVisible.value = false;
+  onRefresh();
 };
 
 const onSelectWaterfallRule = async (id: string) => {
@@ -2208,20 +2291,24 @@ const pickElementText = async () => {
       await webview.executeJavaScript(getPickerCancelScript());
     } catch (e) { }
     isPickingElementText.value = false;
+    endElementPickingSession();
     return;
   }
 
   await deactivateOtherFeatures('text');
   isPickingElementText.value = true;
+  startElementPickingSession();
 
   try {
     const text = await webview.executeJavaScript(getPickerScript('text'));
     isPickingElementText.value = false;
+    endElementPickingSession();
     if (text) {
       showMessage('已成功复制文本到剪贴板', 'success');
     }
   } catch (e: any) {
     isPickingElementText.value = false;
+    endElementPickingSession();
   }
 };
 
@@ -2240,15 +2327,18 @@ const pickElementImage = async () => {
       await webview.executeJavaScript(getPickerCancelScript());
     } catch (e) { }
     isPickingElementImage.value = false;
+    endElementPickingSession();
     return;
   }
 
   await deactivateOtherFeatures('image');
   isPickingElementImage.value = true;
+  startElementPickingSession();
 
   try {
     const urls: string[] = await webview.executeJavaScript(getPickerScript('image'));
     isPickingElementImage.value = false;
+    endElementPickingSession();
     if (urls && urls.length > 0) {
       highestZIndex++;
       const id = 'preview_img_' + Math.random().toString(36).substr(2, 9);
@@ -2305,7 +2395,213 @@ const onSaveRules = async (domain: string, cssString: string) => {
   }
 };
 
-// Removed currentDomainRules and onDeleteRule
+const onDeleteStyle = async (delDomain: string) => {
+  const newStyles = { ...settingsState.customStyles };
+  if (newStyles[props.resourceId]) {
+    delete newStyles[props.resourceId][delDomain];
+    await saveCustomStyles(newStyles);
+    showMessage('自定义样式已删除', 'success');
+    if (workspace.value?.activeTabId) {
+      refreshWebviewStyles(workspace.value.activeTabId);
+    }
+  }
+};
+
+// ==================== 标记重复 (Duplicate Mark) ====================
+const duplicateMarkVisible = ref(false);
+const duplicatePickingType = ref<'mount' | 'title' | null>(null);
+const duplicateMarkDialogRef = ref<any>(null);
+
+const currentResourceDuplicateRules = computed<DuplicateMarkRule[]>(() => {
+  return (settingsState.customDuplicateRules && settingsState.customDuplicateRules[props.resourceId]) || [];
+});
+
+const toggleDuplicateMark = async () => {
+  if (duplicateMarkVisible.value) {
+    duplicateMarkVisible.value = false;
+  } else {
+    await deactivateOtherFeatures('duplicateMark');
+    duplicateMarkVisible.value = true;
+  }
+};
+
+const onPickMountElement = async () => {
+  duplicatePickingType.value = 'mount';
+  startElementPickingSession();
+
+  const tabId = activeTab.value?.id;
+  if (!tabId) {
+    cancelDuplicatePicking();
+    return;
+  }
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) {
+    cancelDuplicatePicking();
+    return;
+  }
+
+  try {
+    const sel: string = await webview.executeJavaScript(getPickerScript('selector'));
+    duplicatePickingType.value = null;
+    endElementPickingSession();
+    if (sel && duplicateMarkDialogRef.value) {
+      duplicateMarkDialogRef.value.setMountSelector(sel);
+    }
+  } catch (e) {
+    cancelDuplicatePicking();
+  }
+};
+
+const onPickTitleElement = async () => {
+  duplicatePickingType.value = 'title';
+  startElementPickingSession();
+
+  const tabId = activeTab.value?.id;
+  if (!tabId) {
+    cancelDuplicatePicking();
+    return;
+  }
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview) {
+    cancelDuplicatePicking();
+    return;
+  }
+
+  try {
+    const sel: string = await webview.executeJavaScript(getPickerScript('selector'));
+    duplicatePickingType.value = null;
+    endElementPickingSession();
+    if (sel && duplicateMarkDialogRef.value) {
+      duplicateMarkDialogRef.value.setTitleSelector(sel);
+    }
+  } catch (e) {
+    cancelDuplicatePicking();
+  }
+};
+
+const cancelDuplicatePicking = async () => {
+  duplicatePickingType.value = null;
+  endElementPickingSession();
+  const tabId = activeTab.value?.id;
+  if (tabId) {
+    const webview = document.getElementById(`webview-${tabId}`) as any;
+    if (webview) {
+      try {
+        await webview.executeJavaScript(getPickerCancelScript());
+      } catch (e) {}
+    }
+  }
+};
+
+const onPreviewDuplicateRule = async (previewRule: DuplicateMarkRule) => {
+  const tabId = activeTab.value?.id;
+  if (!tabId) return;
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+
+  // 如果未配置挂载选择器或已禁用，则清除当前页面的标记
+  if (!previewRule.mountSelector?.trim() || previewRule.enabled === false) {
+    try {
+      await webview.executeJavaScript(getDuplicateMarkCleanupScript());
+    } catch (e) {}
+    return;
+  }
+
+  // 临时替换或添加该规则用于当前活跃页面实时预览
+  const currentList = [...currentResourceDuplicateRules.value];
+  const idx = currentList.findIndex(r => r.id === previewRule.id);
+  if (idx !== -1) {
+    currentList[idx] = { ...previewRule };
+  } else {
+    currentList.push({ ...previewRule });
+  }
+
+  const activeRules = currentList.filter(r => r.enabled !== false);
+
+  try {
+    const fileIndexObj: Record<string, string[]> = {};
+    fileIndexMap.value.forEach((paths, name) => {
+      fileIndexObj[name] = paths;
+    });
+
+    const script = getDuplicateMarkScript({
+      rules: activeRules,
+      fileIndex: fileIndexObj,
+      theme: settingsState.theme
+    });
+    await webview.executeJavaScript(script);
+  } catch (err) {
+    logger.warn('BrowserWorkspace', `执行标记重复预览失败: ${err}`);
+  }
+};
+
+const onSaveDuplicateRules = async (rules: DuplicateMarkRule[]) => {
+  const allObj = { ...settingsState.customDuplicateRules };
+  allObj[props.resourceId] = rules;
+  await saveCustomDuplicateRules(allObj);
+  showMessage('标记重复规则已保存', 'success');
+  duplicateMarkVisible.value = false;
+  applyDuplicateMarksToAllTabs();
+};
+
+const onDeleteDuplicateRule = async (rules: DuplicateMarkRule[]) => {
+  const allObj = { ...settingsState.customDuplicateRules };
+  allObj[props.resourceId] = rules;
+  await saveCustomDuplicateRules(allObj);
+  showMessage('规则已删除', 'success');
+  applyDuplicateMarksToAllTabs();
+};
+
+const applyDuplicateMarksToTab = async (tabId: string) => {
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+
+  const rules = currentResourceDuplicateRules.value.filter(r => r.enabled !== false);
+  if (rules.length === 0) {
+    try {
+      await webview.executeJavaScript(getDuplicateMarkCleanupScript());
+    } catch (e) {}
+    return;
+  }
+
+  try {
+    const fileIndexObj: Record<string, string[]> = {};
+    fileIndexMap.value.forEach((paths, name) => {
+      fileIndexObj[name] = paths;
+    });
+
+    const script = getDuplicateMarkScript({
+      rules,
+      fileIndex: fileIndexObj,
+      theme: settingsState.theme
+    });
+    await webview.executeJavaScript(script);
+  } catch (err) {
+    logger.warn('BrowserWorkspace', `执行标记重复脚本失败: ${err}`);
+  }
+};
+
+const applyDuplicateMarksToAllTabs = () => {
+  if (workspace.value?.tabs) {
+    workspace.value.tabs.forEach(t => {
+      applyDuplicateMarksToTab(t.id);
+    });
+  }
+};
+
+watch(duplicateMarkVisible, (val) => {
+  if (!val) {
+    // 弹窗关闭时，若未保存或取消，恢复当前活跃标签页的已存规则效果
+    const tabId = activeTab.value?.id;
+    if (tabId) {
+      applyDuplicateMarksToTab(tabId);
+    }
+  }
+});
+
+watch([() => currentResourceDuplicateRules.value, isDupIndexReady, () => settingsState.theme], () => {
+  applyDuplicateMarksToAllTabs();
+}, { deep: true });
 </script>
 
 <style scoped lang="less">

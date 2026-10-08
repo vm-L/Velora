@@ -259,26 +259,40 @@ const saveLocal = (url: string) => {
 
 .dropdown-menu {
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 8px;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  transform: none;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: var(--shadow-soft);
-  width: 280px;
-  z-index: 1000;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: min(480px, calc(100vh - 80px));
+  z-index: 1001;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: fadeInDown 0.15s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dropdown-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px 14px;
   background: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
 }
@@ -310,7 +324,7 @@ const saveLocal = (url: string) => {
 }
 
 .dropdown-items {
-  max-height: 400px;
+  max-height: min(400px, calc(100vh - 140px));
   overflow-y: auto;
   display: flex;
   flex-direction: column;

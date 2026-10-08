@@ -2,7 +2,7 @@
   <div
     v-if="visible"
     class="save-modal-window"
-    :class="{ 'is-highlighted': isHighlighted, 'has-duplicate-warning': !!matchedExistingFile }"
+    :class="{ 'is-highlighted': isHighlighted, 'has-duplicate-warning': duplicateResult.type !== 'none' }"
     :style="{ top: position.y + 'px', left: position.x + 'px', zIndex: currentZIndex }"
     @mousedown="bringToFront"
     ref="dialogRef"
@@ -19,7 +19,7 @@
     <div class="save-body">
       <!-- 1. 文件名称 -->
       <div class="save-location-group">
-        <label>文件名称</label>
+        <label>文件名称<span class="required-star">*</span></label>
         <div class="location-input-row">
           <VInputSelect
             v-model="fileName"
@@ -28,18 +28,23 @@
             class="flex-1"
           />
         </div>
-        <!-- 相似已有文件防重提醒 -->
-        <div v-if="matchedExistingFile" class="duplicate-file-alert" title="检测到下载目录树中已存在相似文件">
-          <VIcon name="warning" :size="13" color="var(--color-warning, #f59e0b)" />
+        <!-- 同名/相似已有文件防重提醒 -->
+        <div v-if="duplicateResult.type !== 'none'" class="duplicate-file-alert" :class="{ 'is-exact': duplicateResult.type === 'exact' }" :title="duplicateResult.type === 'exact' ? '检测到已存在完全同名文件' : '检测到已存在高度相似文件'">
+          <VIcon name="warning" :size="13" :color="duplicateResult.type === 'exact' ? 'var(--color-error, #ef4444)' : 'var(--color-warning, #f59e0b)'" />
           <span class="duplicate-text">
-            已存在相似文件：{{ matchedExistingFile.relativeDir !== '.' ? `[${matchedExistingFile.relativeDir}] ` : '' }}{{ matchedExistingFile.name }}
+            <template v-if="duplicateResult.type === 'exact'">
+              已存在同名文件{{ duplicateResult.paths.length > 1 ? ` (共 ${duplicateResult.paths.length} 处)` : '' }}：{{ formatDuplicateDisplayPath(duplicateResult.paths[0]) }}
+            </template>
+            <template v-else>
+              已存在相似文件：{{ formatDuplicateDisplayPath(duplicateResult.paths[0]) || duplicateResult.name }}
+            </template>
           </span>
         </div>
       </div>
 
       <!-- 2. 文件地址 -->
       <div class="save-location-group" style="margin-top: 16px;">
-        <label>文件地址</label>
+        <label>文件地址<span class="required-star">*</span></label>
         <div class="location-input-row">
           <VInputSelect
             v-model="fileUrl"
@@ -53,7 +58,7 @@
       <!-- 3. 下载目录 -->
       <div class="save-location-group" style="margin-top: 16px;">
         <div class="location-label-row">
-          <label>下载目录</label>
+          <label>下载目录<span class="required-star">*</span></label>
           <span v-if="isAutoMatchedDir" class="auto-match-badge" title="已根据文件名自动匹配最佳子目录">
             <VIcon name="bot" :size="12" />
             <span>自动匹配</span>
@@ -86,12 +91,12 @@ import { useDownloads } from '@/composables/useDownloads';
 import { useMessage } from '@/composables/useMessage';
 import { useSettings } from '@/composables/useSettings';
 import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import { useFileDeduplication, type DuplicateCheckResult } from '@/composables/useFileDeduplication';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 import { sanitizeFilename } from '@/utils/filename';
 import { findBestMatchingSubdirectory } from '@/utils/dirMatcher';
-import { isSimilarExistingFile } from '@/utils/similarity';
 
 const props = withDefaults(defineProps<{
   visible?: boolean;
@@ -127,6 +132,7 @@ const { addDownload } = useDownloads();
 const { showMessage } = useMessage();
 const { state: settingsState } = useSettings();
 const { isDraggingAnyDialog } = useSaveMediaDialog();
+const { checkDuplicate } = useFileDeduplication();
 
 const dialogRef = ref<HTMLElement | null>(null);
 const saveDirectory = ref('');
@@ -134,10 +140,8 @@ const fileUrl = ref('');
 const fileName = ref('');
 const isSaving = ref(false);
 const dirTreeList = ref<Array<{ path: string, name: string, depth: number }>>([]);
-// 下载目录树中的已有文件列表
-const existingMediaFiles = ref<Array<{ name: string; path: string; dir: string; relativeDir: string }>>([]);
-// 命中的相似已有文件
-const matchedExistingFile = ref<{ name: string; path: string; dir: string; relativeDir: string } | null>(null);
+// 毫秒级去重检测结果
+const duplicateResult = ref<DuplicateCheckResult>({ type: 'none', paths: [] });
 
 // 智能子目录匹配状态管理
 const isAutoMatchedDir = ref(false);
@@ -167,6 +171,18 @@ const dirTreeOptions = computed<InputSelectOption[]>(() => {
   }));
 });
 
+const formatDuplicateDisplayPath = (p?: string): string => {
+  if (!p) return '';
+  const clean = p.replace(/\\/g, '/');
+  const parts = clean.split('/');
+  if (parts.length >= 2) {
+    const parent = parts[parts.length - 2];
+    const file = parts[parts.length - 1];
+    return parent ? `[${parent}] ${file}` : file;
+  }
+  return parts[parts.length - 1] || p;
+};
+
 // 核心：子目录名称与文件名的智能单字打分匹配算法
 const matchBestSubdirectory = (currentFileName: string) => {
   if (!settingsState.autoMatchDownloadSubdir || isUserManualDir.value) return;
@@ -188,19 +204,9 @@ const matchBestSubdirectory = (currentFileName: string) => {
   }
 };
 
-// 检查是否存在高度相似的已有文件
-const checkDuplicateExistingFile = (currentFileName: string) => {
-  if (!currentFileName || existingMediaFiles.value.length === 0) {
-    matchedExistingFile.value = null;
-    return;
-  }
-  for (const file of existingMediaFiles.value) {
-    if (isSimilarExistingFile(file.name, currentFileName)) {
-      matchedExistingFile.value = file;
-      return;
-    }
-  }
-  matchedExistingFile.value = null;
+// 毫秒级查重
+const checkDuplicateFile = (currentFileName: string) => {
+  duplicateResult.value = checkDuplicate(currentFileName);
 };
 
 const loadDirTree = async () => {
@@ -214,15 +220,8 @@ const loadDirTree = async () => {
           matchBestSubdirectory(fileName.value);
         }
       }
-      // 同步扫描下载目录树下的已有文件以进行相似度查重
-      if (window.electronAPI.scanDirectoryMediaFiles) {
-        const files = await window.electronAPI.scanDirectoryMediaFiles(props.defaultDir, 3);
-        existingMediaFiles.value = files || [];
-        checkDuplicateExistingFile(fileName.value);
-      }
     } catch {
       dirTreeList.value = [];
-      existingMediaFiles.value = [];
     }
   }
 };
@@ -274,6 +273,7 @@ const initData = () => {
   } else {
     fileName.value = baseName;
   }
+  checkDuplicateFile(fileName.value);
   isSaving.value = false;
 };
 
@@ -281,7 +281,7 @@ onMounted(() => {
   if (!props.initialX && !props.initialY && typeof window !== 'undefined') {
     position.value = {
       x: Math.max(20, Math.round((window.innerWidth - 420) / 2)),
-      y: Math.max(20, Math.round((window.innerHeight - 360) / 2))
+      y: Math.max(40, Math.round(window.innerHeight * 0.15))
     };
   } else {
     position.value = { x: props.initialX, y: props.initialY };
@@ -294,7 +294,7 @@ watch(fileName, (newVal) => {
   if (!isUserManualDir.value && settingsState.autoMatchDownloadSubdir) {
     matchBestSubdirectory(newVal);
   }
-  checkDuplicateExistingFile(newVal);
+  checkDuplicateFile(newVal);
 });
 
 watch(() => props.url, () => {
@@ -410,27 +410,30 @@ const confirmSave = async () => {
   let targetSaveDir = saveDirectory.value;
   let targetFileName = finalName;
 
-  // 如果检测到磁盘上已存在高度相似的文件
-  if (matchedExistingFile.value) {
-    const existing = matchedExistingFile.value;
+  // 如果检测到已存在同名或高度相似的文件
+  if (duplicateResult.value.type !== 'none' && duplicateResult.value.paths.length > 0) {
+    const existingPath = duplicateResult.value.paths[0].replace(/\\/g, '/');
+    const existingDir = existingPath.substring(0, existingPath.lastIndexOf('/'));
+    const existingFileName = duplicateResult.value.name || existingPath.substring(existingPath.lastIndexOf('/') + 1);
+
     const normalizePath = (p: string) => (p || '').replace(/\\/g, '/').replace(/\/+$/, '');
     const currentSaveDirNorm = normalizePath(targetSaveDir);
-    const existingDirNorm = normalizePath(existing.dir);
+    const existingDirNorm = normalizePath(existingDir);
 
-    // 情况：相似文件存在于其他子目录（如已有在 B-诺兰，当前选中了 C-盗梦空间）
-    if (existingDirNorm !== currentSaveDirNorm) {
+    // 情况：同名/相似文件存在于其他子目录
+    if (existingDirNorm !== currentSaveDirNorm && existingDir) {
       const { useConfirm } = await import('@/composables/useConfirm');
       const shouldOverwriteOriginal = await useConfirm().confirm({
-        title: '检测到已存在相似文件',
-        message: `在子目录 [${existing.relativeDir}] 已存在高度相似的文件：\n"${existing.name}"\n\n要直接覆盖替换该位置的原文件吗？\n点击【覆盖原文件】将切换并覆盖原文件；\n点击【继续下载】将仍保存至当前选中的目录。`,
+        title: duplicateResult.value.type === 'exact' ? '检测到已存在同名文件' : '检测到已存在相似文件',
+        message: `在目录 [${formatDuplicateDisplayPath(existingPath)}] 已存在${duplicateResult.value.type === 'exact' ? '同名' : '相似'}文件：\n"${existingFileName}"\n\n要直接覆盖替换该位置的原文件吗？\n点击【覆盖原文件】将切换并覆盖原文件；\n点击【继续下载】将仍保存至当前选中的目录。`,
         confirmText: '覆盖原文件',
         cancelText: '继续下载',
         type: 'warning'
       });
 
       if (shouldOverwriteOriginal) {
-        targetSaveDir = existing.dir;
-        targetFileName = existing.name;
+        targetSaveDir = existingDir;
+        targetFileName = existingFileName;
       }
     }
   }
@@ -565,6 +568,15 @@ const confirmSave = async () => {
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.required-star {
+  color: var(--color-error, #ef4444);
+  margin-left: 2px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .location-label-row {
@@ -580,6 +592,7 @@ const confirmSave = async () => {
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 0 !important;
+  white-space: nowrap;
 }
 
 .auto-match-badge {

@@ -16,10 +16,10 @@
       <div class="inspector-content-inner">
         <div class="inspector-body">
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配URL</span>
+            <span class="label">匹配URL<span class="required-star">*</span></span>
             <VInputSelect
               v-model="currentScript.domain"
-              placeholder="匹配URL，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: www.bilibili.com 或 www.bilibili.com/list"
               :options="historyScriptOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
@@ -33,7 +33,7 @@
           </div>
           
           <div class="info-row" style="align-items: center;">
-            <span class="label">执行时机</span>
+            <span class="label">执行时机<span class="required-star">*</span></span>
             <VInputSelect
               v-model="currentScript.runAt"
               :options="runAtOptions"
@@ -45,7 +45,7 @@
 
           <div class="form-group" style="margin-top: 12px; display: flex; flex-direction: column; flex: 1;">
             <div class="label-row" style="margin-bottom: 8px;">
-              <label>自定义 JS 脚本</label>
+              <label>自定义 JS 脚本<span class="required-star">*</span></label>
               <v-button variant="text" class="text-btn" @click="updatePreview">▶ 立刻执行</v-button>
             </div>
             <div class="editor-wrapper" ref="editorContainer" style="flex: 1; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-surface); min-height: 230px; display: flex; flex-direction: column;">
@@ -55,6 +55,15 @@
         </div>
 
         <div class="inspector-footer">
+          <v-button
+            v-if="isEditingExisting"
+            variant="danger"
+            class="btn"
+            style="margin-right: auto;"
+            @click="deleteCurrentScript"
+          >
+            删除
+          </v-button>
           <v-button variant="secondary" class="btn" @click="close">取消</v-button>
           <v-button variant="primary" class="btn" @click="save">保存脚本</v-button>
         </div>
@@ -82,7 +91,8 @@ import { keymap } from '@codemirror/view';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 import type { CustomScript } from '@/composables/useSettings';
 import { useDraggableDialog } from '@/composables/useDraggableDialog';
-import { getDefaultUrlPattern } from '@/utils/urlMatcher';
+import { useConfirm } from '@/composables/useConfirm';
+import { getDefaultUrlPattern, isUrlMatchPattern } from '@/utils/urlMatcher';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -90,15 +100,19 @@ const props = defineProps<{
   scripts?: CustomScript[];
 }>();
 
-const emit = defineEmits(['update:modelValue', 'executeScript', 'save', 'interaction-start', 'interaction-end']);
+const emit = defineEmits(['update:modelValue', 'executeScript', 'save', 'delete', 'interaction-start', 'interaction-end']);
 
-const { position, startDrag } = useDraggableDialog({
-  initialX: 100,
-  initialY: 100,
+const { confirm } = useConfirm();
+
+const { position, startDrag, resetPosition } = useDraggableDialog({
   dialogWidth: 420,
   dialogHeight: 480,
   onInteractionStart: () => emit('interaction-start'),
   onInteractionEnd: () => emit('interaction-end')
+});
+
+const isEditingExisting = computed(() => {
+  return !!(currentScript.id && props.scripts && props.scripts.some(s => s.id === currentScript.id));
 });
 
 const editorContainer = ref<HTMLElement | null>(null);
@@ -174,34 +188,32 @@ const initEditor = (initialContent: string) => {
   });
 };
 
+const autoLoadOrNewScript = (availableScripts?: CustomScript[]) => {
+  const list = availableScripts !== undefined ? availableScripts : (props.scripts || []);
+  if (list.length > 0 && props.url) {
+    const matched = list.find(s => s.domain && isUrlMatchPattern(s.domain, props.url!));
+    if (matched) {
+      loadScript(matched);
+      return;
+    }
+  }
+  const initialDomain = getDefaultUrlPattern(props.url);
+  currentScript.id = 'script_' + Date.now();
+  currentScript.domain = initialDomain;
+  currentScript.name = '';
+  currentScript.code = '';
+  currentScript.runAt = 'dom-ready';
+  if (editorView) {
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: '' }
+    });
+  }
+};
+
 watch(() => props.modelValue, async (newVal) => {
   if (newVal) {
-    const initialDomain = getDefaultUrlPattern(props.url);
-    const existingScript = props.scripts?.find(s => s.domain === initialDomain);
-
-    if (existingScript) {
-      currentScript.id = existingScript.id;
-      currentScript.domain = existingScript.domain;
-      currentScript.name = existingScript.name;
-      currentScript.code = existingScript.code;
-      currentScript.runAt = existingScript.runAt;
-    } else {
-      currentScript.id = 'script_' + Date.now();
-      currentScript.domain = initialDomain;
-      currentScript.name = '';
-      currentScript.code = '';
-      currentScript.runAt = 'dom-ready';
-    }
-
-    const dialogW = 420;
-    const dialogH = 480;
-    const sidebarW = 220;
-    const titlebarH = 32;
-    position.value = {
-      x: sidebarW + (window.innerWidth - sidebarW - dialogW) / 2 + 30,
-      y: titlebarH + (window.innerHeight - titlebarH - dialogH) / 2 + 30
-    };
-
+    resetPosition();
+    autoLoadOrNewScript();
     await nextTick();
     initEditor(currentScript.code);
   } else {
@@ -223,6 +235,22 @@ const loadScript = (script: CustomScript) => {
       changes: { from: 0, to: editorView.state.doc.length, insert: script.code }
     });
   }
+};
+
+const deleteCurrentScript = async () => {
+  if (!currentScript.id) return;
+  const confirmed = await confirm({
+    title: '删除脚本',
+    message: `确定要删除脚本 "${currentScript.name || currentScript.domain}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
+  emit('delete', currentScript.id);
+  const updated = (props.scripts || []).filter(s => s.id !== currentScript.id);
+  autoLoadOrNewScript(updated);
 };
 
 const save = () => {
@@ -325,8 +353,22 @@ const close = () => {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  width: 55px;
+  width: 68px;
+  min-width: 68px;
+  max-width: 68px;
   flex-shrink: 0;
+  line-height: 28px;
+  white-space: nowrap;
+  display: inline-block;
+  user-select: none;
+}
+
+.required-star {
+  color: var(--color-error, #ef4444);
+  margin-left: 2px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .value-input {
@@ -357,6 +399,7 @@ const close = () => {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .text-btn {

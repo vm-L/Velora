@@ -18,14 +18,14 @@
             <label class="form-label">匹配URL<span class="required">*</span></label>
             <VInputSelect
               v-model="form.domain"
-              placeholder="匹配URL，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: www.bilibili.com 或 www.bilibili.com/list"
               :options="historyRuleOptions"
               class="full-width-input"
               autofocus
               @select="onDomainSelect"
               @enter="goToStep2"
             />
-            <span class="form-hint">支持通配符 * (例如 *://*.example.com/*)</span>
+            <span class="form-hint">支持通配符 * (例如 www.example.com/*)</span>
           </div>
 
           <div class="form-item">
@@ -261,9 +261,14 @@ const handleCancel = () => {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
+    white-space: nowrap;
 
     .required {
       color: var(--color-error, #ef4444);
+      margin-left: 2px;
+      font-weight: bold;
+      display: inline-block;
+      white-space: nowrap;
     }
   }
 

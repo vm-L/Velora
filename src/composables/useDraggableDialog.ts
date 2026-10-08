@@ -15,18 +15,32 @@ export interface UseDraggableDialogOptions {
  */
 export function useDraggableDialog(options: UseDraggableDialogOptions = {}) {
   const {
-    initialX = 100,
-    initialY = 100,
-    dialogWidth = 420,
+    dialogWidth = 460,
     dialogHeight = 480,
     boundToViewport = true,
     onInteractionStart,
     onInteractionEnd
   } = options;
 
-  const position = ref({ x: initialX, y: initialY });
+  const calculateDefaultPosition = () => {
+    const winWidth = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const winHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const x = options.initialX !== undefined
+      ? options.initialX
+      : Math.max(20, Math.round((winWidth - dialogWidth) / 2));
+    const y = options.initialY !== undefined
+      ? options.initialY
+      : Math.max(40, Math.round(winHeight * 0.15));
+    return { x, y };
+  };
+
+  const position = ref(calculateDefaultPosition());
   const isDragging = ref(false);
   let dragOffset = { x: 0, y: 0 };
+
+  const resetPosition = () => {
+    position.value = calculateDefaultPosition();
+  };
 
   const onDrag = (e: MouseEvent) => {
     if (!isDragging.value) return;
@@ -76,6 +90,7 @@ export function useDraggableDialog(options: UseDraggableDialogOptions = {}) {
     position,
     isDragging,
     startDrag,
-    stopDrag
+    stopDrag,
+    resetPosition
   };
 }

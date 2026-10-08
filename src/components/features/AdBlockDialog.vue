@@ -95,11 +95,11 @@
           </div>
           <div class="sub-modal-body">
             <div class="form-group">
-              <label>规则源名称</label>
+              <label>规则源名称<span class="required-star">*</span></label>
               <v-input v-model="formName" type="text" placeholder="例如: 屏蔽社交广告" />
             </div>
             <div class="form-group" style="margin-top: 12px;">
-              <label>规则源 URL</label>
+              <label>规则源 URL<span class="required-star">*</span></label>
               <v-input v-model="formUrl" type="text" placeholder="https://example.com/rules.txt" />
             </div>
           </div>
@@ -597,6 +597,15 @@ const onDrop = async (e: DragEvent, targetIndex: number) => {
   color: var(--text-secondary);
   display: block;
   margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+.required-star {
+  color: var(--color-error, #ef4444);
+  margin-left: 2px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .sub-modal-footer {

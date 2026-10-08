@@ -16,7 +16,7 @@
         <!-- Modal Body -->
         <div class="modal-body">
           <div class="form-group">
-            <label>任务名称</label>
+            <label>任务名称<span class="required-star">*</span></label>
             <v-input v-model="taskName" type="text" placeholder="输入任务名称" />
           </div>
 
@@ -32,7 +32,7 @@
           </div>
 
           <div class="form-group" style="margin-top: 14px;">
-            <label>当前目录</label>
+            <label>当前目录<span class="required-star">*</span></label>
             <div class="dir-input-row">
               <VInputSelect
                 v-model="saveDirectory"
@@ -306,6 +306,15 @@ const saveEdit = async () => {
     color: var(--text-secondary);
     display: block;
     margin-bottom: 6px;
+    white-space: nowrap;
+  }
+
+  .required-star {
+    color: var(--color-error, #ef4444);
+    margin-left: 2px;
+    font-weight: bold;
+    display: inline-block;
+    white-space: nowrap;
   }
 
   .dir-input-row,

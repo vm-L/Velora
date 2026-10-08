@@ -19,10 +19,10 @@
         <div class="inspector-body">
           <!-- 行 1：匹配URL -->
           <div class="info-row domain-info" style="align-items: center;">
-            <span class="label">匹配URL</span>
+            <span class="label">匹配URL<span class="required-star">*</span></span>
             <VInputSelect
               v-model="currentRule.domain"
-              placeholder="匹配URL，例如: *://*.bilibili.com/*"
+              placeholder="匹配URL，例如: www.bilibili.com 或 www.bilibili.com/list"
               :options="historyDomainOptions"
               class="mono-input value-input flex-1"
               style="margin-left: 12px;"
@@ -32,7 +32,7 @@
 
           <!-- 行 2：行为类型 -->
           <div class="info-row" style="align-items: center;">
-            <span class="label">行为类型</span>
+            <span class="label">行为类型<span class="required-star">*</span></span>
             <VInputSelect
               v-model="currentRule.actionType"
               :options="actionTypeOptions"
@@ -110,8 +110,17 @@
         </div>
 
         <div class="inspector-footer">
+          <v-button
+            v-if="isEditingExisting"
+            variant="danger"
+            class="btn"
+            style="margin-right: auto;"
+            @click="deleteRule"
+          >
+            删除
+          </v-button>
           <v-button variant="secondary" class="btn" @click="close">取消</v-button>
-          <v-button variant="primary" class="btn" @click="save">保存规则</v-button>
+          <v-button variant="primary" class="btn" @click="save">保存</v-button>
         </div>
       </div>
     </div>
@@ -128,7 +137,7 @@ import { useSettings, type ParseRule } from '@/composables/useSettings';
 import { useMessage } from '@/composables/useMessage';
 import { useConfirm } from '@/composables/useConfirm';
 import { useDraggableDialog } from '@/composables/useDraggableDialog';
-import { getDefaultUrlPattern } from '@/utils/urlMatcher';
+import { getDefaultUrlPattern, isUrlMatchPattern } from '@/utils/urlMatcher';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -143,11 +152,14 @@ const { state: settingsState, saveCustomParseRules } = useSettings();
 const { showMessage } = useMessage();
 const { confirm } = useConfirm();
 
-const { position, startDrag } = useDraggableDialog({
-  initialX: 300,
-  initialY: 100,
+const { position, startDrag, resetPosition } = useDraggableDialog({
   dialogWidth: 420,
   dialogHeight: 520
+});
+
+const isEditingExisting = computed(() => {
+  const resourceRules = settingsState.customParseRules[props.resourceId] || [];
+  return !!(currentRule.value.id && resourceRules.some(r => r.id === currentRule.value.id));
 });
 
 const actionTypeOptions: InputSelectOption[] = [
@@ -199,8 +211,31 @@ const ensureDownloadDefaults = () => {
   }
 };
 
+const autoLoadOrNewRule = (availableRules?: ParseRule[]) => {
+  const rules = availableRules !== undefined ? availableRules : (settingsState.customParseRules[props.resourceId] || []);
+  if (rules.length > 0 && props.currentUrl) {
+    const matched = rules.find(r => r.domain && isUrlMatchPattern(r.domain, props.currentUrl!));
+    if (matched) {
+      const rule = JSON.parse(JSON.stringify(matched));
+      rule.items = normalizeItems(rule.items);
+      currentRule.value = rule;
+      ensureDownloadDefaults();
+      return;
+    }
+  }
+  const defaultDomain = getDefaultUrlPattern(props.currentUrl);
+  currentRule.value = {
+    id: Math.random().toString(36).substring(2, 9),
+    domain: defaultDomain,
+    actionType: 'download',
+    items: []
+  };
+  loadExistingRule();
+};
+
 watch(() => props.modelValue, (val) => {
   if (val) {
+    resetPosition();
     for (const key in itemErrors) delete itemErrors[key];
 
     if (props.editingRule) {
@@ -209,17 +244,36 @@ watch(() => props.modelValue, (val) => {
       currentRule.value = rule;
       ensureDownloadDefaults();
     } else {
-      const defaultDomain = getDefaultUrlPattern(props.currentUrl);
-      currentRule.value = {
-        id: Math.random().toString(36).substring(2, 9),
-        domain: defaultDomain,
-        actionType: 'download',
-        items: []
-      };
-      loadExistingRule();
+      autoLoadOrNewRule();
     }
   }
 });
+
+const deleteRule = async () => {
+  if (!currentRule.value.id) return;
+  const confirmed = await confirm({
+    title: '删除解析规则',
+    message: `确定要删除匹配 "${currentRule.value.domain}" 的解析规则吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!confirmed) return;
+
+  const resourceRules = settingsState.customParseRules[props.resourceId] || [];
+  const updatedRules = resourceRules.filter(r => r.id !== currentRule.value.id);
+  const newObj = { ...settingsState.customParseRules };
+  newObj[props.resourceId] = updatedRules;
+  await saveCustomParseRules(newObj);
+  showMessage('解析规则已删除', 'success');
+  emit('save');
+
+  if (props.editingRule) {
+    close();
+  } else {
+    autoLoadOrNewRule(updatedRules);
+  }
+};
 
 const loadExistingRule = () => {
   const rules = settingsState.customParseRules[props.resourceId] || [];
@@ -527,8 +581,22 @@ const save = async () => {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  width: 55px;
+  width: 68px;
+  min-width: 68px;
+  max-width: 68px;
   flex-shrink: 0;
+  line-height: 28px;
+  white-space: nowrap;
+  display: inline-block;
+  user-select: none;
+}
+
+.required-star {
+  color: var(--color-error, #ef4444);
+  margin-left: 2px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .value-input {
@@ -555,6 +623,7 @@ const save = async () => {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .text-btn {

@@ -1,4 +1,4 @@
-import { calculateSimilarity, extractEffectiveChars } from '@/utils/similarity';
+import { calculateSimilarity } from '@/utils/similarity';
 
 export interface DirTreeItem {
   name: string;
@@ -17,8 +17,6 @@ export interface MatchBestResult<T extends DirTreeItem = DirTreeItem> {
   cleanLength: number;
   coverage: number;
 }
-
-export { extractEffectiveChars as extractCleanChars };
 
 /**
  * 基于单字匹配度 + 文本相对顺序 + 连续成词加权的智能子目录匹配算法

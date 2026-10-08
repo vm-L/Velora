@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { db, type DownloadTask } from '@/db'
 import { logger } from '@/services/logger'
+import { useFileDeduplication } from '@/composables/useFileDeduplication'
 
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
@@ -9,6 +10,8 @@ let loadTasksPromise: Promise<void> | null = null
 const notifiedErrorTaskIds = new Set<string>()
 
 export const useDownloads = () => {
+  const { recordFile, removeFile, checkDuplicate } = useFileDeduplication();
+
   const loadTasks = async () => {
     if (isInitialized.value) return;
     if (loadTasksPromise) return loadTasksPromise;
@@ -183,6 +186,7 @@ export const useDownloads = () => {
             notifiedErrorTaskIds.delete(t.id)
             const { useMessage } = await import('@/composables/useMessage')
             useMessage().showMessage(`任务 "${t.name}" 下载完成`, 'success')
+            recordFile(t.name, t.savePath)
           } else if (activeStatuses.includes(prevStatus) && t.status === 'error') {
             if (!notifiedErrorTaskIds.has(t.id)) {
               notifiedErrorTaskIds.add(t.id)
@@ -205,7 +209,9 @@ export const useDownloads = () => {
     logger.info('Downloads', `[Renderer] addDownload invoked. url: ${url}, name: ${name}, savePath: ${savePath}`)
     try {
       const existingTask = tasks.value.find(t => t.savePath === savePath)
-      const fileExists = window.electronAPI ? await window.electronAPI.fileExists(savePath) : false
+      const dupCheck = checkDuplicate(name)
+      const isDuplicateInTarget = dupCheck.type === 'exact' && dupCheck.paths.some(p => p.toLowerCase() === savePath.replace(/\\/g, '/').toLowerCase())
+      const fileExists = isDuplicateInTarget || (window.electronAPI ? await window.electronAPI.fileExists(savePath) : false)
       
       if (existingTask || fileExists) {
         const { useConfirm } = await import('@/composables/useConfirm')
@@ -225,6 +231,7 @@ export const useDownloads = () => {
             }
             tasks.value = tasks.value.filter(t => t.id !== existingTask.id)
             await db.downloads.delete(existingTask.id)
+            removeFile(existingTask.name, existingTask.savePath)
           }
           try {
             if (window.electronAPI && window.electronAPI.deleteFile) {
@@ -233,6 +240,7 @@ export const useDownloads = () => {
           } catch (e) {
             logger.warn('Downloads', `[Renderer] Failed to delete existing file: ${e}`)
           }
+          removeFile(name, savePath)
         } else {
           logger.info('Downloads', `[Renderer] addDownload canceled: Task or file already exists and user skipped.`)
           return false // Skip download
@@ -265,6 +273,7 @@ export const useDownloads = () => {
       
       logger.info('Downloads', `[Renderer] addDownload: Persisting task ID ${id} to Dexie...`)
       await db.downloads.add(task)
+      recordFile(task.name, task.savePath)
       logger.info('Downloads', `[Renderer] addDownload: Task ID ${id} persisted. unshifting task to tasks.value...`)
       tasks.value.unshift(task)
       
@@ -329,6 +338,7 @@ export const useDownloads = () => {
       const shouldDeleteFile = deleteFile || isUnfinished;
       if (shouldDeleteFile && window.electronAPI) {
         await window.electronAPI.deleteFile(t.savePath)
+        removeFile(t.name, t.savePath)
       }
       await db.downloads.delete(id)
       tasks.value = tasks.value.filter(task => task.id !== id)
@@ -347,6 +357,7 @@ export const useDownloads = () => {
             t.speed = 0;
             delete t.errorMsg;
             await db.downloads.put(JSON.parse(JSON.stringify(t)));
+            removeFile(t.name, t.savePath);
             updatedCount++;
           } else if (exists && (t.status === 'file_removed' || t.status === 'file_corrupted')) {
             t.status = 'completed';
@@ -354,6 +365,7 @@ export const useDownloads = () => {
             t.speed = 0;
             delete t.errorMsg;
             await db.downloads.put(JSON.parse(JSON.stringify(t)));
+            recordFile(t.name, t.savePath);
             updatedCount++;
           }
         } catch (e) {}

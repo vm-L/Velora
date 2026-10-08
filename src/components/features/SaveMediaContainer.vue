@@ -1,5 +1,5 @@
 <template>
-  <div v-if="dialogs.length > 0" class="save-media-container">
+  <div v-if="dialogs.length > 0" v-show="!isElementPickingActive" class="save-media-container">
     <!-- 拖拽防护遮罩：拖动弹窗时防止 Webview 捕获鼠标事件 -->
     <div v-if="isDraggingAnyDialog" class="save-drag-shield"></div>
 
@@ -27,9 +27,11 @@
 
 <script setup lang="ts">
 import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import { useElementPickerSession } from '@/composables/useElementPickerSession';
 import SaveMediaDialog from '@/components/features/SaveMediaDialog.vue';
 
 const { dialogs, isDraggingAnyDialog, closeSaveMediaDialog, focusDialog, updateDialogPosition } = useSaveMediaDialog();
+const { isElementPickingActive } = useElementPickerSession();
 </script>
 
 <style scoped>
