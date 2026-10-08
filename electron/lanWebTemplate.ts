@@ -586,6 +586,34 @@ export function getLanWebHtml(): string {
       letter-spacing: 0.5px;
     }
 
+    .recent-badge {
+      position: absolute;
+      top: -3px;
+      right: -5px;
+      background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+      border-radius: 9999px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.3;
+      color: var(--color-accent);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      user-select: none;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
+    [data-theme='dark'] .recent-badge {
+      background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+      border-color: color-mix(in srgb, var(--border-color) 80%, transparent);
+      color: var(--color-accent);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    }
+
     .card-info {
       width: 100%;
       display: flex;
@@ -2114,6 +2142,12 @@ export function getLanWebHtml(): string {
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
 
+    function isRecentFile(item) {
+      if (!item || item.isDirectory || !item.mtime) return false;
+      var diff = Date.now() - item.mtime;
+      return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
+    }
+
     function renderFileGrid() {
       var list = getFilteredAndSortedItems();
 
@@ -2131,6 +2165,7 @@ export function getLanWebHtml(): string {
         var encodedPath = encodeURIComponent(item.path);
         var timeStr = formatTime(item.mtime);
         var extBadge = item.isDirectory ? '' : '<span class="ext-badge">' + (item.ext || 'FILE').toUpperCase() + '</span>';
+        var recentBadge = isRecentFile(item) ? '<span class="recent-badge">近期新增</span>' : '';
         var isSelected = state.selectedPaths.has(item.path);
         var cardClass = 'file-card' + (isSelected ? ' selected' : '');
 
@@ -2139,6 +2174,7 @@ export function getLanWebHtml(): string {
           '<div class="card-icon-wrap">' +
           iconSvg +
           extBadge +
+          recentBadge +
           '</div>' +
           '<div class="card-info">' +
           '<span class="card-name" title="' + item.name + '">' + item.name + '</span>' +
