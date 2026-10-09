@@ -122,7 +122,7 @@
           @contextmenu.prevent.stop="onItemContextMenu($event, item, index)"
         >
           <!-- Recent Added Badge -->
-          <span v-if="isRecentFile(item)" class="recent-badge">近期新增</span>
+          <span v-if="isRecentFile(item)" class="recent-badge">NEW</span>
 
           <!-- Thumbnail / Icon Area -->
           <div class="card-icon-wrap" :class="getFileCategory(item)">
@@ -1607,17 +1607,11 @@ const isRecentFile = (item: LocalFileItem): boolean => {
     position: absolute;
     top: 6px;
     right: 6px;
-    background: color-mix(in srgb, var(--color-success) 12%, var(--bg-surface));
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
-    border-radius: 9999px;
-    padding: 1px 6px;
     font-size: 10px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-weight: 700;
+    line-height: 1;
     color: var(--color-success);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    letter-spacing: 0.5px;
     user-select: none;
     pointer-events: none;
     white-space: nowrap;

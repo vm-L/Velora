@@ -590,28 +590,15 @@ export function getLanWebHtml(): string {
       position: absolute;
       top: 6px;
       right: 6px;
-      background: color-mix(in srgb, var(--color-success) 12%, var(--bg-surface));
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
-      border-radius: 9999px;
-      padding: 1px 6px;
       font-size: 10px;
-      font-weight: 600;
-      line-height: 1.3;
+      font-weight: 700;
+      line-height: 1;
       color: var(--color-success);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+      letter-spacing: 0.5px;
       user-select: none;
       pointer-events: none;
       white-space: nowrap;
       z-index: 2;
-    }
-
-    [data-theme='dark'] .recent-badge {
-      background: color-mix(in srgb, var(--color-success) 18%, var(--bg-surface));
-      border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
-      color: var(--color-success);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     }
 
     .file-card.has-actions .recent-badge {
@@ -2169,7 +2156,7 @@ export function getLanWebHtml(): string {
         var encodedPath = encodeURIComponent(item.path);
         var timeStr = formatTime(item.mtime);
         var extBadge = item.isDirectory ? '' : '<span class="ext-badge">' + (item.ext || 'FILE').toUpperCase() + '</span>';
-        var recentBadge = isRecentFile(item) ? '<span class="recent-badge">近期新增</span>' : '';
+        var recentBadge = isRecentFile(item) ? '<span class="recent-badge">NEW</span>' : '';
         var isSelected = state.selectedPaths.has(item.path);
         var cardClass = 'file-card' + (isSelected ? ' selected' : '') + (state.allowEdit ? ' has-actions' : '');
 
