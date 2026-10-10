@@ -633,6 +633,15 @@ export function getLanWebHtml(): string {
         -webkit-line-clamp: 3;
         max-height: 4.1em;
       }
+      .video-edit-modal-content {
+        height: 92vh;
+        max-height: 94vh;
+        border-radius: 10px;
+      }
+      .trimmer-controls {
+        padding: 12px 14px;
+        gap: 10px;
+      }
     }
 
     .card-size {
@@ -1035,6 +1044,10 @@ export function getLanWebHtml(): string {
       -webkit-overflow-scrolling: touch;
     }
 
+    .trimmer-controls > * {
+      flex-shrink: 0;
+    }
+
     .video-edit-modal-content .modal-footer {
       flex-shrink: 0;
       background: var(--bg-surface);
@@ -1051,6 +1064,7 @@ export function getLanWebHtml(): string {
       grid-template-columns: repeat(6, 1fr);
       gap: 6px;
       width: 100%;
+      flex-shrink: 0;
     }
 
     .time-steppers .v-btn {
@@ -1062,15 +1076,38 @@ export function getLanWebHtml(): string {
       -webkit-user-select: none;
     }
 
-    .trim-points-row {
+    .trimmer-action-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      gap: 6px;
       width: 100%;
+      flex-shrink: 0;
+    }
+
+    .trimmer-action-row .v-btn {
+      padding: 6px 4px;
+      font-size: 12px;
+      min-width: 0;
+      justify-content: center;
+      white-space: nowrap;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .trim-points-row {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 1fr;
+      gap: 6px;
+      width: 100%;
+      flex-shrink: 0;
     }
 
     .trim-points-row .v-btn {
+      padding: 6px 4px;
+      font-size: 12px;
+      min-width: 0;
       justify-content: center;
+      white-space: nowrap;
     }
 
     .time-display {
@@ -1083,8 +1120,39 @@ export function getLanWebHtml(): string {
       border-radius: 8px;
       border: 1px solid var(--border-color);
       width: 100%;
+      min-height: 38px;
+      flex-shrink: 0;
       text-align: center;
       box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      transition: border-color 0.15s;
+    }
+
+    .time-display:active {
+      border-color: var(--color-accent);
+    }
+
+    .time-display-progress {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 0%;
+      background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+      pointer-events: none;
+      z-index: 0;
+      transition: width 0.05s ease-out;
+    }
+
+    .time-display-text {
+      position: relative;
+      z-index: 1;
+      pointer-events: none;
     }
 
     .segment-chips-container {
@@ -1202,6 +1270,54 @@ export function getLanWebHtml(): string {
       background: var(--accent-light);
       color: var(--color-accent);
       font-weight: 600;
+    }
+
+    /* Segmented Control */
+    .segmented-control {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg-app);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      gap: 3px;
+      user-select: none;
+      -webkit-user-select: none;
+      box-sizing: border-box;
+      width: 100%;
+    }
+
+    .segmented-option {
+      padding: 6px 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+    }
+
+    .segmented-option:hover {
+      color: var(--text-primary);
+    }
+
+    .segmented-option.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+      border-color: var(--border-light);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    [data-theme='dark'] .segmented-option.active {
+      background: var(--bg-hover);
+      border-color: var(--border-color);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
     }
 
     /* Progress Modal */
@@ -1396,7 +1512,10 @@ export function getLanWebHtml(): string {
           <video id="trimmer-video" playsinline muted onclick="toggleTrimmerPlay()"></video>
         </div>
         <div class="trimmer-controls">
-          <div id="trimmer-time-display" class="time-display">00:00.0 / 00:00.0</div>
+          <div id="trimmer-time-display" class="time-display" title="点击或左右滑动调节进度">
+            <div id="trimmer-time-progress" class="time-display-progress"></div>
+            <span id="trimmer-time-text" class="time-display-text">00:00.0 / 00:00.0</span>
+          </div>
 
           <div class="time-steppers" oncontextmenu="return false;">
             <button class="v-btn v-btn-secondary" onmousedown="startSeek(-60, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(-60, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">-1m</button>
@@ -1407,12 +1526,16 @@ export function getLanWebHtml(): string {
             <button class="v-btn v-btn-secondary" onmousedown="startSeek(60, event)" onmouseup="stopSeek()" onmouseleave="stopSeek()" ontouchstart="startSeek(60, event)" ontouchend="stopSeek()" ontouchcancel="stopSeek()">+1m</button>
           </div>
 
-          <div class="trim-points-row">
-            <button class="v-btn v-btn-secondary" onclick="markTrimStart()">设为起点</button>
-            <button class="v-btn v-btn-secondary" onclick="markTrimEnd()">设为终点</button>
+          <div class="trimmer-action-row" oncontextmenu="return false;">
+            <button id="trim-mute-btn" class="v-btn v-btn-secondary" onclick="toggleTrimmerMute()">解除静音</button>
+            <button id="trim-speed-btn" class="v-btn v-btn-secondary" onclick="toggleTrimmerSpeed()">倍速: 1x</button>
           </div>
 
-          <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" style="width:100%;" onclick="addNewSegment()">+ 新增片段</button>
+          <div class="trim-points-row">
+            <button class="v-btn v-btn-secondary" onclick="markTrimStart()">设为起点</button>
+            <button id="trimmer-add-segment-btn" class="v-btn v-btn-primary" onclick="addNewSegment()">+ 新增片段</button>
+            <button class="v-btn v-btn-secondary" onclick="markTrimEnd()">设为终点</button>
+          </div>
 
           <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
             <div style="font-size:12px; font-weight:600; color:var(--text-secondary);">已选片段清单：</div>
@@ -1427,10 +1550,11 @@ export function getLanWebHtml(): string {
 
           <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
             <label style="font-size:12px; color:var(--text-secondary);">保存模式</label>
-            <select id="trim-save-mode" class="v-input" style="width:100%;" onchange="toggleTrimSaveMode()">
-              <option value="replace" selected>覆盖保存</option>
-              <option value="saveAs">另存为</option>
-            </select>
+            <div class="segmented-control" id="trim-save-segmented">
+              <div class="segmented-option active" data-value="replace" onclick="setTrimSaveMode('replace')">覆盖保存</div>
+              <div class="segmented-option" data-value="saveAs" onclick="setTrimSaveMode('saveAs')">另存为</div>
+            </div>
+            <input type="hidden" id="trim-save-mode" value="replace">
           </div>
           <div id="trim-filename-wrap" style="display:none; flex-direction:column; gap:4px;">
             <label style="font-size:12px; color:var(--text-secondary);">导出文件名</label>
@@ -1494,11 +1618,12 @@ export function getLanWebHtml(): string {
             <input type="number" id="compress-bitrate-input" class="v-input" value="2000" min="300" max="20000" style="width:100%;">
           </div>
           <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
-            <label style="font-size:12px; color:var(--text-secondary);">保存方式</label>
-            <select id="compress-mode-select" class="v-input" style="width:100%;" onchange="toggleCompressSaveMode()">
-              <option value="saveAs">另存为新文件</option>
-              <option value="replace">覆盖保存原文件</option>
-            </select>
+            <label style="font-size:12px; color:var(--text-secondary);">保存模式</label>
+            <div class="segmented-control" id="compress-save-segmented">
+              <div class="segmented-option" data-value="replace" onclick="setCompressSaveMode('replace')">覆盖保存</div>
+              <div class="segmented-option active" data-value="saveAs" onclick="setCompressSaveMode('saveAs')">另存为</div>
+            </div>
+            <input type="hidden" id="compress-mode-select" value="saveAs">
           </div>
           <div id="compress-filename-wrap" style="display:flex; flex-direction:column; gap:4px;">
             <label style="font-size:12px; color:var(--text-secondary);">导出文件名</label>
@@ -1546,7 +1671,7 @@ export function getLanWebHtml(): string {
         </div>
         <div class="modal-footer">
           <button id="custom-dialog-cancel-btn" class="v-btn v-btn-secondary" onclick="closeCustomDialog(false)">取消</button>
-          <button id="custom-dialog-confirm-btn" class="v-btn v-btn-primary" onclick="confirmCustomDialog()">确定</button>
+          <button id="custom-dialog-confirm-btn" class="v-btn v-btn-primary" onclick="confirmCustomDialog()">确认</button>
         </div>
       </div>
     </div>
@@ -1790,7 +1915,7 @@ export function getLanWebHtml(): string {
 
         var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
         confirmBtn.className = 'v-btn v-btn-primary';
-        confirmBtn.innerText = opts.okText || '确定';
+        confirmBtn.innerText = opts.okText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
         confirmBtn.focus();
@@ -1815,7 +1940,7 @@ export function getLanWebHtml(): string {
 
         var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
         confirmBtn.className = opts.danger ? 'v-btn v-btn-danger-soft' : 'v-btn v-btn-primary';
-        confirmBtn.innerText = opts.confirmText || '确定';
+        confirmBtn.innerText = opts.confirmText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
         confirmBtn.focus();
@@ -1856,7 +1981,7 @@ export function getLanWebHtml(): string {
 
         var confirmBtn = document.getElementById('custom-dialog-confirm-btn');
         confirmBtn.className = 'v-btn v-btn-primary';
-        confirmBtn.innerText = opts.confirmText || opts.okText || '确定';
+        confirmBtn.innerText = opts.confirmText || opts.okText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
         setTimeout(function() {
@@ -2717,7 +2842,7 @@ export function getLanWebHtml(): string {
       actionModalTitle.innerText = '确认删除';
       actionModalBody.innerHTML = '<p style="color:var(--color-error); font-size:14px;">确定要永久删除 ' + (isDirectory ? '文件夹' : '文件') + ' "<strong>' + escapeHtml(finalName) + '</strong>" 吗？此操作不可恢复。</p>';
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
-        '<button class="v-btn v-btn-danger-soft" onclick="submitDelete(\\'' + encodedPath + '\\')">确认删除</button>';
+        '<button class="v-btn v-btn-danger-soft" onclick="submitDelete(\\'' + encodedPath + '\\')">确认</button>';
       actionModal.style.display = 'flex';
     };
 
@@ -2796,6 +2921,11 @@ export function getLanWebHtml(): string {
       document.getElementById('trim-save-mode').value = 'replace';
       toggleTrimSaveMode();
 
+      video.muted = true;
+      video.playbackRate = 1;
+      state.trimSpeed = 1;
+      updateTrimmerActionButtons();
+
       video.onloadedmetadata = function() {
         var dur = video.duration || 0;
         state.trimDuration = dur;
@@ -2824,11 +2954,95 @@ export function getLanWebHtml(): string {
       var video = document.getElementById('trimmer-video');
       var curr = video ? video.currentTime : 0;
       var dur = state.trimDuration || (video ? video.duration : 0) || 0;
-      var display = document.getElementById('trimmer-time-display');
-      if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
+      var textEl = document.getElementById('trimmer-time-text');
+      var progEl = document.getElementById('trimmer-time-progress');
+      if (textEl) {
+        textEl.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
+      } else {
+        var display = document.getElementById('trimmer-time-display');
+        if (display) display.innerText = formatTimeSec(curr) + ' / ' + formatTimeSec(dur);
+      }
+      if (progEl) {
+        var pct = dur > 0 ? Math.max(0, Math.min(100, (curr / dur) * 100)) : 0;
+        progEl.style.width = pct + '%';
+      }
 
       updateTrimmerSummary();
     }
+
+    (function initTrimmerProgressEvents() {
+      var display = document.getElementById('trimmer-time-display');
+      if (!display) return;
+
+      var isPointerDown = false;
+      var isDragging = false;
+      var startX = 0;
+      var startTime = 0;
+
+      display.addEventListener('pointerdown', function(e) {
+        if (e.button !== undefined && e.button !== 0) return;
+        var video = document.getElementById('trimmer-video');
+        if (!video) return;
+        var dur = state.trimDuration || (video.duration || 0) || 0;
+        if (dur <= 0) return;
+
+        isPointerDown = true;
+        isDragging = false;
+        startX = e.clientX;
+        startTime = typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0;
+
+        try {
+          display.setPointerCapture(e.pointerId);
+        } catch (err) {}
+        if (e.cancelable) e.preventDefault();
+      });
+
+      display.addEventListener('pointermove', function(e) {
+        if (!isPointerDown) return;
+        var video = document.getElementById('trimmer-video');
+        if (!video) return;
+        var dur = state.trimDuration || (video.duration || 0) || 0;
+        if (dur <= 0) return;
+
+        var deltaX = e.clientX - startX;
+        if (!isDragging && Math.abs(deltaX) >= 6) {
+          isDragging = true;
+        }
+
+        if (isDragging) {
+          var effectiveDelta = deltaX > 0 ? (deltaX - 6) : (deltaX + 6);
+          var steps = Math.round(effectiveDelta / 8);
+          var targetTime = startTime + steps * (dur * 0.01);
+          targetTime = Math.max(0, Math.min(dur, targetTime));
+          video.currentTime = targetTime;
+          updateTrimmerTimeLabels();
+        }
+      });
+
+      var handlePointerUp = function(e) {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        var video = document.getElementById('trimmer-video');
+        if (video) {
+          var dur = state.trimDuration || (video.duration || 0) || 0;
+          if (dur > 0 && !isDragging) {
+            var rect = display.getBoundingClientRect();
+            var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            video.currentTime = ratio * dur;
+            updateTrimmerTimeLabels();
+          }
+        }
+        isDragging = false;
+        try {
+          if (e.pointerId !== undefined && display.hasPointerCapture && display.hasPointerCapture(e.pointerId)) {
+            display.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+      };
+
+      display.addEventListener('pointerup', handlePointerUp);
+      display.addEventListener('pointercancel', handlePointerUp);
+    })();
 
     var seekHoldTimer = null;
     var seekIntervalTimer = null;
@@ -2890,6 +3104,42 @@ export function getLanWebHtml(): string {
         video.pause();
       }
     };
+
+    window.toggleTrimmerMute = function() {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      video.muted = !video.muted;
+      updateTrimmerMuteButton();
+    };
+
+    function updateTrimmerMuteButton() {
+      var btn = document.getElementById('trim-mute-btn');
+      var video = document.getElementById('trimmer-video');
+      if (!btn || !video) return;
+      btn.innerText = video.muted ? '解除静音' : '开启静音';
+      btn.classList.remove('active');
+    }
+
+    window.toggleTrimmerSpeed = function() {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      state.trimSpeed = (state.trimSpeed === 1 ? 2 : 1);
+      video.playbackRate = state.trimSpeed;
+      updateTrimmerSpeedButton();
+    };
+
+    function updateTrimmerSpeedButton() {
+      var btn = document.getElementById('trim-speed-btn');
+      if (!btn) return;
+      var spd = state.trimSpeed || 1;
+      btn.innerText = '倍速: ' + spd + 'x';
+      btn.classList.remove('active');
+    }
+
+    function updateTrimmerActionButtons() {
+      updateTrimmerMuteButton();
+      updateTrimmerSpeedButton();
+    }
 
     window.seekTrimmer = function(delta) {
       var video = document.getElementById('trimmer-video');
@@ -3081,11 +3331,29 @@ export function getLanWebHtml(): string {
       updateTrimmerTimeLabels();
     };
 
+    window.setTrimSaveMode = function(mode) {
+      var input = document.getElementById('trim-save-mode');
+      if (input) input.value = mode;
+      toggleTrimSaveMode();
+    };
+
     window.toggleTrimSaveMode = function() {
-      var mode = document.getElementById('trim-save-mode').value;
+      var mode = (document.getElementById('trim-save-mode') || {}).value || 'replace';
       var wrap = document.getElementById('trim-filename-wrap');
       if (wrap) {
         wrap.style.display = mode === 'saveAs' ? 'flex' : 'none';
+      }
+      var segmented = document.getElementById('trim-save-segmented');
+      if (segmented) {
+        var options = segmented.querySelectorAll('.segmented-option');
+        for (var i = 0; i < options.length; i++) {
+          var opt = options[i];
+          if (opt.getAttribute('data-value') === mode) {
+            opt.classList.add('active');
+          } else {
+            opt.classList.remove('active');
+          }
+        }
       }
     };
 
@@ -3117,7 +3385,7 @@ export function getLanWebHtml(): string {
         var ok = await window.showConfirm({
           title: '提示',
           message: '检测到列表中包含 ' + invalidCount + ' 个未设置起止时间的无效片段，处理时将自动跳过这些片段。是否继续？',
-          confirmText: '继续',
+          confirmText: '确认',
           cancelText: '取消'
         });
         if (!ok) return;
@@ -3126,8 +3394,8 @@ export function getLanWebHtml(): string {
       if (mode === 'replace') {
         var ok = await window.showConfirm({
           title: '覆盖保存确认',
-          message: '确定要覆盖保存原视频文件吗？此操作将直接修改源文件。',
-          confirmText: '覆盖保存',
+          message: '确定要覆盖保存原视频文件吗？',
+          confirmText: '确认',
           danger: true
         });
         if (!ok) return;
@@ -3291,11 +3559,29 @@ export function getLanWebHtml(): string {
       if (input) input.value = kbps;
     };
 
+    window.setCompressSaveMode = function(mode) {
+      var input = document.getElementById('compress-mode-select');
+      if (input) input.value = mode;
+      toggleCompressSaveMode();
+    };
+
     window.toggleCompressSaveMode = function() {
-      var mode = document.getElementById('compress-mode-select').value;
+      var mode = (document.getElementById('compress-mode-select') || {}).value || 'saveAs';
       var wrap = document.getElementById('compress-filename-wrap');
       if (wrap) {
         wrap.style.display = mode === 'saveAs' ? 'flex' : 'none';
+      }
+      var segmented = document.getElementById('compress-save-segmented');
+      if (segmented) {
+        var options = segmented.querySelectorAll('.segmented-option');
+        for (var i = 0; i < options.length; i++) {
+          var opt = options[i];
+          if (opt.getAttribute('data-value') === mode) {
+            opt.classList.add('active');
+          } else {
+            opt.classList.remove('active');
+          }
+        }
       }
     };
 
@@ -3307,8 +3593,8 @@ export function getLanWebHtml(): string {
       if (mode === 'replace') {
         var ok = await window.showConfirm({
           title: '覆盖保存确认',
-          message: '确定要覆盖保存原视频文件吗？此操作将以压缩后内容替换原文件。',
-          confirmText: '覆盖保存',
+          message: '确定要覆盖保存原视频文件吗？',
+          confirmText: '确认',
           danger: true
         });
         if (!ok) return;

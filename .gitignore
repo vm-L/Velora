@@ -49,3 +49,5 @@ desktop.ini
 # Temporary files
 *.tmp
 *.temp
+
+mv.js
