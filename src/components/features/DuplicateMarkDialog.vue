@@ -126,11 +126,23 @@
           <div class="info-row">
             <span class="label">匹配正则</span>
             <div class="field-control regex-control-group">
-              <v-input
-                v-model="currentRule.regexPattern"
-                class="value-input mono-input flex-1"
-                placeholder="留空使用默认算法，例如: [a-zA-Z0-9]+"
-              />
+              <div class="regex-input-row">
+                <v-input
+                  v-model="currentRule.regexPattern"
+                  class="value-input mono-input flex-1"
+                  placeholder="留空使用默认算法，例如: [a-zA-Z0-9]+"
+                />
+                <v-button
+                  variant="secondary"
+                  size="small"
+                  class="action-btn-inline test-btn"
+                  @click="onTestClick"
+                  title="执行匹配测试并输出到控制台"
+                >
+                  <VIcon name="play" :size="12" style="margin-right: 4px;" />
+                  测试
+                </v-button>
+              </div>
               <div v-if="regexError" class="regex-error-msg">
                 {{ regexError }}
               </div>
@@ -182,6 +194,7 @@ const emit = defineEmits([
   'save',
   'delete',
   'preview',
+  'test',
   'pick-mount',
   'interaction-start',
   'interaction-end'
@@ -241,10 +254,22 @@ const validateRegex = (pattern: string): boolean => {
     new RegExp(trimmed, 'i');
     regexError.value = '';
     return true;
-  } catch (err: any) {
-    regexError.value = `正则表达式格式无效: ${err.message || '语法错误'}`;
+  } catch {
+    regexError.value = '正则表达式格式无效';
     return false;
   }
+};
+
+const onTestClick = () => {
+  if (!currentRule.mountSelector.trim()) {
+    showMessage('请输入挂载元素选择器', 'error');
+    return;
+  }
+  if (currentRule.regexPattern && !validateRegex(currentRule.regexPattern)) {
+    showMessage('正则表达式格式无效', 'error');
+    return;
+  }
+  emit('test', { ...currentRule });
 };
 
 watch(
@@ -396,7 +421,7 @@ const save = () => {
     return;
   }
   if (currentRule.regexPattern && !validateRegex(currentRule.regexPattern)) {
-    showMessage('匹配正则表达式格式无效，请检查后再保存', 'error');
+    showMessage('正则表达式格式无效', 'error');
     return;
   }
 
@@ -595,6 +620,13 @@ defineExpose({
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
+  width: 100%;
+}
+
+.regex-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
 }
 

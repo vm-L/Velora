@@ -509,11 +509,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
             var targetEl = mountEl;
             if (titleSelector) {
               try {
-                if (mountEl.matches && mountEl.matches(titleSelector)) {
-                  targetEl = mountEl;
-                } else {
-                  targetEl = mountEl.querySelector(titleSelector);
-                }
+                targetEl = mountEl.querySelector(titleSelector);
               } catch (e) {
                 targetEl = null;
               }

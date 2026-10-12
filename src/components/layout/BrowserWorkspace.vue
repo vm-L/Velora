@@ -224,6 +224,7 @@
       @preview="onPreviewDuplicateRule"
       @save="onSaveDuplicateRules"
       @delete="onDeleteDuplicateRule"
+      @test="onTestDuplicateRule"
       @interaction-start="isInteracting = true"
       @interaction-end="isInteracting = false"
     />
@@ -297,6 +298,7 @@ import { isUrlMatchPattern, getDefaultUrlPattern } from '@/utils/urlMatcher';
 import type { WaterfallRule, DuplicateMarkRule } from '@/composables/useSettings';
 import { useFileDeduplication } from '@/composables/useFileDeduplication';
 import { useElementPickerSession } from '@/composables/useElementPickerSession';
+import { isSimilarExistingFile } from '@/utils/similarity';
 
 
 import { useMessage } from '@/composables/useMessage';
@@ -2522,6 +2524,201 @@ const onDeleteDuplicateRule = async (rules: DuplicateMarkRule[]) => {
   await saveCustomDuplicateRules(allObj);
   showMessage('规则已删除', 'success');
   applyDuplicateMarksToAllTabs();
+};
+
+const onTestDuplicateRule = async (rule: DuplicateMarkRule) => {
+  const tabId = activeTab.value?.id;
+  if (!tabId) {
+    showMessage('未找到当前活动标签页', 'error');
+    return;
+  }
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview || typeof webview.executeJavaScript !== 'function') {
+    showMessage('当前页面尚未准备就绪', 'error');
+    return;
+  }
+
+  if (!rule.mountSelector?.trim()) {
+    showMessage('请输入挂载元素选择器', 'error');
+    return;
+  }
+
+  const mountSelector = JSON.stringify(rule.mountSelector.trim());
+  const titleSelector = JSON.stringify((rule.titleSelector || '').trim());
+  const titleAttr = JSON.stringify((rule.titleAttribute || 'innerText').trim() || 'innerText');
+  const extractScript = `
+    (function() {
+      try {
+        const nodes = document.querySelectorAll(${mountSelector});
+        const results = [];
+        nodes.forEach((mountEl, idx) => {
+          let targetEl = mountEl;
+          const tSel = ${titleSelector};
+          if (tSel) {
+            try {
+              targetEl = mountEl.querySelector(tSel);
+            } catch (e) {
+              targetEl = null;
+            }
+          }
+          if (!targetEl) return;
+          const tAttr = ${titleAttr};
+          let rawVal = targetEl[tAttr];
+          if (rawVal === undefined || rawVal === null) {
+            if (typeof targetEl.getAttribute === 'function') {
+              rawVal = targetEl.getAttribute(tAttr);
+            }
+          }
+          const text = (rawVal != null) ? String(rawVal).trim() : '';
+          if (text) {
+            results.push({ index: idx + 1, text });
+          }
+        });
+        return { success: true, items: results };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    })()
+  `;
+
+  try {
+    const extractRes = await webview.executeJavaScript(extractScript);
+    if (!extractRes || !extractRes.success) {
+      showMessage('从当前页面抓取元素失败: ' + (extractRes?.error || '未知错误'), 'error');
+      return;
+    }
+
+    const pageItems: Array<{ index: number; text: string }> = extractRes.items || [];
+    const localFileKeys: string[] = Array.from(fileIndexMap.value.keys());
+    const regexPattern = (rule.regexPattern || '').trim();
+
+    const extractByRegex = (pattern: string, str: string): string | null => {
+      if (!pattern || !str) return null;
+      try {
+        const re = new RegExp(pattern, 'i');
+        const m = str.match(re);
+        if (!m || !m[0]) return null;
+        const trimmed = m[0].trim().toLowerCase();
+        return trimmed.length > 0 ? trimmed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const tableData: any[] = [];
+
+    if (regexPattern) {
+      // 自定义正则提取比对
+      const localExtractedMap = new Map<string, string>();
+      for (const k of localFileKeys) {
+        const extVal = extractByRegex(regexPattern, k);
+        if (extVal) {
+          localExtractedMap.set(k, extVal);
+        }
+      }
+
+      for (const item of pageItems) {
+        const pageExtracted = extractByRegex(regexPattern, item.text);
+        const matchedFiles: string[] = [];
+        if (pageExtracted) {
+          for (const [k, extVal] of localExtractedMap.entries()) {
+            if (extVal === pageExtracted) {
+              matchedFiles.push(k);
+            }
+          }
+        }
+        tableData.push({
+          '序号': item.index,
+          '网页提取标题': item.text,
+          '网页正则提取值': pageExtracted ?? '(未匹配)',
+          '匹配结果': matchedFiles.length > 0 ? '已下载 (命中)' : '未命中',
+          '命中的本地文件': matchedFiles.length > 0 ? matchedFiles.join('; ') : '-',
+          '匹配规则': `正则: ${regexPattern}`
+        });
+      }
+    } else {
+      // 留空使用默认算法
+      for (const item of pageItems) {
+        let matchedFile: string | null = null;
+        let matchType: 'exact' | 'similar' | 'none' = 'none';
+
+        if (fileIndexMap.value.has(item.text)) {
+          matchedFile = item.text;
+          matchType = 'exact';
+        } else {
+          for (const k of localFileKeys) {
+            if (isSimilarExistingFile(k, item.text)) {
+              matchedFile = k;
+              matchType = 'similar';
+              break;
+            }
+          }
+        }
+
+        tableData.push({
+          '序号': item.index,
+          '网页提取标题': item.text,
+          '网页正则提取值': '(未配置正则，默认算法)',
+          '匹配结果': matchType !== 'none' ? `已下载 (${matchType === 'exact' ? '全名精确' : '相似'})` : '未命中',
+          '命中的本地文件': matchedFile || '-',
+          '匹配规则': '默认算法 (全名 / LCS相似度)'
+        });
+      }
+    }
+
+    // 尝试打开 Webview 开发者工具并向 Webview 内置控制台输出测试结果
+    try {
+      if (typeof webview.openDevTools === 'function') {
+        webview.openDevTools();
+      }
+    } catch {}
+
+    const logPayload = JSON.stringify({
+      ruleTitle: rule.name || rule.domain || '当前规则',
+      rule,
+      pageCount: pageItems.length,
+      localCount: localFileKeys.length,
+      pageTexts: pageItems.map(p => p.text),
+      localFiles: localFileKeys,
+      tableData
+    });
+    const printScript = `
+      (function() {
+        try {
+          const data = ${logPayload};
+          console.group('%c[Velora 标记重复匹配测试] 规则: ' + data.ruleTitle, 'color: #3b82f6; font-weight: bold; font-size: 13px;');
+          console.log('规则配置详情:', data.rule);
+          console.log('当前页面 URL:', window.location.href);
+          console.log('页面抓取到 ' + data.pageCount + ' 个待匹配卡片项, 本地去重库包含 ' + data.localCount + ' 个文件');
+          console.log('【待匹配方 A (网页端提取文本)】:', data.pageTexts);
+          console.log('【待匹配方 B (本地去重库文件名)】:', data.localFiles);
+          console.log('--- 匹配详细结果汇总表 ---');
+          if (data.tableData && data.tableData.length > 0) {
+            console.table(data.tableData);
+          } else {
+            console.warn('[Velora] 当前页面未抓取到任何匹配元素，请检查挂载选择器是否有效');
+          }
+          console.groupEnd();
+        } catch (e) {
+          console.error('[Velora] 打印测试结果失败', e);
+        }
+      })()
+    `;
+    try {
+      await webview.executeJavaScript(printScript);
+    } catch (e: any) {
+      logger.warn('BrowserWorkspace', `向 Webview 注入控制台日志失败: ${e?.message || e}`);
+    }
+
+    if (pageItems.length === 0) {
+      showMessage('当前页面未找到匹配挂载选择器的元素', 'warning');
+    } else {
+      showMessage('结果已输出至控制台', 'info');
+    }
+  } catch (err: any) {
+    logger.error('BrowserWorkspace', `执行标记重复测试异常: ${err.message}`);
+    showMessage('执行测试失败: ' + err.message, 'error');
+  }
 };
 
 const applyDuplicateMarksToTab = async (tabId: string) => {
