@@ -2485,7 +2485,9 @@ export function getLanWebHtml(): string {
     // Video Player
     function openVideoModal(item) {
       recordPreviewScroll();
-      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) +
+        (state.token ? '&token=' + encodeURIComponent(state.token) : '') +
+        '&_v=' + Date.now();
       
       document.getElementById('video-modal-title').innerText = item.name;
       var video = document.getElementById('main-video');
@@ -2496,8 +2498,13 @@ export function getLanWebHtml(): string {
 
     window.closeVideoModal = function() {
       var video = document.getElementById('main-video');
-      video.pause();
-      video.src = '';
+      if (video) {
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch (e) {}
+      }
       document.getElementById('video-modal').style.display = 'none';
       restorePreviewScroll();
     };
@@ -2913,10 +2920,17 @@ export function getLanWebHtml(): string {
 
       document.getElementById('video-edit-title').innerText = '视频剪辑: ' + finalName;
       var video = document.getElementById('trimmer-video');
-      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(filePath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(filePath) +
+        (state.token ? '&token=' + encodeURIComponent(state.token) : '') +
+        '&_v=' + Date.now();
       video.src = streamUrl;
 
-      var baseWithoutExt = finalName.replace(/\\.[^/.]+$/, '');
+      // 重置 Seek 调度器与状态锁
+      pendingSeekTime = null;
+      isSeekingLock = false;
+      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
+
+      var baseWithoutExt = finalName.replace(/\.[^/.]+$/, '');
       document.getElementById('trim-filename-input').value = baseWithoutExt + '_cut.mp4';
       document.getElementById('trim-save-mode').value = 'replace';
       toggleTrimSaveMode();
@@ -2943,16 +2957,115 @@ export function getLanWebHtml(): string {
       };
 
       video.ontimeupdate = function() {
-        updateTrimmerTimeLabels();
+        if (!isSeekingLock && pendingSeekTime === null) {
+          updateTrimmerTimeLabels();
+        }
+      };
+
+      video.onseeking = function() {
+        isSeekingLock = true;
+      };
+
+      video.onseeked = function() {
+        isSeekingLock = false;
+        if (seekRecoveryTimer) {
+          clearTimeout(seekRecoveryTimer);
+          seekRecoveryTimer = null;
+        }
+        if (pendingSeekTime !== null) {
+          var next = pendingSeekTime;
+          pendingSeekTime = null;
+          safeSeekTrimmerVideo(next);
+        } else {
+          updateTrimmerTimeLabels();
+        }
+      };
+
+      video.onerror = function() {
+        console.warn('Trimmer video error encountered, recovering stream...');
+        recoverTrimmerVideo();
       };
 
       renderTrimSegments();
       document.getElementById('video-edit-modal').style.display = 'flex';
     };
 
-    function updateTrimmerTimeLabels() {
+    var pendingSeekTime = null;
+    var isSeekingLock = false;
+    var seekRecoveryTimer = null;
+
+    function recoverTrimmerVideo() {
       var video = document.getElementById('trimmer-video');
-      var curr = video ? video.currentTime : 0;
+      if (!video || !state.currentTrimPath) return;
+      var resumeTime = pendingSeekTime !== null ? pendingSeekTime : (video.currentTime || 0);
+      isSeekingLock = false;
+      pendingSeekTime = null;
+      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
+
+      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(state.currentTrimPath) +
+        (state.token ? '&token=' + encodeURIComponent(state.token) : '') +
+        '&_r=' + Date.now();
+      
+      var onResumeLoaded = function() {
+        video.removeEventListener('loadedmetadata', onResumeLoaded);
+        safeSeekTrimmerVideo(resumeTime);
+      };
+      video.addEventListener('loadedmetadata', onResumeLoaded);
+      video.src = streamUrl;
+      video.load();
+    }
+
+    function safeSeekTrimmerVideo(targetTime) {
+      var video = document.getElementById('trimmer-video');
+      if (!video) return;
+      var dur = state.trimDuration || (video.duration || 0) || 0;
+      if (dur > 0) {
+        targetTime = Math.max(0, Math.min(dur, targetTime));
+      } else {
+        targetTime = Math.max(0, targetTime);
+      }
+
+      // 实时更新 UI 时间和进度条，提供零延迟视觉反馈
+      updateTrimmerTimeLabels(targetTime);
+
+      // 若底层正在寻道中或锁处于占用状态，将目标存入排队槽位，避免连续打断解码器引发死锁
+      if (video.seeking || isSeekingLock) {
+        pendingSeekTime = targetTime;
+        return;
+      }
+
+      isSeekingLock = true;
+      pendingSeekTime = null;
+
+      // 800ms 保底定时器，防止极端网络波动或解码器异常丢失 seeked 事件
+      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
+      seekRecoveryTimer = setTimeout(function() {
+        if (isSeekingLock) {
+          isSeekingLock = false;
+          if (pendingSeekTime !== null) {
+            var nextTime = pendingSeekTime;
+            pendingSeekTime = null;
+            safeSeekTrimmerVideo(nextTime);
+          }
+        }
+      }, 800);
+
+      try {
+        if (typeof video.fastSeek === 'function') {
+          video.fastSeek(targetTime);
+        } else {
+          video.currentTime = targetTime;
+        }
+      } catch (err) {
+        video.currentTime = targetTime;
+      }
+    }
+
+    function updateTrimmerTimeLabels(overrideCurr) {
+      var video = document.getElementById('trimmer-video');
+      var curr = (typeof overrideCurr === 'number' && !isNaN(overrideCurr))
+        ? overrideCurr
+        : (pendingSeekTime !== null ? pendingSeekTime : (video ? video.currentTime : 0));
       var dur = state.trimDuration || (video ? video.duration : 0) || 0;
       var textEl = document.getElementById('trimmer-time-text');
       var progEl = document.getElementById('trimmer-time-progress');
@@ -3013,9 +3126,7 @@ export function getLanWebHtml(): string {
           var effectiveDelta = deltaX > 0 ? (deltaX - 6) : (deltaX + 6);
           var steps = Math.round(effectiveDelta / 8);
           var targetTime = startTime + steps * (dur * 0.01);
-          targetTime = Math.max(0, Math.min(dur, targetTime));
-          video.currentTime = targetTime;
-          updateTrimmerTimeLabels();
+          safeSeekTrimmerVideo(targetTime);
         }
       });
 
@@ -3028,8 +3139,7 @@ export function getLanWebHtml(): string {
           if (dur > 0 && !isDragging) {
             var rect = display.getBoundingClientRect();
             var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            video.currentTime = ratio * dur;
-            updateTrimmerTimeLabels();
+            safeSeekTrimmerVideo(ratio * dur);
           }
         }
         isDragging = false;
@@ -3081,10 +3191,19 @@ export function getLanWebHtml(): string {
 
     window.closeVideoEditModal = function() {
       window.stopSeek();
+      pendingSeekTime = null;
+      isSeekingLock = false;
+      if (seekRecoveryTimer) {
+        clearTimeout(seekRecoveryTimer);
+        seekRecoveryTimer = null;
+      }
       var video = document.getElementById('trimmer-video');
       if (video) {
-        video.pause();
-        video.src = '';
+        try {
+          video.pause();
+          video.removeAttribute('src');
+          video.load();
+        } catch (e) {}
       }
       document.getElementById('video-edit-modal').style.display = 'none';
     };
@@ -3092,9 +3211,12 @@ export function getLanWebHtml(): string {
     window.toggleTrimmerPlay = function() {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
+      if (pendingSeekTime !== null) {
+        safeSeekTrimmerVideo(pendingSeekTime);
+      }
       if (video.paused || video.ended) {
         if (video.ended || (video.duration && video.currentTime >= video.duration - 0.05)) {
-          video.currentTime = 0;
+          safeSeekTrimmerVideo(0);
         }
         var p = video.play();
         if (p && p.catch) {
@@ -3145,10 +3267,11 @@ export function getLanWebHtml(): string {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
       var dur = state.trimDuration || (video.duration || 0) || 0;
-      var current = typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0;
+      var current = (pendingSeekTime !== null)
+        ? pendingSeekTime
+        : (typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0);
       var target = Math.max(0, Math.min(dur, current + delta));
-      video.currentTime = target;
-      updateTrimmerTimeLabels();
+      safeSeekTrimmerVideo(target);
     };
 
     window.markTrimStart = function() {
@@ -3156,7 +3279,10 @@ export function getLanWebHtml(): string {
       if (!video || !state.trimSegments || !state.trimSegments.length) return;
       var idx = state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex < state.trimSegments.length ? state.selectedSegmentIndex : 0;
       var seg = state.trimSegments[idx];
-      var newStart = Math.round(video.currentTime * 100) / 100;
+      var currentTimeVal = (pendingSeekTime !== null)
+        ? pendingSeekTime
+        : (typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0);
+      var newStart = Math.round(currentTimeVal * 100) / 100;
 
       if (seg.end !== null && newStart >= seg.end) {
         showToast('起点时间必须小于当前片段终点');
@@ -3191,7 +3317,10 @@ export function getLanWebHtml(): string {
       if (!video || !state.trimSegments || !state.trimSegments.length) return;
       var idx = state.selectedSegmentIndex >= 0 && state.selectedSegmentIndex < state.trimSegments.length ? state.selectedSegmentIndex : 0;
       var seg = state.trimSegments[idx];
-      var newEnd = Math.round(video.currentTime * 100) / 100;
+      var currentTimeVal = (pendingSeekTime !== null)
+        ? pendingSeekTime
+        : (typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0);
+      var newEnd = Math.round(currentTimeVal * 100) / 100;
 
       if (seg.start !== null && newEnd <= seg.start) {
         showToast('终点时间必须大于当前片段起点');
@@ -3265,7 +3394,7 @@ export function getLanWebHtml(): string {
       if (!state.trimSegments || idx < 0 || idx >= state.trimSegments.length) return;
       state.selectedSegmentIndex = idx;
       var seg = state.trimSegments[idx];
-      if (seg.valid && seg.start !== null && seg.end !== null) {
+      if (seg) {
         seekToSegment(seg.start, seg.end);
       }
       renderTrimSegments();
@@ -3323,12 +3452,31 @@ export function getLanWebHtml(): string {
       var video = document.getElementById('trimmer-video');
       if (!video) return;
       var dur = state.trimDuration || (video.duration || 0) || 0;
-      var current = typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0;
-      var isAtStart = Math.abs(current - startSec) < 0.05;
-      var target = isAtStart ? (typeof endSec === 'number' ? endSec : startSec) : startSec;
-      target = Math.max(0, Math.min(dur, target));
-      video.currentTime = target;
-      updateTrimmerTimeLabels();
+      var current = (pendingSeekTime !== null)
+        ? pendingSeekTime
+        : (typeof video.currentTime === 'number' && !isNaN(video.currentTime) ? video.currentTime : 0);
+      var hasStart = typeof startSec === 'number' && !isNaN(startSec);
+      var hasEnd = typeof endSec === 'number' && !isNaN(endSec);
+
+      var isAtStart = hasStart && Math.abs(current - startSec) < 0.05;
+
+      var targetTime = null;
+      if (isAtStart) {
+        if (hasEnd) {
+          targetTime = endSec;
+        }
+      } else {
+        if (hasStart) {
+          targetTime = startSec;
+        }
+      }
+
+      if (targetTime === null) {
+        return;
+      }
+
+      targetTime = Math.max(0, Math.min(dur, targetTime));
+      safeSeekTrimmerVideo(targetTime);
     };
 
     window.setTrimSaveMode = function(mode) {
@@ -3399,6 +3547,9 @@ export function getLanWebHtml(): string {
           danger: true
         });
         if (!ok) return;
+
+        // 覆盖保存发起前先释放当前视频流占用，避免后台写入期间文件被网络流占用
+        closeVideoEditModal();
       }
 
       var taskId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);

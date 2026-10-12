@@ -63,11 +63,23 @@ const mediaServer = http.createServer(async (req, res) => {
       else if (ext === 'webp') contentType = 'image/webp';
       else if (ext === 'gif') contentType = 'image/gif';
       
+      const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+      const lastModified = stat.mtime.toUTCString();
+      const ifRange = req.headers['if-range'];
+      const isIfRangeValid = !ifRange || ifRange === etag || ifRange === lastModified;
+
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Content-Type', contentType);
       res.setHeader('Accept-Ranges', 'bytes');
-      
-      if (rangeHeader && stat.size > 0) {
+      res.setHeader('Cache-Control', 'no-cache, private');
+      res.setHeader('ETag', etag);
+      res.setHeader('Last-Modified', lastModified);
+      res.setHeader('Connection', 'keep-alive');
+
+      // 限制单次 Range 传输块为 2MB，防止并发 seek 或大文件持续占用 socket 连接
+      const MAX_CHUNK_SIZE = 2 * 1024 * 1024;
+
+      if (rangeHeader && stat.size > 0 && isIfRangeValid) {
         const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
         if (!match) {
           res.writeHead(416, {
@@ -89,9 +101,11 @@ const mediaServer = http.createServer(async (req, res) => {
             return res.end();
           }
           start = Math.max(0, stat.size - end);
-          end = stat.size - 1;
+          end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
         } else if (isNaN(end)) {
-          end = stat.size - 1;
+          end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+        } else {
+          end = Math.min(end, stat.size - 1, start + MAX_CHUNK_SIZE - 1);
         }
 
         if (start >= stat.size || start < 0 || end < start) {
@@ -102,7 +116,6 @@ const mediaServer = http.createServer(async (req, res) => {
           return res.end();
         }
 
-        end = Math.min(end, stat.size - 1);
         const chunksize = (end - start) + 1;
         
         res.writeHead(206, {
@@ -123,6 +136,9 @@ const mediaServer = http.createServer(async (req, res) => {
         req.on('close', () => {
           fileStream.destroy();
         });
+        res.on('finish', () => {
+          fileStream.destroy();
+        });
         fileStream.pipe(res);
       } else {
         res.writeHead(200, {
@@ -140,6 +156,9 @@ const mediaServer = http.createServer(async (req, res) => {
           res.end();
         });
         req.on('close', () => {
+          fileStream.destroy();
+        });
+        res.on('finish', () => {
           fileStream.destroy();
         });
         fileStream.pipe(res);
@@ -181,6 +200,27 @@ let mainWindow: BrowserWindow | null = null
 let splashWindow: BrowserWindow | null = null
 let splashStartTime = 0
 let isFirstScreenReady = false
+
+export interface FileSystemChangeEvent {
+  type: 'add' | 'delete' | 'rename' | 'move' | 'overwrite' | 'sync-dir';
+  name?: string;
+  path?: string;
+  oldPath?: string;
+  newPath?: string;
+  isDirectory?: boolean;
+  dirPath?: string;
+  files?: Array<{ name: string; path: string }>;
+}
+
+export function broadcastFileSystemChange(event: FileSystemChangeEvent) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.webContents.send('file-system-changed', event);
+    } catch (err: any) {
+      logger.warn('Main', `Failed to broadcast file-system-changed: ${err.message}`);
+    }
+  }
+}
 
 // 获取应用图标 Base64 Data URL (供 Splash 与 Tray 备用)
 const getIconDataUrl = (): string => {
@@ -309,7 +349,7 @@ const clearPrivacyData = async () => {
   try {
     await session.defaultSession.clearCache()
     await session.defaultSession.clearStorageData({
-      storages: ['cookies', 'localstorage', 'websql', 'cachestorage', 'serviceworkers']
+      storages: ['cookies', 'localstorage', 'cachestorage', 'serviceworkers']
     })
     logger.info('Privacy', 'Browser cache and storage data cleared successfully.')
   } catch (e: any) {
@@ -613,6 +653,11 @@ function setupIpcHandlers() {
         const savePath = path.join(dirPath, file.name)
         await fs.promises.writeFile(savePath, Buffer.from(buffer))
         results.push({ url: file.url, success: true, path: savePath })
+        broadcastFileSystemChange({
+          type: 'add',
+          name: file.name,
+          path: savePath
+        })
       } catch (e: any) {
         logger.error('Main', 'Failed to save image: ' + file.url + ' ' + e)
         results.push({ url: file.url, success: false, error: e.message })
@@ -661,7 +706,15 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle('compress-video-task', async (_, taskId: string, filePath: string, targetBitrateKbps: number) => {
-    return await downloader.compressVideoTask(taskId, filePath, targetBitrateKbps)
+    const res = await downloader.compressVideoTask(taskId, filePath, targetBitrateKbps);
+    if (res && res.success) {
+      broadcastFileSystemChange({
+        type: 'overwrite',
+        name: path.basename(filePath),
+        path: filePath
+      });
+    }
+    return res;
   })
 
   ipcMain.handle('delete-file', async (_, filePath: string) => {
@@ -692,6 +745,13 @@ function setupIpcHandlers() {
           }
         }
       }
+    }
+    if (anyDeleted) {
+      broadcastFileSystemChange({
+        type: 'delete',
+        path: filePath,
+        isDirectory: false
+      });
     }
     return anyDeleted;
   })
@@ -970,6 +1030,7 @@ const getMountedLocalResources = async () => {
 };
 
 const initOrRestartLanServer = async () => {
+  lanServer.setFileSystemChangeCallback(broadcastFileSystemChange);
   const enabled = await storeManager.getSetting('lanShareEnabled');
   if (!enabled) {
     await lanServer.stop();
@@ -983,7 +1044,7 @@ const initOrRestartLanServer = async () => {
     port,
     password,
     allowEdit
-  }, getMountedLocalResources);
+  }, getMountedLocalResources, broadcastFileSystemChange);
 };
 
 ipcMain.handle('get-lan-share-status', async () => {
@@ -1001,11 +1062,19 @@ ipcMain.handle('stop-lan-server', async () => {
 
 ipcMain.handle('edit-video-segments', async (event, params: EditVideoParams) => {
   const sender = event.sender;
-  return await editVideoSegments(params, (percent, text) => {
+  const result = await editVideoSegments(params, (percent, text) => {
     if (!sender.isDestroyed()) {
       sender.send(`video-edit-progress-${params.taskId}`, { percent, text });
     }
   });
+  if (result.success && result.outputPath) {
+    broadcastFileSystemChange({
+      type: params.mode === 'replace' ? 'overwrite' : 'add',
+      path: result.outputPath,
+      name: path.basename(result.outputPath)
+    });
+  }
+  return result;
 });
 
 ipcMain.handle('cancel-video-edit', async (_event, taskId: string) => {
@@ -1014,11 +1083,19 @@ ipcMain.handle('cancel-video-edit', async (_event, taskId: string) => {
 
 ipcMain.handle('merge-videos', async (event, params: MergeVideosParams) => {
   const sender = event.sender;
-  return await mergeVideos(params, (percent, text) => {
+  const result = await mergeVideos(params, (percent, text) => {
     if (!sender.isDestroyed()) {
       sender.send(`video-merge-progress-${params.taskId}`, { percent, text });
     }
   });
+  if (result.success && result.outputPath) {
+    broadcastFileSystemChange({
+      type: 'add',
+      path: result.outputPath,
+      name: path.basename(result.outputPath)
+    });
+  }
+  return result;
 });
 
 ipcMain.handle('cancel-video-merge', async (_event, taskId: string) => {
@@ -1174,6 +1251,12 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
     if (!oldPath || !newPath) {
       return { success: false, error: '文件路径不能为空' };
     }
+    let isDir = false;
+    try {
+      const stat = await fs.promises.stat(oldPath);
+      isDir = stat.isDirectory();
+    } catch {}
+
     const newDir = path.dirname(newPath);
     await fs.promises.mkdir(newDir, { recursive: true });
 
@@ -1187,6 +1270,15 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
         throw err;
       }
     }
+
+    broadcastFileSystemChange({
+      type: path.dirname(oldPath) === path.dirname(newPath) ? 'rename' : 'move',
+      oldPath,
+      newPath,
+      name: path.basename(newPath),
+      isDirectory: isDir
+    });
+
     return { success: true };
   } catch (err: any) {
     logger.error('Main', `Failed to move/rename file from ${oldPath} to ${newPath}: ${err.message}`);
@@ -1358,6 +1450,15 @@ ipcMain.handle('read-local-directory', async (_event, dirPath: string) => {
   const res = await scanDirectory(dirPath);
   if (!res.success) {
     logger.error('Main', `Failed to read directory ${dirPath}: ${res.error}`);
+  } else {
+    const files = res.items
+      .filter(item => !item.isDirectory)
+      .map(item => ({ name: item.name, path: item.path }));
+    broadcastFileSystemChange({
+      type: 'sync-dir',
+      dirPath: dirPath.replace(/\\/g, '/'),
+      files
+    });
   }
   return res;
 });
@@ -1379,7 +1480,18 @@ ipcMain.handle('create-local-folder', async (_event, folderPath: string) => {
 ipcMain.handle('delete-local-path', async (_event, targetPath: string) => {
   try {
     if (!targetPath || !fs.existsSync(targetPath)) return { success: false, error: '文件或目录不存在' };
+    let isDir = false;
+    try {
+      const stat = await fs.promises.stat(targetPath);
+      isDir = stat.isDirectory();
+    } catch {}
     await fs.promises.rm(targetPath, { recursive: true, force: true });
+    broadcastFileSystemChange({
+      type: 'delete',
+      path: targetPath,
+      name: path.basename(targetPath),
+      isDirectory: isDir
+    });
     return { success: true };
   } catch (err: any) {
     logger.error('Main', `Failed to delete local path ${targetPath}: ${err.message}`);

@@ -122,14 +122,18 @@
             </div>
           </div>
 
-          <!-- 启用开关 -->
-          <div class="info-row" style="margin-top: 2px;">
-            <span class="label">启用状态</span>
-            <div class="field-control">
-              <label class="toggle-label">
-                <input type="checkbox" v-model="currentRule.enabled" />
-                <span class="toggle-text">{{ currentRule.enabled ? '已启用' : '已禁用' }}</span>
-              </label>
+          <!-- 匹配正则 -->
+          <div class="info-row">
+            <span class="label">匹配正则</span>
+            <div class="field-control regex-control-group">
+              <v-input
+                v-model="currentRule.regexPattern"
+                class="value-input mono-input flex-1"
+                placeholder="留空使用默认算法，例如: [a-zA-Z0-9]+"
+              />
+              <div v-if="regexError" class="regex-error-msg">
+                {{ regexError }}
+              </div>
             </div>
           </div>
         </div>
@@ -211,7 +215,7 @@ const currentRule = reactive<{
   titleAttribute: string;
   offsetX: number;
   offsetY: number;
-  enabled: boolean;
+  regexPattern: string;
 }>({
   id: '',
   name: '',
@@ -221,8 +225,37 @@ const currentRule = reactive<{
   titleAttribute: 'innerText',
   offsetX: 8,
   offsetY: 8,
-  enabled: true
+  regexPattern: ''
 });
+
+const regexError = ref('');
+let regexDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const validateRegex = (pattern: string): boolean => {
+  const trimmed = (pattern || '').trim();
+  if (!trimmed) {
+    regexError.value = '';
+    return true;
+  }
+  try {
+    new RegExp(trimmed, 'i');
+    regexError.value = '';
+    return true;
+  } catch (err: any) {
+    regexError.value = `正则表达式格式无效: ${err.message || '语法错误'}`;
+    return false;
+  }
+};
+
+watch(
+  () => currentRule.regexPattern,
+  (val) => {
+    if (regexDebounceTimer) clearTimeout(regexDebounceTimer);
+    regexDebounceTimer = setTimeout(() => {
+      validateRegex(val || '');
+    }, 250);
+  }
+);
 
 const selectedRuleId = ref('');
 
@@ -247,7 +280,8 @@ const loadRule = (rule: DuplicateMarkRule) => {
   currentRule.titleAttribute = (rule.titleAttribute && rule.titleAttribute.trim()) ? rule.titleAttribute.trim() : 'innerText';
   currentRule.offsetX = typeof rule.offsetX === 'number' ? rule.offsetX : 8;
   currentRule.offsetY = typeof rule.offsetY === 'number' ? rule.offsetY : 8;
-  currentRule.enabled = rule.enabled !== false;
+  currentRule.regexPattern = rule.regexPattern || '';
+  regexError.value = '';
   selectedRuleId.value = rule.id;
 };
 
@@ -261,7 +295,8 @@ const resetToNewRule = () => {
   currentRule.titleAttribute = 'innerText';
   currentRule.offsetX = 8;
   currentRule.offsetY = 8;
-  currentRule.enabled = true;
+  currentRule.regexPattern = '';
+  regexError.value = '';
   selectedRuleId.value = '';
 };
 
@@ -321,6 +356,10 @@ watch(
         clearTimeout(previewTimer);
         previewTimer = null;
       }
+      if (regexDebounceTimer) {
+        clearTimeout(regexDebounceTimer);
+        regexDebounceTimer = null;
+      }
     }
   },
   { immediate: true }
@@ -356,6 +395,10 @@ const save = () => {
     showMessage('请输入挂载元素选择器', 'error');
     return;
   }
+  if (currentRule.regexPattern && !validateRegex(currentRule.regexPattern)) {
+    showMessage('匹配正则表达式格式无效，请检查后再保存', 'error');
+    return;
+  }
 
   const currentList = [...(props.rules || [])];
   const ruleToSave: DuplicateMarkRule = {
@@ -367,7 +410,8 @@ const save = () => {
     titleAttribute: (currentRule.titleAttribute || '').trim() || 'innerText',
     offsetX: typeof currentRule.offsetX === 'number' ? currentRule.offsetX : 8,
     offsetY: typeof currentRule.offsetY === 'number' ? currentRule.offsetY : 8,
-    enabled: currentRule.enabled !== false
+    enabled: true,
+    regexPattern: (currentRule.regexPattern || '').trim()
   };
 
   const existingIdx = currentList.findIndex(r => r.id === ruleToSave.id);
@@ -546,22 +590,19 @@ defineExpose({
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.toggle-label {
+.regex-control-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  user-select: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
 }
 
-.toggle-label input[type="checkbox"] {
-  cursor: pointer;
-  accent-color: var(--color-accent);
-}
-
-.toggle-text {
-  font-size: 12px;
-  color: var(--text-primary);
+.regex-error-msg {
+  font-size: 11px;
+  color: var(--color-error, #ef4444);
+  line-height: 1.4;
+  word-break: break-all;
 }
 
 .inspector-footer {

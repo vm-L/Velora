@@ -181,6 +181,7 @@ export const useDownloads = () => {
             notifiedErrorTaskIds.delete(t.id)
             const { useMessage } = await import('@/composables/useMessage')
             useMessage().showMessage(`任务 "${t.name}" 压缩完成`, 'success')
+            recordFile(t.name, t.savePath)
           } else if (activeStatuses.includes(prevStatus) && t.status === 'completed') {
             // Normal download completed (without compression)
             notifiedErrorTaskIds.delete(t.id)

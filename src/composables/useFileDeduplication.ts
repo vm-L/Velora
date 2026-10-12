@@ -16,51 +16,177 @@ const isIndexing = ref(false);
 const isReady = ref(false);
 let initPromise: Promise<void> | null = null;
 let isWatcherInitialized = false;
+let isIpcListenerInitialized = false;
+
+/**
+ * 规范化路径为统一正斜杠
+ */
+const normalizePath = (p: string): string => {
+  return (p || '').replace(/\\/g, '/');
+};
+
+/**
+ * 获取文件或目录基准名称
+ */
+const getBasename = (p: string): string => {
+  const clean = normalizePath(p).replace(/\/+$/, '');
+  const lastSlash = clean.lastIndexOf('/');
+  return lastSlash >= 0 ? clean.substring(lastSlash + 1) : clean;
+};
+
+/**
+ * 获取父级目录路径
+ */
+const getDirname = (p: string): string => {
+  const clean = normalizePath(p).replace(/\/+$/, '');
+  const lastSlash = clean.lastIndexOf('/');
+  return lastSlash >= 0 ? clean.substring(0, lastSlash) : '';
+};
+
+/**
+ * 在内存 Map 中记录一个文件项
+ */
+const recordFile = (name: string, filePath: string) => {
+  if (!name || !filePath) return;
+  const cleanPath = normalizePath(filePath);
+  const existing = fileIndexMap.value.get(name);
+  if (!existing) {
+    fileIndexMap.value.set(name, [cleanPath]);
+  } else if (!existing.includes(cleanPath)) {
+    existing.push(cleanPath);
+  }
+};
+
+/**
+ * 从内存 Map 中移除一个文件路径或整个键
+ */
+const removeFile = (name: string, filePath?: string) => {
+  if (!name) return;
+  if (!filePath) {
+    fileIndexMap.value.delete(name);
+    return;
+  }
+  const cleanPath = normalizePath(filePath);
+  const existing = fileIndexMap.value.get(name);
+  if (existing) {
+    const filtered = existing.filter(p => p !== cleanPath);
+    if (filtered.length > 0) {
+      fileIndexMap.value.set(name, filtered);
+    } else {
+      fileIndexMap.value.delete(name);
+    }
+  }
+};
+
+/**
+ * 响应文件系统变更事件，实时增量维护去重 Map
+ */
+const handleFileSystemChange = (event: any) => {
+  if (!event || !event.type) return;
+
+  switch (event.type) {
+    case 'add':
+    case 'overwrite': {
+      if (event.path) {
+        const name = event.name || getBasename(event.path);
+        recordFile(name, event.path);
+      }
+      break;
+    }
+
+    case 'delete': {
+      if (event.isDirectory && event.path) {
+        const cleanDir = normalizePath(event.path).replace(/\/+$/, '');
+        fileIndexMap.value.forEach((paths, name) => {
+          const retained = paths.filter(p => p !== cleanDir && !p.startsWith(cleanDir + '/'));
+          if (retained.length === 0) {
+            fileIndexMap.value.delete(name);
+          } else if (retained.length !== paths.length) {
+            fileIndexMap.value.set(name, retained);
+          }
+        });
+      } else if (event.path) {
+        const name = event.name || getBasename(event.path);
+        removeFile(name, event.path);
+      }
+      break;
+    }
+
+    case 'rename':
+    case 'move': {
+      if (event.isDirectory && event.oldPath && event.newPath) {
+        const cleanOldDir = normalizePath(event.oldPath).replace(/\/+$/, '');
+        const cleanNewDir = normalizePath(event.newPath).replace(/\/+$/, '');
+        fileIndexMap.value.forEach((paths, name) => {
+          let modified = false;
+          const updated = paths.map(p => {
+            if (p === cleanOldDir) {
+              modified = true;
+              return cleanNewDir;
+            }
+            if (p.startsWith(cleanOldDir + '/')) {
+              modified = true;
+              return cleanNewDir + p.substring(cleanOldDir.length);
+            }
+            return p;
+          });
+          if (modified) {
+            fileIndexMap.value.set(name, updated);
+          }
+        });
+      } else if (event.oldPath && event.newPath) {
+        const oldName = getBasename(event.oldPath);
+        const newName = event.name || getBasename(event.newPath);
+        removeFile(oldName, event.oldPath);
+        recordFile(newName, event.newPath);
+      }
+      break;
+    }
+
+    case 'sync-dir': {
+      if (event.dirPath && Array.isArray(event.files)) {
+        const cleanDir = normalizePath(event.dirPath).replace(/\/+$/, '');
+        const newValidPaths = new Set(event.files.map((f: any) => normalizePath(f.path)));
+
+        // 1. 增量加入新文件
+        for (const f of event.files) {
+          if (f.name && f.path) {
+            recordFile(f.name, f.path);
+          }
+        }
+
+        // 2. 清理当前直接目录下已被删除的死路径
+        fileIndexMap.value.forEach((paths, name) => {
+          const retained = paths.filter(p => {
+            if (getDirname(p) === cleanDir) {
+              return newValidPaths.has(p);
+            }
+            return true;
+          });
+          if (retained.length === 0) {
+            fileIndexMap.value.delete(name);
+          } else if (retained.length !== paths.length) {
+            fileIndexMap.value.set(name, retained);
+          }
+        });
+      }
+      break;
+    }
+  }
+};
+
+const setupIpcListener = () => {
+  if (!isIpcListenerInitialized && typeof window !== 'undefined' && window.electronAPI?.onFileSystemChanged) {
+    isIpcListenerInitialized = true;
+    window.electronAPI.onFileSystemChanged((event) => {
+      handleFileSystemChange(event);
+    });
+  }
+};
 
 export const useFileDeduplication = () => {
   const { state: settingsState, loadSettings } = useSettings();
-
-  /**
-   * 规范化路径为统一正斜杠
-   */
-  const normalizePath = (p: string): string => {
-    return (p || '').replace(/\\/g, '/');
-  };
-
-  /**
-   * 在内存 Map 中记录一个文件项
-   */
-  const recordFile = (name: string, filePath: string) => {
-    if (!name || !filePath) return;
-    const cleanPath = normalizePath(filePath);
-    const existing = fileIndexMap.value.get(name);
-    if (!existing) {
-      fileIndexMap.value.set(name, [cleanPath]);
-    } else if (!existing.includes(cleanPath)) {
-      existing.push(cleanPath);
-    }
-  };
-
-  /**
-   * 从内存 Map 中移除一个文件路径或整个键
-   */
-  const removeFile = (name: string, filePath?: string) => {
-    if (!name) return;
-    if (!filePath) {
-      fileIndexMap.value.delete(name);
-      return;
-    }
-    const cleanPath = normalizePath(filePath);
-    const existing = fileIndexMap.value.get(name);
-    if (existing) {
-      const filtered = existing.filter(p => p !== cleanPath);
-      if (filtered.length > 0) {
-        fileIndexMap.value.set(name, filtered);
-      } else {
-        fileIndexMap.value.delete(name);
-      }
-    }
-  };
+  setupIpcListener();
 
   /**
    * 增量扫描指定目录并合并进 Map
@@ -250,6 +376,7 @@ export const useFileDeduplication = () => {
     rescanDirectories,
     checkDuplicate,
     getExactMatches,
-    auditCleanDeadPaths
+    auditCleanDeadPaths,
+    handleFileSystemChange
   };
 };

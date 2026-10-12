@@ -257,27 +257,10 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
         return { score: score, charOverlap: charOverlap, lcsLength: lcsLength, maxConsecutive: maxConsecutive, coverage: coverage };
       }
 
-      function extractLeadingCode(str) {
-        if (!str) return null;
-        var clean = String(str).trim();
-        var codeMatch = clean.match(/^([a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)+)/i);
-        if (codeMatch) {
-          return codeMatch[1].toLowerCase();
-        }
-        return null;
-      }
-
       function isSimilarExistingFile(existingFileName, newFileName) {
         if (!existingFileName || !newFileName) return false;
 
-        // 1. 开头番号正则提取判断（严格遵循连字符番号格式）
-        var code1 = extractLeadingCode(existingFileName);
-        var code2 = extractLeadingCode(newFileName);
-        if (code1 && code2) {
-          return code1 === code2;
-        }
-
-        // 2. 提取有效字符
+        // 1. 提取有效字符
         var existingChars = extractEffectiveChars(existingFileName);
         var newChars = extractEffectiveChars(newFileName);
         if (existingChars.length === 0 || newChars.length === 0) return false;
@@ -292,7 +275,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
         var maxLen = Math.max(len1, len2);
         if (minLen < 3) return false;
 
-        // 3. 纯拉丁字母单词重叠校验（避免单字散落误判）
+        // 2. 纯拉丁字母单词重叠校验（避免单字散落误判）
         var isLatin1 = /^[a-z0-9\\s_-]+$/i.test(existingFileName.replace(/\\.[^.]+$/, ''));
         var isLatin2 = /^[a-z0-9\\s_-]+$/i.test(newFileName.replace(/\\.[^.]+$/, ''));
         if (isLatin1 && isLatin2) {
@@ -311,7 +294,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
           }
         }
 
-        // 4. LCS 与双向 Dice 相似度
+        // 3. LCS 与双向 Dice 相似度
         var lcsRes = calculateLCSAndConsecutive(existingChars, newChars);
         var lcsLength = lcsRes.lcsLength;
         var maxConsecutive = lcsRes.maxConsecutive;
@@ -370,35 +353,77 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
           .replace(/'/g, '&#039;');
       }
 
+      function extractByRegex(patternStr, targetStr) {
+        if (!patternStr || !targetStr) return null;
+        try {
+          var re = new RegExp(patternStr, 'i');
+          var m = String(targetStr).match(re);
+          if (!m || !m[0]) return null;
+          var trimmed = String(m[0]).trim().toLowerCase();
+          return trimmed.length > 0 ? trimmed : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
       // 4. 判重检索与结果缓存
       var checkCache = new Map();
-      function checkDuplicate(targetTitle) {
+      function checkDuplicate(targetTitle, regexPattern) {
         if (!targetTitle) return null;
         var clean = targetTitle.trim();
         if (!clean) return null;
-        if (checkCache.has(clean)) return checkCache.get(clean);
         
-        // 1. 精确同名匹配
+        var customRegex = (regexPattern || '').trim();
+        var cacheKey = clean + '###' + customRegex;
+        if (checkCache.has(cacheKey)) return checkCache.get(cacheKey);
+
+        // 1. 若配置了自定义正则表达式，纯粹按双方正则提取结果是否相同比对
+        if (customRegex) {
+          var targetExtracted = extractByRegex(customRegex, clean);
+          if (!targetExtracted) {
+            checkCache.set(cacheKey, null);
+            return null;
+          }
+
+          for (var i = 0; i < fileKeys.length; i++) {
+            var existingKey = fileKeys[i];
+            var existingExtracted = extractByRegex(customRegex, existingKey);
+            if (existingExtracted && existingExtracted === targetExtracted) {
+              var paths = fileIndex[existingKey] || [];
+              if (paths.length > 0) {
+                var res = { name: existingKey, paths: paths };
+                checkCache.set(cacheKey, res);
+                return res;
+              }
+            }
+          }
+
+          checkCache.set(cacheKey, null);
+          return null;
+        }
+        
+        // 2. 留空时使用默认流程：
+        // 2.1 精确同名匹配
         if (fileIndex[clean] && fileIndex[clean].length > 0) {
           var res = { name: clean, paths: fileIndex[clean] };
-          checkCache.set(clean, res);
+          checkCache.set(cacheKey, res);
           return res;
         }
         
-        // 2. 相似度匹配
+        // 2.2 相似度匹配
         for (var i = 0; i < fileKeys.length; i++) {
           var existingKey = fileKeys[i];
           if (isSimilarExistingFile(existingKey, clean)) {
             var paths = fileIndex[existingKey] || [];
             if (paths.length > 0) {
               var res = { name: existingKey, paths: paths };
-              checkCache.set(clean, res);
+              checkCache.set(cacheKey, res);
               return res;
             }
           }
         }
         
-        checkCache.set(clean, null);
+        checkCache.set(cacheKey, null);
         return null;
       }
 
@@ -462,7 +487,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
       // 6. 扫描并注入胶囊
       function processElements() {
         var currentUrl = window.location.href;
-        var matchedRules = rules.filter(function(r) { return (r.enabled !== false) && isUrlMatch(r.domain, currentUrl); });
+        var matchedRules = rules.filter(function(r) { return isUrlMatch(r.domain, currentUrl); });
         if (matchedRules.length === 0) return;
         
         matchedRules.forEach(function(rule) {
@@ -512,7 +537,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
               return;
             }
             
-            var match = checkDuplicate(text);
+            var match = checkDuplicate(text, rule.regexPattern);
             if (!match || !match.paths || match.paths.length === 0) {
               if (existingBadge) existingBadge.remove();
               return;
@@ -571,6 +596,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
       window.__veloraDupMarkCancel = function() {
         if (observer) observer.disconnect();
         if (debounceTimer) clearTimeout(debounceTimer);
+        if (checkCache) checkCache.clear();
         document.querySelectorAll('.velora-dup-badge').forEach(function(b) { b.remove(); });
         var pop = document.getElementById('velora-dup-global-popover');
         if (pop) pop.remove();

@@ -2471,8 +2471,8 @@ const onPreviewDuplicateRule = async (previewRule: DuplicateMarkRule) => {
   const webview = document.getElementById(`webview-${tabId}`) as any;
   if (!webview || typeof webview.executeJavaScript !== 'function') return;
 
-  // 如果未配置挂载选择器或已禁用，则清除当前页面的标记
-  if (!previewRule.mountSelector?.trim() || previewRule.enabled === false) {
+  // 如果未配置挂载选择器，则清除当前页面的标记
+  if (!previewRule.mountSelector?.trim()) {
     try {
       await webview.executeJavaScript(getDuplicateMarkCleanupScript());
     } catch (e) {}
@@ -2488,7 +2488,7 @@ const onPreviewDuplicateRule = async (previewRule: DuplicateMarkRule) => {
     currentList.push({ ...previewRule });
   }
 
-  const activeRules = currentList.filter(r => r.enabled !== false);
+  const activeRules = currentList;
 
   try {
     const fileIndexObj: Record<string, string[]> = {};
@@ -2528,7 +2528,7 @@ const applyDuplicateMarksToTab = async (tabId: string) => {
   const webview = document.getElementById(`webview-${tabId}`) as any;
   if (!webview || typeof webview.executeJavaScript !== 'function') return;
 
-  const rules = currentResourceDuplicateRules.value.filter(r => r.enabled !== false);
+  const rules = currentResourceDuplicateRules.value;
   if (rules.length === 0) {
     try {
       await webview.executeJavaScript(getDuplicateMarkCleanupScript());

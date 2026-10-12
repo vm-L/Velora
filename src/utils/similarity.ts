@@ -150,40 +150,16 @@ export function calculateSimilarity(candidate: string, target: string): Similari
 }
 
 /**
- * 提取文件开头的番号/编号（严格遵循连字符番号格式，如 example-001, FC2-12345, ABC-001）
- * 不允许判断 01, 第01集 等简易序号
- */
-export function extractLeadingCode(str: string): string | null {
-  if (!str) return null;
-  const clean = str.trim();
-  const codeMatch = clean.match(/^([a-zA-Z0-9_]+(?:-[a-zA-Z0-9_]+)+)/i);
-  if (codeMatch) {
-    return codeMatch[1].toLowerCase();
-  }
-  return null;
-}
-
-/**
  * 智能判断已有文件与待下载文件是否高度相似（同一文件的重复下载）
  * 
  * 判定规则：
- * 1. 开头番号判断：必须严格遵循连字符番号格式（如 example-001），双方均有番号时必须严格相等才判断为同作品；
- * 2. 纯英文/拉丁字母文本进行单词完整度检查，避免单字散落误判（如 image.jpg 误判 Montagem Nada Tropica）；
- * 3. 综合双向 Dice 相似度系数 (>= 0.75) 与长短串包含关系。
+ * 1. 纯英文/拉丁字母文本进行单词完整度检查，避免单字散落误判（如 image.jpg 误判 Montagem Nada Tropica）；
+ * 2. 综合双向 Dice 相似度系数 (>= 0.75) 与长短串包含关系。
  */
 export function isSimilarExistingFile(existingFileName: string, newFileName: string): boolean {
   if (!existingFileName || !newFileName) return false;
 
-  // 1. 先对开头番号进行正则提取判断
-  const code1 = extractLeadingCode(existingFileName);
-  const code2 = extractLeadingCode(newFileName);
-
-  if (code1 && code2) {
-    // 编号必须严格相等才判断为同作品
-    return code1 === code2;
-  }
-
-  // 2. 提取有效字符
+  // 1. 提取有效字符
   const existingChars = extractEffectiveChars(existingFileName);
   const newChars = extractEffectiveChars(newFileName);
 
@@ -192,12 +168,12 @@ export function isSimilarExistingFile(existingFileName: string, newFileName: str
   const str1 = existingChars.join('');
   const str2 = newChars.join('');
 
-  // 3. 完全相同
+  // 2. 完全相同
   if (str1 === str2) {
     return true;
   }
 
-  // 4. 长度太短（<3）避免无意义误判
+  // 3. 长度太短（<3）避免无意义误判
   const len1 = existingChars.length;
   const len2 = newChars.length;
   const minLen = Math.min(len1, len2);
@@ -206,7 +182,7 @@ export function isSimilarExistingFile(existingFileName: string, newFileName: str
     return false;
   }
 
-  // 5. 英文/拉丁单词级别重叠校验（如果纯拉丁字母文本且长度差异大，避免单字零散匹配）
+  // 4. 英文/拉丁单词级别重叠校验（如果纯拉丁字母文本且长度差异大，避免单字零散匹配）
   const isLatinOnly = (s: string) => /^[a-z0-9\s_-]+$/i.test(s.replace(/\.[^.]+$/, ''));
   if (isLatinOnly(existingFileName) && isLatinOnly(newFileName)) {
     const words1 = existingFileName.toLowerCase().replace(/\.[^.]+$/, '').split(/[^a-z0-9]+/i).filter(w => w.length >= 2);
@@ -218,7 +194,7 @@ export function isSimilarExistingFile(existingFileName: string, newFileName: str
     }
   }
 
-  // 6. 综合 LCS 与连续字长计算
+  // 5. 综合 LCS 与连续字长计算
   const { lcsLength, maxConsecutive } = calculateLCSAndConsecutive(existingChars, newChars);
 
   // 双向 Dice 相似度系数

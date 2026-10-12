@@ -47,8 +47,23 @@ export class LanServer {
   private getResourcesCallback: () => Promise<ResourceInfo[]> = async () => [];
   private sseSubscribers = new Map<string, Set<http.ServerResponse>>();
   private latestTaskEvents = new Map<string, TaskEvent>();
+  private onFileSystemChangeCallback: ((event: any) => void) | null = null;
 
   constructor() {}
+
+  public setFileSystemChangeCallback(cb: (event: any) => void) {
+    this.onFileSystemChangeCallback = cb;
+  }
+
+  private notifyFileSystemChange(event: any) {
+    if (this.onFileSystemChangeCallback) {
+      try {
+        this.onFileSystemChangeCallback(event);
+      } catch (err: any) {
+        logger.warn('LanServer', `Failed to broadcast file change: ${err.message}`);
+      }
+    }
+  }
 
   public getLocalIp(): string {
     const interfaces = os.networkInterfaces();
@@ -147,8 +162,11 @@ export class LanServer {
     };
   }
 
-  public async start(config: LanServerConfig, getResources: () => Promise<ResourceInfo[]>): Promise<{ success: boolean; port?: number; error?: string }> {
+  public async start(config: LanServerConfig, getResources: () => Promise<ResourceInfo[]>, onFileSystemChange?: (event: any) => void): Promise<{ success: boolean; port?: number; error?: string }> {
     this.getResourcesCallback = getResources;
+    if (onFileSystemChange) {
+      this.onFileSystemChangeCallback = onFileSystemChange;
+    }
     this.password = (config.password || '').trim();
     this.allowEdit = !!config.allowEdit;
     const targetPort = config.port > 0 && config.port <= 65535 ? config.port : 8899;
@@ -386,11 +404,20 @@ export class LanServer {
         else if (ext === 'gif') contentType = 'image/gif';
         else if (ext === 'svg') contentType = 'image/svg+xml';
 
+        const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+        const lastModified = stat.mtime.toUTCString();
+        const ifRange = req.headers['if-range'];
+        const isIfRangeValid = !ifRange || ifRange === etag || ifRange === lastModified;
+
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Content-Type', contentType);
         res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'no-cache, private');
+        res.setHeader('ETag', etag);
+        res.setHeader('Last-Modified', lastModified);
+        res.setHeader('Connection', 'keep-alive');
 
-        if (rangeHeader && stat.size > 0) {
+        if (rangeHeader && stat.size > 0 && isIfRangeValid) {
           const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
           if (!match) {
             res.writeHead(416, {
@@ -403,6 +430,9 @@ export class LanServer {
           let start = match[1] ? parseInt(match[1], 10) : NaN;
           let end = match[2] ? parseInt(match[2], 10) : NaN;
 
+          // 对于流媒体 Range 请求，限制单次响应最大分块为 2MB，避免单个大流占用 socket 导致高频 seek 时连接池耗尽死锁
+          const MAX_CHUNK_SIZE = 2 * 1024 * 1024;
+
           if (isNaN(start)) {
             if (isNaN(end)) {
               res.writeHead(416, {
@@ -412,9 +442,12 @@ export class LanServer {
               return res.end();
             }
             start = Math.max(0, stat.size - end);
-            end = stat.size - 1;
+            end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
           } else if (isNaN(end)) {
-            end = stat.size - 1;
+            end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+          } else {
+            // 客户端指定了 end，如果区间过大同样进行上限裁剪保护
+            end = Math.min(end, stat.size - 1, start + MAX_CHUNK_SIZE - 1);
           }
 
           if (start >= stat.size || start < 0 || end < start) {
@@ -425,7 +458,6 @@ export class LanServer {
             return res.end();
           }
 
-          end = Math.min(end, stat.size - 1);
           const chunksize = end - start + 1;
 
           res.writeHead(206, {
@@ -433,7 +465,8 @@ export class LanServer {
             'Content-Length': chunksize,
             'Content-Type': contentType,
             'Access-Control-Allow-Origin': '*',
-            'Accept-Ranges': 'bytes'
+            'Accept-Ranges': 'bytes',
+            'Connection': 'keep-alive'
           });
 
           const fileStream = fs.createReadStream(filePath, { start, end });
@@ -445,6 +478,9 @@ export class LanServer {
             res.end();
           });
           req.on('close', () => {
+            fileStream.destroy();
+          });
+          res.on('finish', () => {
             fileStream.destroy();
           });
           return fileStream.pipe(res);
@@ -579,9 +615,17 @@ export class LanServer {
           if (!targetPath || !newName) return this.sendJson(res, 400, { success: false, error: '参数缺失' });
           const isAllowed = await this.isPathInAllowedResources(targetPath);
           if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+          const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
           const dir = path.dirname(targetPath);
           const newPath = path.join(dir, newName);
           await fs.promises.rename(targetPath, newPath);
+          this.notifyFileSystemChange({
+            type: 'rename',
+            oldPath: targetPath,
+            newPath,
+            name: newName,
+            isDirectory: isDir
+          });
           return this.sendJson(res, 200, { success: true });
         }
 
@@ -590,7 +634,13 @@ export class LanServer {
           if (!targetPath) return this.sendJson(res, 400, { success: false, error: '参数缺失' });
           const isAllowed = await this.isPathInAllowedResources(targetPath);
           if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
+          const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
           await fs.promises.rm(targetPath, { recursive: true, force: true });
+          this.notifyFileSystemChange({
+            type: 'delete',
+            path: targetPath,
+            isDirectory: isDir
+          });
           return this.sendJson(res, 200, { success: true });
         }
 
@@ -662,6 +712,13 @@ export class LanServer {
             try {
               await fs.promises.rename(src, destPath);
               movedPaths.push(destPath.replace(/\\/g, '/'));
+              this.notifyFileSystemChange({
+                type: 'move',
+                oldPath: src,
+                newPath: destPath,
+                name: path.basename(destPath),
+                isDirectory: srcStat.isDirectory()
+              });
             } catch (err: any) {
               if (err.code === 'EXDEV') {
                 if (srcStat.isDirectory()) {
@@ -672,6 +729,13 @@ export class LanServer {
                   await fs.promises.unlink(src);
                 }
                 movedPaths.push(destPath.replace(/\\/g, '/'));
+                this.notifyFileSystemChange({
+                  type: 'move',
+                  oldPath: src,
+                  newPath: destPath,
+                  name: path.basename(destPath),
+                  isDirectory: srcStat.isDirectory()
+                });
               } else {
                 errors.push(`移动失败: ${baseName} (${err.message || '未知原因'})`);
               }
@@ -786,7 +850,6 @@ export class LanServer {
               taskId: effectiveTaskId,
               sourcePath,
               segments,
-              cutMode: cutMode || 'keep',
               mode: editMode,
               outputPath: editMode === 'saveAs' ? targetPath : undefined
             },
@@ -797,6 +860,13 @@ export class LanServer {
             .then((result) => {
               if (result.success) {
                 this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
+                if (result.outputPath) {
+                  this.notifyFileSystemChange({
+                    type: editMode === 'replace' ? 'overwrite' : 'add',
+                    name: path.basename(result.outputPath),
+                    path: result.outputPath
+                  });
+                }
               } else {
                 if (result.error === '操作已取消') {
                   this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
@@ -844,6 +914,13 @@ export class LanServer {
             .then((result) => {
               if (result.success) {
                 this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
+                if (result.outputPath) {
+                  this.notifyFileSystemChange({
+                    type: 'add',
+                    name: path.basename(result.outputPath),
+                    path: result.outputPath
+                  });
+                }
               } else {
                 if (result.error === '操作已取消') {
                   this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
@@ -898,6 +975,12 @@ export class LanServer {
             .then((result) => {
               if (result.success) {
                 this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath, newSize: result.newSize });
+                const finalPath = result.outputPath || (compressMode === 'replace' ? filePath : targetPath);
+                this.notifyFileSystemChange({
+                  type: compressMode === 'replace' ? 'overwrite' : 'add',
+                  name: path.basename(finalPath),
+                  path: finalPath
+                });
               } else {
                 if (result.error === '操作已取消') {
                   this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
@@ -927,13 +1010,13 @@ export class LanServer {
     const subscribers = this.sseSubscribers.get(taskId);
     if (subscribers && subscribers.size > 0) {
       const dataStr = `data: ${JSON.stringify(event)}\n\n`;
-      for (const clientRes of subscribers) {
+      subscribers.forEach((clientRes) => {
         try {
           clientRes.write(dataStr);
         } catch {
           // ignore
         }
-      }
+      });
     }
   }
 

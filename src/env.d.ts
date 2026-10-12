@@ -68,6 +68,16 @@ interface Window {
     onVideoMergeProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => void
     offVideoMergeProgress: (taskId: string) => void
     showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => Promise<{ canceled: boolean, filePath?: string }>
+    onFileSystemChanged: (callback: (data: {
+      type: 'add' | 'delete' | 'rename' | 'move' | 'overwrite' | 'sync-dir';
+      name?: string;
+      path?: string;
+      oldPath?: string;
+      newPath?: string;
+      isDirectory?: boolean;
+      dirPath?: string;
+      files?: Array<{ name: string; path: string }>;
+    }) => void) => () => void
   }
 }
 

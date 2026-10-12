@@ -96,6 +96,7 @@ export interface DuplicateMarkRule {
   offsetX: number;
   offsetY: number;
   enabled?: boolean;
+  regexPattern?: string;
 }
 
 export interface SettingsState {

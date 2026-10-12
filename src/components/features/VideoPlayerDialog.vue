@@ -639,6 +639,11 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
   const disk = localDiskPath.value;
   if (!disk || !window.electronAPI?.editVideoSegments) return;
 
+  // 覆盖导出前彻底释放当前播放器对原视频的读取流与句柄占用
+  if (mode === 'replace') {
+    releaseVideoMedia();
+  }
+
   const taskId = 'task_edit_' + Date.now();
   exportState.value = {
     isExporting: true,
@@ -665,6 +670,7 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
     });
 
     if (result.success) {
+      playerSessionKey.value = Date.now();
       exportState.value.percent = 100;
       exportState.value.text = mode === 'replace' ? '原视频已成功覆盖保存！' : '视频剪辑已成功导出！';
       exportState.value.isFinished = true;
@@ -781,6 +787,24 @@ const resetControlsTimeout = () => {
   }, 2000);
 };
 
+const playerSessionKey = ref(Date.now());
+
+const releaseVideoMedia = () => {
+  if (videoRef.value) {
+    try {
+      videoRef.value.pause();
+      videoRef.value.removeAttribute('src');
+      videoRef.value.load();
+    } catch {}
+  }
+  if (hls) {
+    try {
+      hls.destroy();
+    } catch {}
+    hls = null;
+  }
+};
+
 const formatMediaSrc = (rawUrl: string): string => {
   if (!rawUrl) return '';
   let cleanPath = rawUrl.trim().replace(/\\/g, '/');
@@ -794,7 +818,7 @@ const formatMediaSrc = (rawUrl: string): string => {
   }
   
   const port = window.__SERVER_PORT__ || 0;
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&_v=${playerSessionKey.value}`;
 };
 
 const loadVideo = async () => {
@@ -920,6 +944,7 @@ function bringToFront() {
 
 watch(() => props.url, (newUrl) => {
   if (newUrl) {
+    playerSessionKey.value = Date.now();
     bringToFront();
     isAudioMode.value = false;
     isEditingMode.value = false;
@@ -931,13 +956,7 @@ watch(() => props.url, (newUrl) => {
       }
     }, 50);
   } else {
-    if (videoRef.value) {
-      videoRef.value.pause();
-    }
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
+    releaseVideoMedia();
   }
 });
 
@@ -1213,13 +1232,7 @@ const formatTime = (secs: number) => {
 const close = () => {
   if (isFullscreen.value) document.exitFullscreen().catch(()=>{}); isInAppFullscreen.value = false;
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{});
-  if (videoRef.value) {
-    videoRef.value.pause();
-  }
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
+  releaseVideoMedia();
   emit('close');
 };
 
@@ -1391,9 +1404,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  if (hls) {
-    hls.destroy();
-  }
+  releaseVideoMedia();
 });
 </script>
 
