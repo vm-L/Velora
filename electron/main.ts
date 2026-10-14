@@ -76,9 +76,6 @@ const mediaServer = http.createServer(async (req, res) => {
       res.setHeader('Last-Modified', lastModified);
       res.setHeader('Connection', 'keep-alive');
 
-      // 限制单次 Range 传输块为 2MB，防止并发 seek 或大文件持续占用 socket 连接
-      const MAX_CHUNK_SIZE = 2 * 1024 * 1024;
-
       if (rangeHeader && stat.size > 0 && isIfRangeValid) {
         const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
         if (!match) {
@@ -101,11 +98,9 @@ const mediaServer = http.createServer(async (req, res) => {
             return res.end();
           }
           start = Math.max(0, stat.size - end);
-          end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+          end = stat.size - 1;
         } else if (isNaN(end)) {
-          end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
-        } else {
-          end = Math.min(end, stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+          end = stat.size - 1;
         }
 
         if (start >= stat.size || start < 0 || end < start) {
@@ -115,6 +110,8 @@ const mediaServer = http.createServer(async (req, res) => {
           });
           return res.end();
         }
+
+        end = Math.min(end, stat.size - 1);
 
         const chunksize = (end - start) + 1;
         

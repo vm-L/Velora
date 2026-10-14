@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <transition name="dialog-fade">
-      <div v-if="visible" class="modal-overlay" @click.self="handleCancel">
+      <div v-if="visible" class="modal-overlay" v-overlay-close="handleCancel">
         <div class="modal-content config-backup-modal">
           <div class="modal-header">
             <div class="header-title-group">

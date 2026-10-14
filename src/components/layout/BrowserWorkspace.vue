@@ -1062,6 +1062,12 @@ const setActiveTab = (tabId: string) => {
 };
 
 const onCloseTab = (tabId: string) => {
+  const wv = document.getElementById(`webview-${tabId}`) as any;
+  if (wv && typeof wv.stop === 'function') {
+    try {
+      wv.stop();
+    } catch (e) {}
+  }
   destroyWaterfallSession(tabId);
   closeTab(props.resourceId, tabId);
 };
@@ -2391,6 +2397,7 @@ const onSaveRules = async (domain: string, cssString: string) => {
   }
 
   await saveCustomStyles(newStyles);
+  showMessage('自定义样式保存成功', 'success');
   if (workspace.value?.activeTabId) {
     refreshWebviewStyles(workspace.value.activeTabId);
   }

@@ -1,5 +1,5 @@
 <template>
-  <div v-if="modelValue" class="editor-overlay" @click.self="close">
+  <div v-if="modelValue" class="editor-overlay" v-overlay-close="close">
     <div class="editor-modal">
       <div class="editor-header">
         <h3>编辑 CSS 样式</h3>

@@ -1642,6 +1642,7 @@ export function getLanWebHtml(): string {
       <div class="modal-content" style="max-width:420px;">
         <div class="modal-header">
           <h3 id="task-progress-title">正在处理</h3>
+          <button class="v-btn v-btn-icon" onclick="forceCloseTaskProgress()" title="关闭">✕</button>
         </div>
         <div class="modal-body">
           <div class="progress-header">
@@ -1727,6 +1728,7 @@ export function getLanWebHtml(): string {
       moveDirList: [],
       // Task SSE
       currentTaskId: '',
+      currentTrimTaskPath: '',
       currentEventSource: null
     };
 
@@ -2781,6 +2783,12 @@ export function getLanWebHtml(): string {
         };
       }
 
+      var confirmBtn = document.getElementById('move-confirm-btn');
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerText = '正在移动...';
+      }
+
       try {
         var res = await apiFetch('/api/move', {
           method: 'POST',
@@ -2802,6 +2810,11 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('移动异常');
+      } finally {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerText = '确认移动';
+        }
       }
     };
 
@@ -2820,8 +2833,16 @@ export function getLanWebHtml(): string {
 
     window.submitRename = async function(encodedPath) {
       var targetPath = decodeURIComponent(encodedPath);
-      var newName = document.getElementById('rename-input').value.trim();
+      var inputEl = document.getElementById('rename-input');
+      var newName = inputEl ? inputEl.value.trim() : '';
       if (!newName) return;
+
+      var saveBtn = actionModalFooter.querySelector('.v-btn-primary');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerText = '正在保存...';
+      }
+
       try {
         var res = await apiFetch('/api/rename', {
           method: 'POST',
@@ -2837,6 +2858,11 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('重命名异常');
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.innerText = '保存';
+        }
       }
     };
 
@@ -2855,6 +2881,12 @@ export function getLanWebHtml(): string {
 
     window.submitDelete = async function(encodedPath) {
       var targetPath = decodeURIComponent(encodedPath);
+      var delBtn = actionModalFooter.querySelector('.v-btn-danger-soft');
+      if (delBtn) {
+        delBtn.disabled = true;
+        delBtn.innerText = '正在删除...';
+      }
+
       try {
         var res = await apiFetch('/api/delete', {
           method: 'POST',
@@ -2870,6 +2902,11 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('删除异常');
+      } finally {
+        if (delBtn) {
+          delBtn.disabled = false;
+          delBtn.innerText = '确认';
+        }
       }
     };
 
@@ -2906,6 +2943,78 @@ export function getLanWebHtml(): string {
       summaryEl.innerText = '总时长: ' + formatTimeSec(totalDur) + ' (-' + formatTimeSec(reduced) + ')';
     }
 
+    // ==========================================
+    // Video Editing Draft Storage Helpers
+    // ==========================================
+    var TRIM_DRAFTS_STORAGE_KEY = 'velora_trim_drafts';
+
+    function getStoredTrimDrafts() {
+      try {
+        var raw = localStorage.getItem(TRIM_DRAFTS_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveCurrentTrimDraft() {
+      if (!state.currentTrimPath || !state.trimSegments || state.trimSegments.length === 0) return;
+      try {
+        var drafts = getStoredTrimDrafts();
+        drafts[state.currentTrimPath] = {
+          segments: state.trimSegments.map(function(s) {
+            return {
+              id: s.id,
+              start: s.start,
+              end: s.end,
+              valid: !!s.valid
+            };
+          }),
+          selectedSegmentIndex: state.selectedSegmentIndex || 0,
+          updatedAt: Date.now()
+        };
+        // 限制最多保留 50 个最新剪辑草稿，超额淘汰最久未更新条目
+        var keys = Object.keys(drafts);
+        if (keys.length > 50) {
+          keys.sort(function(a, b) {
+            var timeA = (drafts[a] && drafts[a].updatedAt) || 0;
+            var timeB = (drafts[b] && drafts[b].updatedAt) || 0;
+            return timeA - timeB;
+          });
+          while (keys.length > 50) {
+            var oldestKey = keys.shift();
+            delete drafts[oldestKey];
+          }
+        }
+        localStorage.setItem(TRIM_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+      } catch (e) {
+        // ignore localStorage quota/parse error
+      }
+    }
+
+    function loadTrimDraft(filePath) {
+      if (!filePath) return null;
+      try {
+        var drafts = getStoredTrimDrafts();
+        var draft = drafts[filePath];
+        if (draft && Array.isArray(draft.segments) && draft.segments.length > 0) {
+          return draft;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function removeTrimDraft(filePath) {
+      if (!filePath) return;
+      try {
+        var drafts = getStoredTrimDrafts();
+        if (drafts[filePath]) {
+          delete drafts[filePath];
+          localStorage.setItem(TRIM_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+        }
+      } catch (e) {}
+    }
+
     // Video Trimmer Modal
     window.openVideoEditModal = function(encodedPath, name) {
       var filePath = decodeURIComponent(encodedPath);
@@ -2925,10 +3034,8 @@ export function getLanWebHtml(): string {
         '&_v=' + Date.now();
       video.src = streamUrl;
 
-      // 重置 Seek 调度器与状态锁
+      // 重置 Seek 调度器
       pendingSeekTime = null;
-      isSeekingLock = false;
-      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
 
       var baseWithoutExt = finalName.replace(/\.[^/.]+$/, '');
       document.getElementById('trim-filename-input').value = baseWithoutExt + '_cut.mp4';
@@ -2945,33 +3052,42 @@ export function getLanWebHtml(): string {
         state.trimDuration = dur;
         state.trimStart = 0;
         state.trimEnd = dur;
-        state.trimSegments = [{
-          id: 1,
-          start: 0,
-          end: Math.round(dur * 100) / 100,
-          valid: true
-        }];
-        state.selectedSegmentIndex = 0;
+
+        // 检查是否存在已保存的草稿
+        var savedDraft = loadTrimDraft(filePath);
+        if (savedDraft && Array.isArray(savedDraft.segments) && savedDraft.segments.length > 0) {
+          state.trimSegments = savedDraft.segments.map(function(s) {
+            return {
+              id: s.id || Date.now(),
+              start: s.start !== null && s.start !== undefined ? s.start : null,
+              end: s.end !== null && s.end !== undefined ? s.end : null,
+              valid: !!s.valid
+            };
+          });
+          var targetIndex = typeof savedDraft.selectedSegmentIndex === 'number' ? savedDraft.selectedSegmentIndex : 0;
+          state.selectedSegmentIndex = Math.max(0, Math.min(state.trimSegments.length - 1, targetIndex));
+          showToast('已自动恢复未导出的剪辑草稿');
+        } else {
+          state.trimSegments = [{
+            id: 1,
+            start: 0,
+            end: Math.round(dur * 100) / 100,
+            valid: true
+          }];
+          state.selectedSegmentIndex = 0;
+        }
+
         renderTrimSegments();
         updateTrimmerTimeLabels();
       };
 
       video.ontimeupdate = function() {
-        if (!isSeekingLock && pendingSeekTime === null) {
+        if (!video.seeking && pendingSeekTime === null) {
           updateTrimmerTimeLabels();
         }
       };
 
-      video.onseeking = function() {
-        isSeekingLock = true;
-      };
-
       video.onseeked = function() {
-        isSeekingLock = false;
-        if (seekRecoveryTimer) {
-          clearTimeout(seekRecoveryTimer);
-          seekRecoveryTimer = null;
-        }
         if (pendingSeekTime !== null) {
           var next = pendingSeekTime;
           pendingSeekTime = null;
@@ -2981,9 +3097,8 @@ export function getLanWebHtml(): string {
         }
       };
 
-      video.onerror = function() {
-        console.warn('Trimmer video error encountered, recovering stream...');
-        recoverTrimmerVideo();
+      video.onerror = function(err) {
+        console.warn('Trimmer video error:', err);
       };
 
       renderTrimSegments();
@@ -2991,29 +3106,6 @@ export function getLanWebHtml(): string {
     };
 
     var pendingSeekTime = null;
-    var isSeekingLock = false;
-    var seekRecoveryTimer = null;
-
-    function recoverTrimmerVideo() {
-      var video = document.getElementById('trimmer-video');
-      if (!video || !state.currentTrimPath) return;
-      var resumeTime = pendingSeekTime !== null ? pendingSeekTime : (video.currentTime || 0);
-      isSeekingLock = false;
-      pendingSeekTime = null;
-      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
-
-      var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(state.currentTrimPath) +
-        (state.token ? '&token=' + encodeURIComponent(state.token) : '') +
-        '&_r=' + Date.now();
-      
-      var onResumeLoaded = function() {
-        video.removeEventListener('loadedmetadata', onResumeLoaded);
-        safeSeekTrimmerVideo(resumeTime);
-      };
-      video.addEventListener('loadedmetadata', onResumeLoaded);
-      video.src = streamUrl;
-      video.load();
-    }
 
     function safeSeekTrimmerVideo(targetTime) {
       var video = document.getElementById('trimmer-video');
@@ -3025,39 +3117,20 @@ export function getLanWebHtml(): string {
         targetTime = Math.max(0, targetTime);
       }
 
-      // 实时更新 UI 时间和进度条，提供零延迟视觉反馈
+      // 实时更新 UI 时间和进度条，提供即时视觉反馈
       updateTrimmerTimeLabels(targetTime);
 
-      // 若底层正在寻道中或锁处于占用状态，将目标存入排队槽位，避免连续打断解码器引发死锁
-      if (video.seeking || isSeekingLock) {
+      // 若底层正在寻道中，记录最新的目标位置，在 seeked 之后立即执行
+      if (video.seeking) {
         pendingSeekTime = targetTime;
         return;
       }
 
-      isSeekingLock = true;
       pendingSeekTime = null;
-
-      // 800ms 保底定时器，防止极端网络波动或解码器异常丢失 seeked 事件
-      if (seekRecoveryTimer) clearTimeout(seekRecoveryTimer);
-      seekRecoveryTimer = setTimeout(function() {
-        if (isSeekingLock) {
-          isSeekingLock = false;
-          if (pendingSeekTime !== null) {
-            var nextTime = pendingSeekTime;
-            pendingSeekTime = null;
-            safeSeekTrimmerVideo(nextTime);
-          }
-        }
-      }, 800);
-
       try {
-        if (typeof video.fastSeek === 'function') {
-          video.fastSeek(targetTime);
-        } else {
-          video.currentTime = targetTime;
-        }
-      } catch (err) {
         video.currentTime = targetTime;
+      } catch (err) {
+        // ignore
       }
     }
 
@@ -3181,7 +3254,7 @@ export function getLanWebHtml(): string {
       seekHoldTimer = setTimeout(function() {
         seekIntervalTimer = setInterval(function() {
           window.seekTrimmer(delta);
-        }, 100);
+        }, 200);
       }, 350);
     };
 
@@ -3192,11 +3265,6 @@ export function getLanWebHtml(): string {
     window.closeVideoEditModal = function() {
       window.stopSeek();
       pendingSeekTime = null;
-      isSeekingLock = false;
-      if (seekRecoveryTimer) {
-        clearTimeout(seekRecoveryTimer);
-        seekRecoveryTimer = null;
-      }
       var video = document.getElementById('trimmer-video');
       if (video) {
         try {
@@ -3309,6 +3377,7 @@ export function getLanWebHtml(): string {
       state.trimStart = seg.start;
       renderTrimSegments();
       updateTrimmerTimeLabels();
+      saveCurrentTrimDraft();
       showToast('已设为片段 ' + (idx + 1) + ' 起点: ' + formatTimeSec(newStart));
     };
 
@@ -3347,6 +3416,7 @@ export function getLanWebHtml(): string {
       state.trimEnd = seg.end;
       renderTrimSegments();
       updateTrimmerTimeLabels();
+      saveCurrentTrimDraft();
       showToast('已设为片段 ' + (idx + 1) + ' 终点: ' + formatTimeSec(newEnd));
     };
 
@@ -3361,6 +3431,7 @@ export function getLanWebHtml(): string {
       state.selectedSegmentIndex = state.trimSegments.length - 1;
       renderTrimSegments();
       updateTrimmerTimeLabels();
+      saveCurrentTrimDraft();
       showToast('已新增片段 ' + state.trimSegments.length + '，请设置起点和终点');
     };
 
@@ -3374,6 +3445,7 @@ export function getLanWebHtml(): string {
       }
       renderTrimSegments();
       updateTrimmerTimeLabels();
+      saveCurrentTrimDraft();
     };
 
     window.moveSelectedSegment = function(dir) {
@@ -3388,6 +3460,7 @@ export function getLanWebHtml(): string {
       state.selectedSegmentIndex = targetIdx;
       renderTrimSegments();
       updateTrimmerTimeLabels();
+      saveCurrentTrimDraft();
     };
 
     window.selectSegment = function(idx) {
@@ -3515,6 +3588,10 @@ export function getLanWebHtml(): string {
       for (var i = 0; i < state.trimSegments.length; i++) {
         var s = state.trimSegments[i];
         if (s.valid && s.start !== null && s.end !== null && s.end > s.start) {
+          if (s.end - s.start < 0.2) {
+            showToast('第 ' + (i + 1) + ' 个片段时长过短（至少 0.2 秒），请微调后再试');
+            return;
+          }
           validSegments.push({
             start: Math.round(s.start * 100) / 100,
             end: Math.round(s.end * 100) / 100
@@ -3569,6 +3646,7 @@ export function getLanWebHtml(): string {
         });
 
         if (res.success) {
+          state.currentTrimTaskPath = state.currentTrimPath;
           closeVideoEditModal();
           showTaskProgress(taskId, '正在剪辑视频');
         } else {
@@ -3638,6 +3716,12 @@ export function getLanWebHtml(): string {
       var filename = document.getElementById('merge-filename-input').value.trim();
       var taskId = 'merge_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
+      var startBtn = document.getElementById('start-merge-btn');
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerText = '正在提交...';
+      }
+
       try {
         var res = await apiFetch('/api/video-merge', {
           method: 'POST',
@@ -3658,6 +3742,11 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('请求异常');
+      } finally {
+        if (startBtn) {
+          startBtn.disabled = false;
+          startBtn.innerText = '开始合并';
+        }
       }
     };
 
@@ -3751,6 +3840,12 @@ export function getLanWebHtml(): string {
         if (!ok) return;
       }
 
+      var compressBtn = document.querySelector('#video-compress-modal .modal-footer .v-btn-primary');
+      if (compressBtn) {
+        compressBtn.disabled = true;
+        compressBtn.innerText = '正在提交...';
+      }
+
       var taskId = 'compress_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
       try {
@@ -3775,12 +3870,36 @@ export function getLanWebHtml(): string {
         }
       } catch (err) {
         showToast('请求异常');
+      } finally {
+        if (compressBtn) {
+          compressBtn.disabled = false;
+          compressBtn.innerText = '开始压缩';
+        }
       }
+    };
+
+    window.forceCloseTaskProgress = function() {
+      if (state.currentEventSource) {
+        state.currentEventSource.close();
+        state.currentEventSource = null;
+      }
+      state.currentTaskId = '';
+      var cancelBtn = document.getElementById('task-cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.innerText = '取消任务';
+      }
+      document.getElementById('task-progress-modal').style.display = 'none';
     };
 
     // Task Progress & SSE Handling
     window.showTaskProgress = function(taskId, title) {
       state.currentTaskId = taskId;
+      var cancelBtn = document.getElementById('task-cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.innerText = '取消任务';
+      }
       document.getElementById('task-progress-title').innerText = title || '正在处理';
       document.getElementById('task-progress-status').innerText = '正在启动任务';
       document.getElementById('task-progress-percent').innerText = '0%';
@@ -3808,6 +3927,10 @@ export function getLanWebHtml(): string {
           } else if (data.type === 'complete') {
             es.close();
             state.currentEventSource = null;
+            if (state.currentTrimTaskPath) {
+              removeTrimDraft(state.currentTrimTaskPath);
+              state.currentTrimTaskPath = '';
+            }
             document.getElementById('task-progress-modal').style.display = 'none';
             showToast('处理完成！');
             loadDirectory(state.currentPath, { preserveScroll: true });
@@ -3827,13 +3950,28 @@ export function getLanWebHtml(): string {
         }
       };
 
+      var sseErrorTimer = null;
       es.onerror = function() {
-        // SSE error or completed
+        if (!sseErrorTimer) {
+          sseErrorTimer = setTimeout(function() {
+            if (state.currentEventSource === es) {
+              es.close();
+              state.currentEventSource = null;
+              document.getElementById('task-progress-modal').style.display = 'none';
+              showToast('任务连接中断，请刷新后查看');
+            }
+          }, 6000);
+        }
       };
     };
 
     window.cancelCurrentTask = async function() {
       if (!state.currentTaskId) return;
+      var cancelBtn = document.getElementById('task-cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.innerText = '正在取消...';
+      }
       try {
         await apiFetch('/api/task-cancel', {
           method: 'POST',
@@ -3841,8 +3979,18 @@ export function getLanWebHtml(): string {
           body: JSON.stringify({ taskId: state.currentTaskId })
         });
         showToast('已请求取消任务');
+        setTimeout(function() {
+          if (document.getElementById('task-progress-modal').style.display !== 'none') {
+            forceCloseTaskProgress();
+            showToast('任务已取消');
+          }
+        }, 2000);
       } catch (err) {
-        showToast('取消失败');
+        showToast('取消请求失败');
+        if (cancelBtn) {
+          cancelBtn.disabled = false;
+          cancelBtn.innerText = '取消任务';
+        }
       }
     };
 

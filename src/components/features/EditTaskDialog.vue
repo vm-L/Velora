@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible && task" class="edit-task-overlay" @click.self="close" @mousedown.stop>
+    <div v-if="visible && task" class="edit-task-overlay" v-overlay-close="close">
       <div class="edit-task-modal">
         <!-- Modal Header -->
         <div class="modal-header">

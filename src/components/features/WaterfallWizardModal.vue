@@ -1,5 +1,5 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="handleCancel">
+  <div v-if="visible" class="modal-overlay" v-overlay-close="handleCancel">
     <div class="modal-content waterfall-modal" style="max-width: 520px; width: 92vw;">
       <!-- 步骤 1: 填写域名 -->
       <template v-if="step === 1">

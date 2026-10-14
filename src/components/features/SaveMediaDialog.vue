@@ -448,6 +448,9 @@ const confirmSave = async () => {
       showMessage('已添加到下载任务', 'success');
       emit('saved');
       close();
+    } else {
+      showMessage('已取消下载', 'info');
+      close();
     }
   } catch (err: any) {
     showMessage('下载任务添加失败: ' + err.message, 'error');

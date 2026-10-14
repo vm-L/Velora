@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="adblock-overlay" @click.self="close" @mousedown.stop>
+    <div v-if="visible" class="adblock-overlay" v-overlay-close="close">
       <div class="adblock-modal">
         <!-- Modal Header -->
         <div class="modal-header">
@@ -88,7 +88,7 @@
       </div>
 
       <!-- Add / Edit Source Sub-Modal -->
-      <div v-if="showEditForm" class="sub-modal-overlay" @click.self="showEditForm = false">
+      <div v-if="showEditForm" class="sub-modal-overlay" v-overlay-close="() => showEditForm = false">
         <div class="sub-modal">
           <div class="sub-modal-header">
             <h3>{{ editingSourceId ? '编辑规则源' : '添加自定义规则源' }}</h3>
@@ -117,6 +117,7 @@
 import { ref, computed } from 'vue';
 import { useSettings, type AdBlockSource } from '@/composables/useSettings';
 import { useMessage } from '@/composables/useMessage';
+import { useConfirm } from '@/composables/useConfirm';
 import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
 import VIcon from '@/components/base/VIcon.vue';
@@ -132,6 +133,7 @@ const emit = defineEmits<{
 
 const { state: settingsState, saveAdBlockSources, syncAdBlockSourceItem, syncAllAdBlockSources, recompileRules } = useSettings();
 const { showMessage } = useMessage();
+const { confirm } = useConfirm();
 
 const syncingIds = ref<string[]>([]);
 const isSyncingAll = ref(false);
@@ -262,6 +264,15 @@ const confirmDeleteSource = async (source: AdBlockSource) => {
     showMessage('内置规则源无法删除', 'warning');
     return;
   }
+
+  const isConfirmed = await confirm({
+    title: '删除规则源',
+    message: `确定要删除规则源 "${source.name}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消',
+    type: 'danger'
+  });
+  if (!isConfirmed) return;
 
   settingsState.adBlockSources = settingsState.adBlockSources.filter(s => s.id !== source.id);
   await saveAdBlockSources([...settingsState.adBlockSources]);

@@ -456,7 +456,7 @@
     </div>
 
     <!-- Parse Rule Management Modal -->
-    <div v-if="managingParseFor" class="modal-overlay" @click.self="closeParseManager">
+    <div v-if="managingParseFor" class="modal-overlay" v-overlay-close="closeParseManager">
       <div class="modal-content" style="max-width: 600px; width: 90vw;">
         <div class="modal-header">
           <h3>管理解析规则 - {{ managingParseFor.name }}</h3>
@@ -488,7 +488,7 @@
 
     
     <!-- Script Management Modal -->
-    <div v-if="managingScriptsFor" class="modal-overlay" @click.self="closeScriptManager">
+    <div v-if="managingScriptsFor" class="modal-overlay" v-overlay-close="closeScriptManager">
       <div class="modal-content" style="max-width: 600px; width: 90vw;">
         <div class="modal-header">
           <h3>管理 JS 脚本 - {{ managingScriptsFor.name }}</h3>
@@ -518,7 +518,7 @@
     </div>
 
     <!-- Style Management Modal -->
-    <div v-if="managingStylesFor" class="modal-overlay" @click.self="closeStyleManager">
+    <div v-if="managingStylesFor" class="modal-overlay" v-overlay-close="closeStyleManager">
       <div class="modal-content">
         <div class="modal-header">
           <h3>管理样式 - {{ managingStylesFor.name }}</h3>
@@ -576,7 +576,7 @@
     />
 
     <!-- Mount Local Resources Modal -->
-    <div v-if="showMountModal" class="modal-overlay" @click.self="showMountModal = false">
+    <div v-if="showMountModal" class="modal-overlay" v-overlay-close="() => showMountModal = false">
       <div class="modal-content" style="max-width: 680px; width: 90vw;">
         <div class="modal-header">
           <h3>挂载本地目录</h3>
@@ -642,7 +642,7 @@
     </div>
 
     <!-- LAN Share QR Code Modal -->
-    <div v-if="showQrModal" class="modal-overlay" @click.self="showQrModal = false">
+    <div v-if="showQrModal" class="modal-overlay" v-overlay-close="() => showQrModal = false">
       <div class="modal-content" style="max-width: 360px; width: 90vw; text-align: center;">
         <div class="modal-header">
           <h3>手机扫码访问</h3>
@@ -1142,6 +1142,7 @@ const removeLocalResource = async (index: number) => {
   const resources = [...state.localResources];
   resources.splice(index, 1);
   saveLocalResources(resources);
+  showMessage(`已移除 "${resource.name}"`, 'success');
 };
 
 const addCmsResource = () => {
@@ -1157,6 +1158,7 @@ const addCmsResource = () => {
   saveCmsResources(resources);
   newCmsName.value = '';
   newCmsUrl.value = 'https://';
+  showMessage(`已添加 "${trimmedName}"`, 'success');
 };
 
 const removeCmsResource = async (index: number) => {
@@ -1173,6 +1175,7 @@ const removeCmsResource = async (index: number) => {
   const resources = [...state.cmsResources];
   resources.splice(index, 1);
   saveCmsResources(resources);
+  showMessage(`已删除 "${resource.name}"`, 'success');
 };
 
 const addExternalSite = () => {
@@ -1188,6 +1191,7 @@ const addExternalSite = () => {
   saveExternalSites(sites);
   newExtName.value = '';
   newExtUrl.value = 'https://';
+  showMessage(`已添加 "${trimmedName}"`, 'success');
 };
 
 const removeExternalSite = async (index: number) => {
@@ -1204,6 +1208,7 @@ const removeExternalSite = async (index: number) => {
   const sites = [...state.externalSites];
   sites.splice(index, 1);
   saveExternalSites(sites);
+  showMessage(`已删除 "${site.name}"`, 'success');
 };
 
 const startEdit = (item: any) => {
@@ -1276,6 +1281,7 @@ const saveEdit = (type: 'local' | 'cms' | 'ext', index: number) => {
       }
     }
   }
+  showMessage('已保存修改', 'success');
   cancelEdit();
 };
 
@@ -1496,7 +1502,7 @@ const onSaveStyle = ({ oldDomain, newDomain, code }: { oldDomain?: string, newDo
   }
   
   saveCustomStyles(allStyles);
-  
+  showMessage('自定义样式保存成功', 'success');
 };
 
 const deleteScript = async (script: any) => {
@@ -1516,6 +1522,7 @@ const deleteScript = async (script: any) => {
       arr.splice(idx, 1);
       scriptsObj[managingScriptsFor.value.id] = arr;
       await saveCustomScripts(scriptsObj);
+      showMessage('脚本已删除', 'success');
     }
   }
 };
@@ -1550,6 +1557,7 @@ const deleteDomainStyle = async (domain: string) => {
     if (newStyles[resourceId] && newStyles[resourceId][domain]) {
       delete newStyles[resourceId][domain];
       await saveCustomStyles(newStyles);
+      showMessage('自定义样式已删除', 'success');
     }
   }
 };

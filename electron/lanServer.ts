@@ -15,6 +15,13 @@ import {
   cancelVideoCompress
 } from './videoEditor';
 
+function sanitizeFilename(filename: string, fallback: string): string {
+  if (!filename) return fallback;
+  const base = path.basename(filename.trim());
+  const sanitized = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
+  return sanitized || fallback;
+}
+
 export interface LanServerConfig {
   enabled: boolean;
   port: number;
@@ -430,9 +437,6 @@ export class LanServer {
           let start = match[1] ? parseInt(match[1], 10) : NaN;
           let end = match[2] ? parseInt(match[2], 10) : NaN;
 
-          // 对于流媒体 Range 请求，限制单次响应最大分块为 2MB，避免单个大流占用 socket 导致高频 seek 时连接池耗尽死锁
-          const MAX_CHUNK_SIZE = 2 * 1024 * 1024;
-
           if (isNaN(start)) {
             if (isNaN(end)) {
               res.writeHead(416, {
@@ -442,12 +446,9 @@ export class LanServer {
               return res.end();
             }
             start = Math.max(0, stat.size - end);
-            end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+            end = stat.size - 1;
           } else if (isNaN(end)) {
-            end = Math.min(stat.size - 1, start + MAX_CHUNK_SIZE - 1);
-          } else {
-            // 客户端指定了 end，如果区间过大同样进行上限裁剪保护
-            end = Math.min(end, stat.size - 1, start + MAX_CHUNK_SIZE - 1);
+            end = stat.size - 1;
           }
 
           if (start >= stat.size || start < 0 || end < start) {
@@ -457,6 +458,8 @@ export class LanServer {
             });
             return res.end();
           }
+
+          end = Math.min(end, stat.size - 1);
 
           const chunksize = end - start + 1;
 
@@ -835,7 +838,8 @@ export class LanServer {
             const dir = path.dirname(sourcePath);
             const ext = path.extname(sourcePath) || '.mp4';
             const baseName = path.basename(sourcePath, ext);
-            const fileName = (customFilename || '').trim() || `${baseName}_cut${ext}`;
+            const defaultName = `${baseName}_cut${ext}`;
+            const fileName = sanitizeFilename(customFilename || '', defaultName);
             targetPath = path.join(dir, fileName);
             const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
             if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
@@ -893,7 +897,8 @@ export class LanServer {
           }
 
           const dir = path.dirname(videoPaths[0]);
-          const fileName = (customFilename || '').trim() || `velora_merge_${Date.now()}.mp4`;
+          const defaultName = `velora_merge_${Date.now()}.mp4`;
+          const fileName = sanitizeFilename(customFilename || '', defaultName);
           const targetPath = path.join(dir, fileName);
           const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
           if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
@@ -951,7 +956,8 @@ export class LanServer {
             const dir = path.dirname(filePath);
             const ext = path.extname(filePath) || '.mp4';
             const baseName = path.basename(filePath, ext);
-            const fileName = (customFilename || '').trim() || `${baseName}_compressed${ext}`;
+            const defaultName = `${baseName}_compressed${ext}`;
+            const fileName = sanitizeFilename(customFilename || '', defaultName);
             targetPath = path.join(dir, fileName);
             const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
             if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });

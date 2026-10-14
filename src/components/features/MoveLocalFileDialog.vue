@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="modal-overlay" @click.self="close">
+    <div v-if="visible" class="modal-overlay" v-overlay-close="close">
       <div class="modal-content move-dialog-content">
         <div class="modal-header">
           <div class="header-left">
@@ -56,7 +56,7 @@
       </div>
 
       <!-- Dedicated New Subfolder Modal -->
-      <div v-if="showNewFolderModal" class="modal-overlay subfolder-modal-overlay" @click.self="showNewFolderModal = false">
+      <div v-if="showNewFolderModal" class="modal-overlay subfolder-modal-overlay" v-overlay-close="() => showNewFolderModal = false">
         <div class="modal-content" style="max-width: 400px; width: 88vw;">
           <div class="modal-header">
             <h3>新建子目录</h3>

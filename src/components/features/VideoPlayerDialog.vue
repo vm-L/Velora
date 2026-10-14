@@ -1304,6 +1304,31 @@ const handleKeydown = (e: KeyboardEvent) => {
   if (e.target instanceof HTMLInputElement && e.target.type !== 'range') return;
   if (e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable) return;
 
+  // 1. 若当前存在更高层级的独立模态框且焦点不在当前播放器内，不拦截按键
+  const activeModal = document.querySelector('.modal-overlay, .confirm-modal, .v-modal-overlay, .dialog-mask');
+  if (activeModal && !dialogRef.value?.contains(e.target as Node)) {
+    return;
+  }
+
+  // 2. 若存在其他浮窗处于更高层级，且当前播放器未包含激活焦点，不抢占快捷键
+  const myZ = zIndex.value;
+  const floatingDialogs = document.querySelectorAll('.video-player-dialog, .audio-player-dialog, .image-preview-dialog');
+  for (const el of floatingDialogs) {
+    if (el !== dialogRef.value) {
+      const otherZ = parseInt((el as HTMLElement).style.zIndex || '0', 10);
+      if (otherZ > myZ && !dialogRef.value?.contains(document.activeElement)) {
+        return;
+      }
+    }
+  }
+
+  // 3. 若用户焦点在外部按钮或可点击控件上，Space 键优先由该控件原生触发，不拦截
+  if (e.code === 'Space' && e.target && e.target !== document.body && !dialogRef.value?.contains(e.target as Node)) {
+    if ((e.target as HTMLElement)?.closest('button, a, [role="button"]')) {
+      return;
+    }
+  }
+
   if (e.key === 'Escape') {
     if (showOverwriteConfirm.value) {
       showOverwriteConfirm.value = false;
@@ -1404,6 +1429,10 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+  document.removeEventListener('mousemove', onResize);
+  document.removeEventListener('mouseup', stopResize);
   releaseVideoMedia();
 });
 </script>

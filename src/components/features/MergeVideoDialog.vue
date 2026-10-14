@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible && videoList.length > 0" class="merge-video-overlay" @click.self="handleOverlayClick" @mousedown.stop>
+    <div v-if="visible && videoList.length > 0" class="merge-video-overlay" v-overlay-close="handleOverlayClick">
       <div class="merge-video-modal">
         <!-- Modal Header -->
         <div class="modal-header">

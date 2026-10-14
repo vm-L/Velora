@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible && task" class="compress-video-overlay" @click.self="close" @mousedown.stop>
+    <div v-if="visible && task" class="compress-video-overlay" v-overlay-close="close">
       <div class="compress-video-modal">
         <!-- Modal Header -->
         <div class="modal-header">

@@ -44,7 +44,63 @@ export function cancelVideoEdit(taskId: string): boolean {
 
 export const cancelVideoMerge = cancelVideoEdit
 
-function getTempDir(): string {
+export function checkDiskSpace(targetDir: string, requiredBytes: number): { ok: boolean; freeBytes: number; error?: string } {
+  try {
+    let checkPath = targetDir
+    while (checkPath && !fs.existsSync(checkPath)) {
+      const parent = path.dirname(checkPath)
+      if (parent === checkPath) break
+      checkPath = parent
+    }
+    if (!checkPath || !fs.existsSync(checkPath)) {
+      return { ok: true, freeBytes: Number.MAX_SAFE_INTEGER }
+    }
+    const stats = fs.statfsSync(checkPath)
+    const freeBytes = Number(stats.bavail) * Number(stats.bsize)
+    if (freeBytes < requiredBytes) {
+      const freeMB = Math.round(freeBytes / (1024 * 1024))
+      const reqMB = Math.round(requiredBytes / (1024 * 1024))
+      return {
+        ok: false,
+        freeBytes,
+        error: `目标磁盘剩余空间不足 (剩余 ${freeMB} MB，预计需要至少 ${reqMB} MB)，已中止操作以防写满磁盘`
+      }
+    }
+    return { ok: true, freeBytes }
+  } catch (err: any) {
+    return { ok: true, freeBytes: Number.MAX_SAFE_INTEGER }
+  }
+}
+
+function moveOrCopyFile(src: string, dest: string) {
+  try {
+    fs.renameSync(src, dest)
+  } catch (err: any) {
+    if (err.code === 'EXDEV') {
+      fs.copyFileSync(src, dest)
+      try { fs.unlinkSync(src) } catch {}
+    } else {
+      throw err
+    }
+  }
+}
+
+function getTempDir(preferredParentDir?: string): string {
+  if (preferredParentDir) {
+    try {
+      const preferredTmp = path.join(preferredParentDir, '.velora_tmp')
+      if (!fs.existsSync(preferredTmp)) {
+        fs.mkdirSync(preferredTmp, { recursive: true })
+      }
+      const probeFile = path.join(preferredTmp, `.probe_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`)
+      fs.writeFileSync(probeFile, '1')
+      fs.unlinkSync(probeFile)
+      return preferredTmp
+    } catch {
+      // 若该目录无写权限或创建失败，安全降级到系统级 tmp
+    }
+  }
+
   let baseDir = process.cwd()
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
     baseDir = process.env.PORTABLE_EXECUTABLE_DIR
@@ -186,10 +242,18 @@ export async function editVideoSegments(
     return { success: false, error: '剪辑区间的起始时间必须小于结束时间' }
   }
 
-  const tmpDir = getTempDir()
+  const preferredDir = outputPath ? path.dirname(outputPath) : path.dirname(sourcePath)
+  const tmpDir = getTempDir(preferredDir)
   const ext = path.extname(sourcePath) || '.mp4'
   const tempOutputFile = path.join(tmpDir, `velora_edit_${Date.now()}_final${ext}`)
   const tempFilesToClean: string[] = [tempOutputFile]
+
+  // 磁盘空间预检：切片重编码与输出至少需要源文件大小的 1.2 倍空间
+  const sourceSize = fs.existsSync(sourcePath) ? fs.statSync(sourcePath).size : 0
+  const spaceCheck = checkDiskSpace(tmpDir, Math.max(sourceSize * 1.2, 50 * 1024 * 1024))
+  if (!spaceCheck.ok) {
+    return { success: false, error: spaceCheck.error }
+  }
 
   const totalSegmentDuration = cleanSegments.reduce((sum, s) => sum + (s.end - s.start), 0)
 
@@ -431,7 +495,7 @@ export async function editVideoSegments(
       if (!fs.existsSync(outDir)) {
         fs.mkdirSync(outDir, { recursive: true })
       }
-      fs.copyFileSync(tempOutputFile, outputPath)
+      moveOrCopyFile(tempOutputFile, outputPath)
     } else {
       // 覆盖保存模式：先将临时文件复制替换原文件
       fs.copyFileSync(tempOutputFile, sourcePath)
@@ -695,11 +759,25 @@ export async function mergeVideos(
     return { success: false, error: '未指定目标输出路径' }
   }
 
-  const tmpDir = getTempDir()
+  const preferredDir = path.dirname(outputPath)
+  const tmpDir = getTempDir(preferredDir)
   const outExt = path.extname(outputPath) || '.mp4'
   const tempOutputFile = path.join(tmpDir, `velora_merge_${Date.now()}_final${outExt}`)
   const concatListFile = path.join(tmpDir, `velora_merge_${Date.now()}_concat.txt`)
   const tempFilesToClean: string[] = [tempOutputFile, concatListFile]
+
+  // 预检合并总输入大小并预留磁盘空间
+  const totalInputBytes = videoPaths.reduce((sum, p) => {
+    try {
+      return sum + (fs.existsSync(p) ? fs.statSync(p).size : 0)
+    } catch {
+      return sum
+    }
+  }, 0)
+  const spaceCheck = checkDiskSpace(tmpDir, Math.max(totalInputBytes * 1.1, 50 * 1024 * 1024))
+  if (!spaceCheck.ok) {
+    return { success: false, error: spaceCheck.error }
+  }
 
   try {
     onProgress?.(2, '正在分析视频时长与元数据')
@@ -878,10 +956,18 @@ export async function compressVideo(
     return { success: false, error: '源视频文件不存在' }
   }
 
-  const tmpDir = getTempDir()
+  const preferredDir = outputPath ? path.dirname(outputPath) : path.dirname(filePath)
+  const tmpDir = getTempDir(preferredDir)
   const outExt = path.extname(filePath) || '.mp4'
   const tempOutputFile = path.join(tmpDir, `velora_compress_${Date.now()}_out${outExt}`)
   const tempFilesToClean: string[] = [tempOutputFile]
+
+  // 磁盘空间预检：压缩过程至少预留源文件 0.8 倍（或至少 50MB）的磁盘空间
+  const sourceBytes = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0
+  const spaceCheck = checkDiskSpace(tmpDir, Math.max(sourceBytes * 0.8, 50 * 1024 * 1024))
+  if (!spaceCheck.ok) {
+    return { success: false, error: spaceCheck.error }
+  }
 
   let origStats: fs.Stats | null = null
   try {
@@ -960,7 +1046,7 @@ export async function compressVideo(
       if (!fs.existsSync(outDir)) {
         fs.mkdirSync(outDir, { recursive: true })
       }
-      fs.copyFileSync(tempOutputFile, outputPath)
+      moveOrCopyFile(tempOutputFile, outputPath)
     } else {
       fs.copyFileSync(tempOutputFile, filePath)
       if (origStats) {

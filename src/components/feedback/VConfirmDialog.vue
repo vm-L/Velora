@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <transition name="dialog-fade">
-      <div v-if="state.isVisible" class="dialog-overlay" @click.self="cancel">
+      <div v-if="state.isVisible" class="dialog-overlay" v-overlay-close="cancel">
         <div class="dialog-content">
           <div class="dialog-body">
             <div class="dialog-icon" :class="state.type">

@@ -305,7 +305,7 @@
 
     <!-- Rename Modal -->
     <Teleport to="body">
-      <div v-if="renameModal.visible" class="modal-overlay" @click.self="renameModal.visible = false">
+      <div v-if="renameModal.visible" class="modal-overlay" v-overlay-close="() => renameModal.visible = false">
         <div class="modal-content" style="max-width: 420px; width: 90vw;">
           <div class="modal-header">
             <h3>重命名</h3>
@@ -326,7 +326,7 @@
 
     <!-- New Folder Modal -->
     <Teleport to="body">
-      <div v-if="showNewFolderModal" class="modal-overlay" @click.self="showNewFolderModal = false">
+      <div v-if="showNewFolderModal" class="modal-overlay" v-overlay-close="() => showNewFolderModal = false">
         <div class="modal-content" style="max-width: 420px; width: 90vw;">
           <div class="modal-header">
             <h3>新建文件夹</h3>
@@ -1060,8 +1060,10 @@ const handleConfirmMove = async (targetDir: string) => {
   if (count === 1) {
     const item = targetItems[0];
     const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
+    const msgId = showMessage(`正在移动 "${item.name}"`, 'loading', 0);
     try {
       const res = await window.electronAPI.moveFile(item.path, newPath);
+      removeMessage(msgId);
       if (res && res.success) {
         showMessage(`已将 "${item.name}" 移动至目标目录`, 'success');
         selectedPaths.value.delete(item.path);
@@ -1070,6 +1072,7 @@ const handleConfirmMove = async (targetDir: string) => {
         showMessage(res?.error || '移动失败', 'error');
       }
     } catch (err: any) {
+      removeMessage(msgId);
       showMessage(`移动失败: ${err?.message}`, 'error');
     }
   } else {

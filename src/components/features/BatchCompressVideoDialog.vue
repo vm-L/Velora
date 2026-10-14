@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible && tasks.length > 0" class="batch-compress-overlay" @click.self="close" @mousedown.stop>
+    <div v-if="visible && tasks.length > 0" class="batch-compress-overlay" v-overlay-close="close">
       <div class="batch-compress-modal">
         <!-- Modal Header -->
         <div class="modal-header">
