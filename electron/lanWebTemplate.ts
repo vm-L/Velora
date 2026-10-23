@@ -991,6 +991,132 @@ export function getLanWebHtml(): string {
       overflow-x: auto;
     }
 
+    /* Task Floating Capsule Widget (Compact for Mobile) */
+    .task-floating-capsule {
+      position: fixed;
+      right: 14px;
+      bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      z-index: 1050;
+      cursor: pointer;
+      user-select: none;
+      animation: capsuleSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: transform 0.15s ease, opacity 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .task-floating-capsule:active {
+      transform: scale(0.97);
+    }
+
+    .capsule-inner {
+      height: 34px;
+      max-width: 190px;
+      padding: 0 8px 0 10px;
+      background: rgba(var(--bg-surface-rgb, 255, 255, 255), 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-primary);
+    }
+
+    .capsule-progress-ring {
+      position: relative;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .capsule-progress-ring .ring-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .capsule-progress-ring .ring-bg {
+      fill: none;
+      stroke: var(--bg-tertiary);
+      stroke-width: 2.5;
+    }
+
+    .capsule-progress-ring .ring-bar {
+      fill: none;
+      stroke: var(--color-accent);
+      stroke-width: 2.5;
+      stroke-dasharray: 56.548;
+      stroke-dashoffset: 56.548;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.15s linear;
+    }
+
+    .capsule-progress-ring .ring-text {
+      font-size: 8px;
+      font-weight: 700;
+      font-family: monospace;
+      color: var(--text-primary);
+    }
+
+    .capsule-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .capsule-title {
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+      color: var(--text-primary);
+    }
+
+    .capsule-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 999px;
+      background: var(--color-accent);
+      color: #fff;
+      line-height: 1.2;
+      flex-shrink: 0;
+    }
+
+    .capsule-cancel-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .capsule-cancel-btn:hover, .capsule-cancel-btn:active {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    @keyframes capsuleSlideUp {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
     /* Video Trimmer Modal */
     .video-edit-modal-content {
       max-width: 900px;
@@ -1642,7 +1768,7 @@ export function getLanWebHtml(): string {
       <div class="modal-content" style="max-width:420px;">
         <div class="modal-header">
           <h3 id="task-progress-title">正在处理</h3>
-          <button class="v-btn v-btn-icon" onclick="forceCloseTaskProgress()" title="关闭">✕</button>
+          <button class="v-btn v-btn-icon" onclick="minimizeTaskProgress()" title="转入后台处理">✕</button>
         </div>
         <div class="modal-body">
           <div class="progress-header">
@@ -1652,10 +1778,36 @@ export function getLanWebHtml(): string {
           <div class="progress-bar-bg">
             <div id="task-progress-fill" class="progress-bar-fill"></div>
           </div>
+          <!-- 排队等待列表 -->
+          <div id="task-queue-preview" style="display:none; margin-top:14px; border-top:1px dashed var(--border-light); padding-top:10px;">
+            <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">
+              等待排队处理 (<span id="task-queue-count">0</span>)
+            </div>
+            <div id="task-queue-items" style="max-height:100px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+          </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button class="v-btn v-btn-secondary" onclick="minimizeTaskProgress()" title="缩小到右下角，继续进行其他操作">后台处理</button>
           <button id="task-cancel-btn" class="v-btn v-btn-danger-soft" onclick="cancelCurrentTask()">取消任务</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Task Floating Capsule Widget (Mobile & Desktop) -->
+    <div id="task-floating-capsule" class="task-floating-capsule" style="display:none;" onclick="expandTaskProgress(event)">
+      <div class="capsule-inner">
+        <div class="capsule-progress-ring">
+          <svg class="ring-svg" viewBox="0 0 24 24">
+            <circle class="ring-bg" cx="12" cy="12" r="9" />
+            <circle id="capsule-ring-bar" class="ring-bar" cx="12" cy="12" r="9" />
+          </svg>
+          <span id="capsule-percent-text" class="ring-text">0</span>
+        </div>
+        <div class="capsule-info">
+          <span id="capsule-title-text" class="capsule-title">正在处理</span>
+        </div>
+        <div id="capsule-queue-badge" class="capsule-badge" style="display:none;">+1</div>
+        <button class="capsule-cancel-btn" title="取消当前任务" onclick="cancelCurrentTaskFromCapsule(event)">✕</button>
       </div>
     </div>
 
@@ -1726,10 +1878,12 @@ export function getLanWebHtml(): string {
       isBatchMove: false,
       moveSelectedTarget: '',
       moveDirList: [],
-      // Task SSE
-      currentTaskId: '',
-      currentTrimTaskPath: '',
-      currentEventSource: null
+      // Global Task Queue (Single Source of Truth from Main Process)
+      globalActiveTask: null,
+      globalTaskQueue: [],
+      globalTotalCount: 0,
+      queueEventSource: null,
+      isTaskProgressMinimized: false
     };
 
     function getFilteredAndSortedItems() {
@@ -2035,6 +2189,7 @@ export function getLanWebHtml(): string {
         }
 
         await loadResources();
+        connectTaskQueueSSE();
       } catch (err) {
         console.error('Init error:', err);
       }
@@ -2063,6 +2218,7 @@ export function getLanWebHtml(): string {
           logoutBtn.style.display = 'inline-flex';
           showToast('登录成功');
           await loadResources();
+          connectTaskQueueSSE();
         } else {
           showToast(res.error || '密码错误');
         }
@@ -3254,8 +3410,8 @@ export function getLanWebHtml(): string {
       seekHoldTimer = setTimeout(function() {
         seekIntervalTimer = setInterval(function() {
           window.seekTrimmer(delta);
-        }, 200);
-      }, 350);
+        }, 100);
+      }, 200);
     };
 
     window.addEventListener('mouseup', window.stopSeek);
@@ -3629,6 +3785,7 @@ export function getLanWebHtml(): string {
         closeVideoEditModal();
       }
 
+      var sourceName = state.currentTrimName || (state.currentTrimPath ? state.currentTrimPath.split(/[\\/]/).pop() : '视频');
       var taskId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
       try {
@@ -3646,9 +3803,8 @@ export function getLanWebHtml(): string {
         });
 
         if (res.success) {
-          state.currentTrimTaskPath = state.currentTrimPath;
           closeVideoEditModal();
-          showTaskProgress(taskId, '正在剪辑视频');
+          showToast(state.globalActiveTask ? '已加入全局任务队列（排队中）' : '剪辑任务已启动');
         } else {
           showToast(res.error || '剪辑发起失败');
         }
@@ -3716,12 +3872,6 @@ export function getLanWebHtml(): string {
       var filename = document.getElementById('merge-filename-input').value.trim();
       var taskId = 'merge_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
-      var startBtn = document.getElementById('start-merge-btn');
-      if (startBtn) {
-        startBtn.disabled = true;
-        startBtn.innerText = '正在提交...';
-      }
-
       try {
         var res = await apiFetch('/api/video-merge', {
           method: 'POST',
@@ -3736,17 +3886,12 @@ export function getLanWebHtml(): string {
         if (res.success) {
           closeVideoMergeModal();
           clearSelection();
-          showTaskProgress(taskId, '正在合并视频');
+          showToast(state.globalActiveTask ? '已加入全局任务队列（排队中）' : '合并任务已启动');
         } else {
           showToast(res.error || '合并发起失败');
         }
       } catch (err) {
         showToast('请求异常');
-      } finally {
-        if (startBtn) {
-          startBtn.disabled = false;
-          startBtn.innerText = '开始合并';
-        }
       }
     };
 
@@ -3840,12 +3985,6 @@ export function getLanWebHtml(): string {
         if (!ok) return;
       }
 
-      var compressBtn = document.querySelector('#video-compress-modal .modal-footer .v-btn-primary');
-      if (compressBtn) {
-        compressBtn.disabled = true;
-        compressBtn.innerText = '正在提交...';
-      }
-
       var taskId = 'compress_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
 
       try {
@@ -3864,133 +4003,218 @@ export function getLanWebHtml(): string {
         if (res.success) {
           closeVideoCompressModal();
           clearSelection();
-          showTaskProgress(taskId, '正在压缩视频');
+          showToast(state.globalActiveTask ? '已加入全局任务队列（排队中）' : '压缩任务已启动');
         } else {
           showToast(res.error || '压缩发起失败');
         }
       } catch (err) {
         showToast('请求异常');
-      } finally {
-        if (compressBtn) {
-          compressBtn.disabled = false;
-          compressBtn.innerText = '开始压缩';
-        }
       }
     };
 
-    window.forceCloseTaskProgress = function() {
-      if (state.currentEventSource) {
-        state.currentEventSource.close();
-        state.currentEventSource = null;
-      }
-      state.currentTaskId = '';
-      var cancelBtn = document.getElementById('task-cancel-btn');
-      if (cancelBtn) {
-        cancelBtn.disabled = false;
-        cancelBtn.innerText = '取消任务';
-      }
-      document.getElementById('task-progress-modal').style.display = 'none';
-    };
-
-    // Task Progress & SSE Handling
-    window.showTaskProgress = function(taskId, title) {
-      state.currentTaskId = taskId;
-      var cancelBtn = document.getElementById('task-cancel-btn');
-      if (cancelBtn) {
-        cancelBtn.disabled = false;
-        cancelBtn.innerText = '取消任务';
-      }
-      document.getElementById('task-progress-title').innerText = title || '正在处理';
-      document.getElementById('task-progress-status').innerText = '正在启动任务';
-      document.getElementById('task-progress-percent').innerText = '0%';
-      document.getElementById('task-progress-fill').style.width = '0%';
-      document.getElementById('task-progress-modal').style.display = 'flex';
-
-      if (state.currentEventSource) {
-        state.currentEventSource.close();
+    // Global Task Queue SSE Connection & State Sync
+    function connectTaskQueueSSE() {
+      if (state.queueEventSource) {
+        state.queueEventSource.close();
+        state.queueEventSource = null;
       }
 
-      var sseUrl = '/api/task-progress?taskId=' + encodeURIComponent(taskId) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
+      var sseUrl = '/api/task-queue-stream' + (state.token ? '?token=' + encodeURIComponent(state.token) : '');
       var es = new EventSource(sseUrl);
-      state.currentEventSource = es;
+      state.queueEventSource = es;
 
       es.onmessage = function(event) {
         try {
           var data = JSON.parse(event.data);
-          if (data.type === 'progress') {
-            var pct = Math.min(100, Math.max(0, Math.round(data.percent || 0)));
-            document.getElementById('task-progress-percent').innerText = pct + '%';
-            document.getElementById('task-progress-fill').style.width = pct + '%';
-            if (data.text) {
-              document.getElementById('task-progress-status').innerText = data.text;
+
+          // 任务完成/终止广播事件
+          if (data.type === 'task-finished') {
+            var finishedTask = data.task || {};
+            var rawTitle = finishedTask.title || '视频';
+            var cleanTitle = rawTitle.replace(/^(剪辑(\(覆盖\))?|合并|压缩):\s*/, '').trim() || '视频';
+
+            if (data.success) {
+              showToast(cleanTitle + ' 处理完成');
+              if (finishedTask.extra && finishedTask.extra.sourcePath) {
+                removeTrimDraft(finishedTask.extra.sourcePath);
+              }
+              // 静默刷新当前目录（保持滚动位置）
+              loadDirectory(state.currentPath, { preserveScroll: true });
+            } else if (finishedTask.status === 'cancelled') {
+              showToast(cleanTitle + ' 任务已取消');
+            } else {
+              var errMsg = finishedTask.error || '未知错误';
+              showToast(cleanTitle + ' 处理失败: ' + errMsg);
             }
-          } else if (data.type === 'complete') {
-            es.close();
-            state.currentEventSource = null;
-            if (state.currentTrimTaskPath) {
-              removeTrimDraft(state.currentTrimTaskPath);
-              state.currentTrimTaskPath = '';
-            }
-            document.getElementById('task-progress-modal').style.display = 'none';
-            showToast('处理完成！');
-            loadDirectory(state.currentPath, { preserveScroll: true });
-          } else if (data.type === 'error') {
-            es.close();
-            state.currentEventSource = null;
-            document.getElementById('task-progress-modal').style.display = 'none';
-            showToast('处理失败: ' + (data.error || '未知错误'));
-          } else if (data.type === 'cancelled') {
-            es.close();
-            state.currentEventSource = null;
-            document.getElementById('task-progress-modal').style.display = 'none';
-            showToast('操作已取消');
+            return;
           }
+
+          // 全局任务队列状态快照更新
+          state.globalActiveTask = data.activeTask || null;
+          state.globalTaskQueue = Array.isArray(data.queue) ? data.queue : [];
+          state.globalTotalCount = Number(data.totalCount) || 0;
+          renderTaskQueueUI();
         } catch (e) {
           // ignore
         }
       };
 
-      var sseErrorTimer = null;
       es.onerror = function() {
-        if (!sseErrorTimer) {
-          sseErrorTimer = setTimeout(function() {
-            if (state.currentEventSource === es) {
-              es.close();
-              state.currentEventSource = null;
-              document.getElementById('task-progress-modal').style.display = 'none';
-              showToast('任务连接中断，请刷新后查看');
-            }
-          }, 6000);
-        }
+        setTimeout(function() {
+          if (state.queueEventSource === es) {
+            connectTaskQueueSSE();
+          }
+        }, 5000);
       };
+    }
+
+    function updateActiveTaskProgressUI() {
+      var task = state.globalActiveTask;
+      if (!task) return;
+
+      var pct = Math.min(100, Math.max(0, Math.round(task.progress || 0)));
+      var text = task.statusText || '正在处理中...';
+
+      var percentEl = document.getElementById('task-progress-percent');
+      var fillEl = document.getElementById('task-progress-fill');
+      var statusEl = document.getElementById('task-progress-status');
+      if (percentEl) percentEl.innerText = pct + '%';
+      if (fillEl) fillEl.style.width = pct + '%';
+      if (statusEl) statusEl.innerText = text;
+
+      var capPercentEl = document.getElementById('capsule-percent-text');
+      var capBarEl = document.getElementById('capsule-ring-bar');
+      if (capPercentEl) capPercentEl.innerText = pct;
+      if (capBarEl) {
+        var perimeter = 2 * Math.PI * 9;
+        var offset = perimeter * (1 - pct / 100);
+        capBarEl.style.strokeDashoffset = String(offset);
+      }
+    }
+
+    function renderTaskQueueUI() {
+      var modal = document.getElementById('task-progress-modal');
+      var capsule = document.getElementById('task-floating-capsule');
+      var totalCount = state.globalTotalCount;
+
+      if (totalCount === 0) {
+        state.isTaskProgressMinimized = false;
+        if (modal) modal.style.display = 'none';
+        if (capsule) capsule.style.display = 'none';
+        return;
+      }
+
+      var current = state.globalActiveTask || (state.globalTaskQueue.length > 0 ? state.globalTaskQueue[0] : null);
+      var waitingTasks = state.globalTaskQueue;
+
+      if (state.isTaskProgressMinimized) {
+        if (modal) modal.style.display = 'none';
+        if (capsule) {
+          capsule.style.display = 'flex';
+          var titleEl = document.getElementById('capsule-title-text');
+          if (titleEl && current) {
+            titleEl.innerText = current.title;
+          }
+          var badgeEl = document.getElementById('capsule-queue-badge');
+          if (badgeEl) {
+            if (waitingTasks.length > 0) {
+              badgeEl.style.display = 'inline-block';
+              badgeEl.innerText = '+' + waitingTasks.length;
+            } else {
+              badgeEl.style.display = 'none';
+            }
+          }
+          updateActiveTaskProgressUI();
+        }
+      } else {
+        if (capsule) capsule.style.display = 'none';
+        if (modal) {
+          modal.style.display = 'flex';
+          var titleEl = document.getElementById('task-progress-title');
+          if (titleEl && current) {
+            titleEl.innerText = current.title;
+          }
+          updateActiveTaskProgressUI();
+
+          var queuePreview = document.getElementById('task-queue-preview');
+          var queueCountEl = document.getElementById('task-queue-count');
+          var queueItemsEl = document.getElementById('task-queue-items');
+          if (queuePreview && queueCountEl && queueItemsEl) {
+            if (waitingTasks.length > 0) {
+              queuePreview.style.display = 'block';
+              queueCountEl.innerText = waitingTasks.length;
+              var itemsHtml = '';
+              for (var i = 0; i < waitingTasks.length; i++) {
+                var wTask = waitingTasks[i];
+                itemsHtml += '<div style="display:flex; align-items:center; justify-content:space-between; font-size:12px; background:var(--bg-hover); padding:5px 8px; border-radius:6px;">' +
+                  '<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; margin-right:8px; color:var(--text-secondary);">' +
+                  (i + 1) + '. ' + escapeHtml(wTask.title) +
+                  '</div>' +
+                  '<button class="v-btn v-btn-danger-soft" style="padding:2px 6px; font-size:11px;" onclick="cancelTaskFromQueue(\\'' + wTask.id + '\\')">取消</button>' +
+                  '</div>';
+              }
+              queueItemsEl.innerHTML = itemsHtml;
+            } else {
+              queuePreview.style.display = 'none';
+            }
+          }
+        }
+      }
+    }
+
+    window.minimizeTaskProgress = function() {
+      state.isTaskProgressMinimized = true;
+      renderTaskQueueUI();
+    };
+
+    window.expandTaskProgress = function(e) {
+      if (e) e.stopPropagation();
+      state.isTaskProgressMinimized = false;
+      renderTaskQueueUI();
+    };
+
+    window.cancelCurrentTaskFromCapsule = function(e) {
+      if (e) e.stopPropagation();
+      cancelCurrentTask();
     };
 
     window.cancelCurrentTask = async function() {
-      if (!state.currentTaskId) return;
+      var targetId = state.globalActiveTask ? state.globalActiveTask.id : (state.globalTaskQueue[0] ? state.globalTaskQueue[0].id : null);
+      if (!targetId) return;
+
       var cancelBtn = document.getElementById('task-cancel-btn');
       if (cancelBtn) {
         cancelBtn.disabled = true;
         cancelBtn.innerText = '正在取消...';
       }
+
       try {
         await apiFetch('/api/task-cancel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskId: state.currentTaskId })
+          body: JSON.stringify({ taskId: targetId })
         });
         showToast('已请求取消任务');
-        setTimeout(function() {
-          if (document.getElementById('task-progress-modal').style.display !== 'none') {
-            forceCloseTaskProgress();
-            showToast('任务已取消');
-          }
-        }, 2000);
       } catch (err) {
-        showToast('取消请求失败');
+        showToast('取消请求异常');
+      } finally {
         if (cancelBtn) {
           cancelBtn.disabled = false;
           cancelBtn.innerText = '取消任务';
         }
+      }
+    };
+
+    window.cancelTaskFromQueue = async function(taskId) {
+      try {
+        await apiFetch('/api/task-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: taskId })
+        });
+        showToast('已请求取消排队任务');
+      } catch (err) {
+        showToast('取消失败');
       }
     };
 

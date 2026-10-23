@@ -78,6 +78,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners(`video-merge-progress-${taskId}`);
   },
   showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => ipcRenderer.invoke('show-save-dialog', options),
+  getVideoQueueState: () => ipcRenderer.invoke('get-video-queue-state'),
+  enqueueVideoTask: (params: any) => ipcRenderer.invoke('enqueue-video-task', params),
+  cancelVideoTask: (taskId: string) => ipcRenderer.invoke('cancel-video-task', taskId),
+  onVideoQueueStateChanged: (callback: (state: any) => void) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on('video-queue-state-changed', handler);
+    return () => {
+      ipcRenderer.removeListener('video-queue-state-changed', handler);
+    };
+  },
+  onVideoTaskFinished: (callback: (data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('video-task-finished', handler);
+    return () => {
+      ipcRenderer.removeListener('video-task-finished', handler);
+    };
+  },
   onFileSystemChanged: (callback: (data: any) => void) => {
     const handler = (_event: any, data: any) => callback(data);
     ipcRenderer.on('file-system-changed', handler);

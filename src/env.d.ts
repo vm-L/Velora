@@ -68,6 +68,11 @@ interface Window {
     onVideoMergeProgress: (taskId: string, callback: (data: { percent: number, text: string }) => void) => void
     offVideoMergeProgress: (taskId: string) => void
     showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => Promise<{ canceled: boolean, filePath?: string }>
+    getVideoQueueState: () => Promise<{ activeTask: any; queue: any[]; totalCount: number }>
+    enqueueVideoTask: (params: { id?: string; type: 'cut' | 'merge' | 'compress'; title: string; payload: any; extra?: any }) => Promise<string>
+    cancelVideoTask: (taskId: string) => Promise<boolean>
+    onVideoQueueStateChanged: (callback: (state: { activeTask: any; queue: any[]; totalCount: number }) => void) => () => void
+    onVideoTaskFinished: (callback: (data: { task: any; success: boolean; outputPath?: string }) => void) => () => void
     onFileSystemChanged: (callback: (data: {
       type: 'add' | 'delete' | 'rename' | 'move' | 'overwrite' | 'sync-dir';
       name?: string;

@@ -26,6 +26,7 @@
   <v-message-bar />
   <v-notification-bar />
   <SaveMediaContainer />
+  <VideoEditQueueWidget />
 </template>
 
 <script setup lang="ts">
@@ -37,6 +38,7 @@ import VConfirmDialog from '@/components/feedback/VConfirmDialog.vue';
 import VMessageBar from '@/components/feedback/VMessageBar.vue';
 import VNotificationBar from '@/components/feedback/VNotificationBar.vue';
 import SaveMediaContainer from '@/components/features/SaveMediaContainer.vue';
+import VideoEditQueueWidget from '@/components/features/VideoEditQueueWidget.vue';
 const BrowserWorkspace = defineAsyncComponent(() => import('@/components/layout/BrowserWorkspace.vue'));
 const CMSWorkspace = defineAsyncComponent(() => import('@/components/layout/CMSWorkspace.vue'));
 const LocalWorkspace = defineAsyncComponent(() => import('@/components/layout/LocalWorkspace.vue'));

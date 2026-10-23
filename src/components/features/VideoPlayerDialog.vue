@@ -205,71 +205,6 @@
       </div>
     </div>
 
-    <!-- 导出进度弹窗 -->
-    <div v-if="exportState.isExporting" class="editor-modal-mask" @mousedown.stop>
-      <div class="editor-progress-card">
-        <div class="modal-header">
-          <VIcon v-if="exportState.isFinished" name="success" :size="18" style="color: var(--color-success, #10b981);" />
-          <VIcon v-else-if="exportState.error" name="error" :size="18" style="color: var(--color-error, #ef4444);" />
-          <VIcon v-else name="loading" :size="18" class="spin-icon" />
-          <h3>{{ exportState.isFinished ? '导出完毕' : (exportState.error ? '剪辑处理失败' : '正在处理视频剪辑') }}</h3>
-        </div>
-        
-        <div class="export-progress-bar-track">
-          <div
-            class="export-progress-fill"
-            :class="{ success: exportState.isFinished, error: !!exportState.error }"
-            :style="{ width: exportState.percent + '%' }"
-          ></div>
-        </div>
-
-        <div class="progress-info-row">
-          <span class="status-msg">{{ exportState.text || (exportState.isFinished ? '导出完毕' : '正在处理中') }}</span>
-          <span class="status-pct">{{ Math.round(exportState.percent) }}%</span>
-        </div>
-
-        <div v-if="exportState.error" class="error-msg">
-          {{ exportState.error }}
-        </div>
-
-        <div class="modal-actions">
-          <!-- 导出完成状态：展示“打开文件目录”与“确认”，点击确认关闭预览播放窗口 -->
-          <template v-if="exportState.isFinished">
-            <VButton
-              v-if="exportState.outputPath"
-              variant="secondary"
-              @click="handleOpenExportDir"
-            >
-              打开文件目录
-            </VButton>
-            <VButton
-              variant="primary"
-              @click="handleConfirmComplete"
-            >
-              确认
-            </VButton>
-          </template>
-
-          <!-- 导出异常状态：仅关闭当前提示弹窗，保留剪辑界面方便重试 -->
-          <template v-else-if="exportState.error">
-            <VButton variant="secondary" @click="handleCloseExportModal">关闭</VButton>
-          </template>
-
-          <!-- 导出进行中状态：支持取消，但在最终写入覆盖阶段禁用防止源文件损坏 -->
-          <template v-else>
-            <VButton
-              variant="secondary"
-              :disabled="exportState.percent >= 95"
-              :title="exportState.percent >= 95 ? '正在完成文件写入，不可取消' : '取消当前剪辑任务'"
-              @click="handleCancelExport"
-            >
-              取消处理
-            </VButton>
-          </template>
-        </div>
-      </div>
-    </div>
-
     <div class="resize-handle" @mousedown.stop="startResize" v-if="!isFullscreen && !isInAppFullscreen && !isAudioMode"></div>
   </div>
   </Teleport>
@@ -280,6 +215,9 @@ import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import { logger } from '@/services/logger';
+import { useVideoEditQueue } from '@/composables/useVideoEditQueue';
+
+const { enqueueTask } = useVideoEditQueue();
 
 const props = defineProps<{
   url: string | null;
@@ -583,26 +521,9 @@ const togglePreviewSegment = (idx: number) => {
 };
 
 // ==============================
-// 导出与保存处理
+// 导出与保存处理 (接入全局任务队列)
 // ==============================
 const showOverwriteConfirm = ref(false);
-const exportState = ref<{
-  isExporting: boolean;
-  taskId: string;
-  percent: number;
-  text: string;
-  error: string | null;
-  isFinished: boolean;
-  outputPath: string | null;
-}>({
-  isExporting: false,
-  taskId: '',
-  percent: 0,
-  text: '',
-  error: null,
-  isFinished: false,
-  outputPath: null
-});
 
 const promptConfirmOverwrite = () => {
   showOverwriteConfirm.value = true;
@@ -635,7 +556,7 @@ const handleSaveAs = async () => {
   }
 };
 
-const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
+const startExport = (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
   const disk = localDiskPath.value;
   if (!disk || !window.electronAPI?.editVideoSegments) return;
 
@@ -644,76 +565,13 @@ const startExport = async (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
     releaseVideoMedia();
   }
 
-  const taskId = 'task_edit_' + Date.now();
-  exportState.value = {
-    isExporting: true,
-    taskId,
-    percent: 0,
-    text: '正在初始化剪辑任务',
-    error: null,
-    isFinished: false,
-    outputPath: null
-  };
-
-  window.electronAPI.onVideoEditProgress(taskId, (data) => {
-    exportState.value.percent = data.percent;
-    exportState.value.text = data.text;
+  enqueueTask({
+    sourcePath: disk,
+    segments: editSegments.value.map(s => ({ start: s.start, end: s.end })),
+    outputPath: saveAsPath,
+    mode,
+    title: videoTitle.value
   });
-
-  try {
-    const result = await window.electronAPI.editVideoSegments({
-      taskId,
-      sourcePath: disk,
-      segments: editSegments.value.map(s => ({ start: s.start, end: s.end })),
-      outputPath: saveAsPath,
-      mode
-    });
-
-    if (result.success) {
-      playerSessionKey.value = Date.now();
-      exportState.value.percent = 100;
-      exportState.value.text = mode === 'replace' ? '原视频已成功覆盖保存！' : '视频剪辑已成功导出！';
-      exportState.value.isFinished = true;
-      const finalOutputPath = result.outputPath || saveAsPath || disk;
-      exportState.value.outputPath = finalOutputPath;
-      emit('edit-complete', {
-        mode,
-        outputPath: finalOutputPath,
-        sourcePath: disk
-      });
-    } else {
-      exportState.value.error = result.error || '剪辑处理失败';
-    }
-  } catch (err: any) {
-    exportState.value.error = err.message || '导出异常';
-  } finally {
-    window.electronAPI.offVideoEditProgress(taskId);
-  }
-};
-
-const handleConfirmComplete = () => {
-  exportState.value.isExporting = false;
-  close();
-};
-
-const handleOpenExportDir = () => {
-  if (exportState.value.outputPath && window.electronAPI?.showItemInFolder) {
-    window.electronAPI.showItemInFolder(exportState.value.outputPath);
-  }
-};
-
-const handleCloseExportModal = () => {
-  exportState.value.isExporting = false;
-  exportState.value.error = null;
-};
-
-const handleCancelExport = () => {
-  if (exportState.value.percent >= 95) return;
-  if (exportState.value.taskId && window.electronAPI?.cancelVideoEdit) {
-    window.electronAPI.cancelVideoEdit(exportState.value.taskId);
-  }
-  exportState.value.isExporting = false;
-  exportState.value.error = null;
 };
 
 

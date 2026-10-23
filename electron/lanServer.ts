@@ -14,6 +14,7 @@ import {
   cancelVideoMerge,
   cancelVideoCompress
 } from './videoEditor';
+import { videoTaskManager, VideoQueueState } from './videoTaskManager';
 
 function sanitizeFilename(filename: string, fallback: string): string {
   if (!filename) return fallback;
@@ -53,6 +54,7 @@ export class LanServer {
   private validTokens = new Set<string>();
   private getResourcesCallback: () => Promise<ResourceInfo[]> = async () => [];
   private sseSubscribers = new Map<string, Set<http.ServerResponse>>();
+  private taskQueueSubscribers = new Set<http.ServerResponse>();
   private latestTaskEvents = new Map<string, TaskEvent>();
   private onFileSystemChangeCallback: ((event: any) => void) | null = null;
 
@@ -60,6 +62,28 @@ export class LanServer {
 
   public setFileSystemChangeCallback(cb: (event: any) => void) {
     this.onFileSystemChangeCallback = cb;
+  }
+
+  public broadcastTaskQueueState(state: VideoQueueState) {
+    const payload = `data: ${JSON.stringify(state)}\n\n`;
+    this.taskQueueSubscribers.forEach((res) => {
+      try {
+        res.write(payload);
+      } catch {
+        this.taskQueueSubscribers.delete(res);
+      }
+    });
+  }
+
+  public broadcastTaskFinished(data: any) {
+    const payload = `data: ${JSON.stringify({ type: 'task-finished', ...data })}\n\n`;
+    this.taskQueueSubscribers.forEach((res) => {
+      try {
+        res.write(payload);
+      } catch {
+        this.taskQueueSubscribers.delete(res);
+      }
+    });
   }
 
   private notifyFileSystemChange(event: any) {
@@ -212,6 +236,11 @@ export class LanServer {
   }
 
   public async stop(): Promise<void> {
+    this.taskQueueSubscribers.forEach((res) => {
+      try { res.end(); } catch {}
+    });
+    this.taskQueueSubscribers.clear();
+
     if (this.server) {
       return new Promise((resolve) => {
         this.server?.close(() => {
@@ -759,7 +788,45 @@ export class LanServer {
         }
       }
 
-      // Task Progress Event Stream (SSE)
+      // Global Task Queue Event Stream (SSE)
+      if (pathname === '/api/task-queue-stream') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        });
+
+        this.taskQueueSubscribers.add(res);
+
+        // 立即发送当前全局任务队列状态快照
+        const snapshot = videoTaskManager.getQueueState();
+        res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+
+        const heartbeat = setInterval(() => {
+          try {
+            res.write(': heartbeat\n\n');
+          } catch {
+            clearInterval(heartbeat);
+          }
+        }, 15000);
+
+        req.on('close', () => {
+          clearInterval(heartbeat);
+          this.taskQueueSubscribers.delete(res);
+        });
+        return;
+      }
+
+      // Global Task Queue Snapshot (GET)
+      if (pathname === '/api/task-queue' && req.method === 'GET') {
+        return this.sendJson(res, 200, {
+          success: true,
+          ...videoTaskManager.getQueueState()
+        });
+      }
+
+      // Task Progress Event Stream (SSE, Backward Compatibility)
       if (pathname === '/api/task-progress') {
         const taskId = urlObj.searchParams.get('taskId');
         if (!taskId) {
@@ -813,16 +880,16 @@ export class LanServer {
         const body = await this.readRequestBody(req);
         const params = JSON.parse(body || '{}');
 
-        // Cancel video task
+        // Cancel video task (Unified via VideoTaskManager)
         if (pathname === '/api/task-cancel') {
           const { taskId } = params;
           if (!taskId) return this.sendJson(res, 400, { success: false, error: '缺少 taskId 参数' });
-          cancelVideoEdit(taskId);
+          const success = videoTaskManager.cancelTask(taskId);
           this.broadcastTaskEvent(taskId, { type: 'cancelled' });
-          return this.sendJson(res, 200, { success: true });
+          return this.sendJson(res, 200, { success });
         }
 
-        // Cut video segments
+        // Cut video segments (Unified via VideoTaskManager)
         if (pathname === '/api/video-cut') {
           const { taskId, sourcePath, segments, cutMode, mode, customFilename } = params;
           if (!sourcePath || !Array.isArray(segments) || segments.length === 0) {
@@ -846,46 +913,31 @@ export class LanServer {
           }
 
           const effectiveTaskId = taskId || `cut_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
+          const sourceName = path.basename(sourcePath);
 
-          // Async run background processing
-          editVideoSegments(
-            {
-              taskId: effectiveTaskId,
-              sourcePath,
-              segments,
-              mode: editMode,
-              outputPath: editMode === 'saveAs' ? targetPath : undefined
-            },
-            (percent, text) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
-            }
-          )
-            .then((result) => {
-              if (result.success) {
-                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
-                if (result.outputPath) {
-                  this.notifyFileSystemChange({
-                    type: editMode === 'replace' ? 'overwrite' : 'add',
-                    name: path.basename(result.outputPath),
-                    path: result.outputPath
-                  });
-                }
-              } else {
-                if (result.error === '操作已取消') {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
-                } else {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
-                }
+          videoTaskManager.enqueueTask({
+            id: effectiveTaskId,
+            type: 'cut',
+            title: sourceName,
+            payload: {
+              cutParams: {
+                taskId: effectiveTaskId,
+                sourcePath,
+                segments,
+                mode: editMode,
+                outputPath: editMode === 'saveAs' ? targetPath : undefined
               }
-            })
-            .catch((err: any) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频剪辑异常' });
-            });
-          return;
+            },
+            extra: {
+              sourcePath,
+              mode: editMode
+            }
+          });
+
+          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
         }
 
-        // Merge multiple videos
+        // Merge multiple videos (Unified via VideoTaskManager)
         if (pathname === '/api/video-merge') {
           const { taskId, videoPaths, customFilename } = params;
           if (!Array.isArray(videoPaths) || videoPaths.length < 2) {
@@ -904,43 +956,27 @@ export class LanServer {
           if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
 
           const effectiveTaskId = taskId || `merge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
 
-          mergeVideos(
-            {
-              taskId: effectiveTaskId,
-              videoPaths,
-              outputPath: targetPath
-            },
-            (percent, text) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
-            }
-          )
-            .then((result) => {
-              if (result.success) {
-                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath });
-                if (result.outputPath) {
-                  this.notifyFileSystemChange({
-                    type: 'add',
-                    name: path.basename(result.outputPath),
-                    path: result.outputPath
-                  });
-                }
-              } else {
-                if (result.error === '操作已取消') {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
-                } else {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
-                }
+          videoTaskManager.enqueueTask({
+            id: effectiveTaskId,
+            type: 'merge',
+            title: `合并 ${videoPaths.length} 个视频`,
+            payload: {
+              mergeParams: {
+                taskId: effectiveTaskId,
+                videoPaths,
+                outputPath: targetPath
               }
-            })
-            .catch((err: any) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频合并异常' });
-            });
-          return;
+            },
+            extra: {
+              mode: 'saveAs'
+            }
+          });
+
+          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
         }
 
-        // Compress video
+        // Compress video (Unified via VideoTaskManager)
         if (pathname === '/api/video-compress') {
           const { taskId, filePath, targetBitrateKbps, mode, customFilename } = params;
           if (!filePath || !targetBitrateKbps) {
@@ -964,41 +1000,28 @@ export class LanServer {
           }
 
           const effectiveTaskId = taskId || `compress_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
+          const fileName = path.basename(filePath);
 
-          compressVideo(
-            {
-              taskId: effectiveTaskId,
-              filePath,
-              targetBitrateKbps: Number(targetBitrateKbps) || 2000,
-              outputPath: compressMode === 'saveAs' ? targetPath : undefined,
-              mode: compressMode
-            },
-            (percent, text) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'progress', percent, text });
-            }
-          )
-            .then((result) => {
-              if (result.success) {
-                this.broadcastTaskEvent(effectiveTaskId, { type: 'complete', outputPath: result.outputPath, newSize: result.newSize });
-                const finalPath = result.outputPath || (compressMode === 'replace' ? filePath : targetPath);
-                this.notifyFileSystemChange({
-                  type: compressMode === 'replace' ? 'overwrite' : 'add',
-                  name: path.basename(finalPath),
-                  path: finalPath
-                });
-              } else {
-                if (result.error === '操作已取消') {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'cancelled' });
-                } else {
-                  this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: result.error });
-                }
+          videoTaskManager.enqueueTask({
+            id: effectiveTaskId,
+            type: 'compress',
+            title: fileName,
+            payload: {
+              compressParams: {
+                taskId: effectiveTaskId,
+                filePath,
+                targetBitrateKbps: Number(targetBitrateKbps) || 2000,
+                outputPath: compressMode === 'saveAs' ? targetPath : undefined,
+                mode: compressMode
               }
-            })
-            .catch((err: any) => {
-              this.broadcastTaskEvent(effectiveTaskId, { type: 'error', error: err?.message || '视频压缩异常' });
-            });
-          return;
+            },
+            extra: {
+              filePath,
+              mode: compressMode
+            }
+          });
+
+          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
         }
       }
 

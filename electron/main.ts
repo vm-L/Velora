@@ -36,6 +36,7 @@ import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } f
 import { getHeadersForUrl } from './downloader'
 import { logger } from './logger'
 import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams } from './videoEditor'
+import { videoTaskManager } from './videoTaskManager'
 
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
@@ -1055,6 +1056,63 @@ ipcMain.handle('restart-lan-server', async () => {
 ipcMain.handle('stop-lan-server', async () => {
   await lanServer.stop();
   return { success: true };
+});
+
+// 全局视频任务队列监听与多端广播
+videoTaskManager.onStateChange((state) => {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('video-queue-state-changed', state);
+    }
+  });
+  lanServer.broadcastTaskQueueState(state);
+});
+
+videoTaskManager.onTaskFinish((task, success, outputPath) => {
+  if (success && outputPath) {
+    broadcastFileSystemChange({
+      type: task.extra?.mode === 'replace' ? 'overwrite' : 'add',
+      path: outputPath,
+      name: path.basename(outputPath)
+    });
+  }
+
+  // 向所有 PC 客户端窗口广播任务终态通知
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('video-task-finished', {
+        task,
+        success,
+        outputPath
+      });
+    }
+  });
+
+  // 向局域网各客户端广播任务终态通知
+  lanServer.broadcastTaskFinished({
+    task,
+    success,
+    outputPath
+  });
+});
+
+// 全局视频队列 IPC 接口
+ipcMain.handle('get-video-queue-state', () => {
+  return videoTaskManager.getQueueState();
+});
+
+ipcMain.handle('enqueue-video-task', (_event, params: {
+  id?: string;
+  type: 'cut' | 'merge' | 'compress';
+  title: string;
+  payload: any;
+  extra?: any;
+}) => {
+  return videoTaskManager.enqueueTask(params);
+});
+
+ipcMain.handle('cancel-video-task', (_event, taskId: string) => {
+  return videoTaskManager.cancelTask(taskId);
 });
 
 ipcMain.handle('edit-video-segments', async (event, params: EditVideoParams) => {

@@ -578,6 +578,9 @@ const refreshDirectorySilently = async () => {
   }
 };
 
+let fileChangeCleanup: (() => void) | null = null;
+let taskFinishCleanup: (() => void) | null = null;
+
 onMounted(() => {
   if (props.resourcePath) {
     currentPath.value = props.resourcePath;
@@ -586,9 +589,30 @@ onMounted(() => {
   window.addEventListener('blur', closeContextMenu);
   window.addEventListener('resize', closeContextMenu);
   window.addEventListener('keydown', handleKeyDown);
+
+  if (window.electronAPI?.onFileSystemChanged) {
+    fileChangeCleanup = window.electronAPI.onFileSystemChanged(() => {
+      refreshDirectorySilently();
+    });
+  }
+  if (window.electronAPI?.onVideoTaskFinished) {
+    taskFinishCleanup = window.electronAPI.onVideoTaskFinished((data) => {
+      if (data.success) {
+        refreshDirectorySilently();
+      }
+    });
+  }
 });
 
 onUnmounted(() => {
+  if (fileChangeCleanup) {
+    fileChangeCleanup();
+    fileChangeCleanup = null;
+  }
+  if (taskFinishCleanup) {
+    taskFinishCleanup();
+    taskFinishCleanup = null;
+  }
   window.removeEventListener('blur', closeContextMenu);
   window.removeEventListener('resize', closeContextMenu);
   window.removeEventListener('keydown', handleKeyDown);

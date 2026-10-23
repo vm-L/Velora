@@ -86,18 +86,15 @@ function moveOrCopyFile(src: string, dest: string) {
 }
 
 function getTempDir(preferredParentDir?: string): string {
-  if (preferredParentDir) {
+  if (preferredParentDir && fs.existsSync(preferredParentDir)) {
     try {
-      const preferredTmp = path.join(preferredParentDir, '.velora_tmp')
-      if (!fs.existsSync(preferredTmp)) {
-        fs.mkdirSync(preferredTmp, { recursive: true })
-      }
-      const probeFile = path.join(preferredTmp, `.probe_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`)
+      // 测试同级目录写入权限，直接在该目录下生成临时文件，不创建 .velora_tmp 子目录
+      const probeFile = path.join(preferredParentDir, `~velora_probe_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.tmp`)
       fs.writeFileSync(probeFile, '1')
       fs.unlinkSync(probeFile)
-      return preferredTmp
+      return preferredParentDir
     } catch {
-      // 若该目录无写权限或创建失败，安全降级到系统级 tmp
+      // 若同级目录无写权限或只读，安全降级到系统级 tmp
     }
   }
 
@@ -245,7 +242,8 @@ export async function editVideoSegments(
   const preferredDir = outputPath ? path.dirname(outputPath) : path.dirname(sourcePath)
   const tmpDir = getTempDir(preferredDir)
   const ext = path.extname(sourcePath) || '.mp4'
-  const tempOutputFile = path.join(tmpDir, `velora_edit_${Date.now()}_final${ext}`)
+  const randToken = Math.random().toString(36).substring(2, 7)
+  const tempOutputFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_final${ext}`)
   const tempFilesToClean: string[] = [tempOutputFile]
 
   // 磁盘空间预检：切片重编码与输出至少需要源文件大小的 1.2 倍空间
@@ -347,7 +345,7 @@ export async function editVideoSegments(
       for (let i = 0; i < cleanSegments.length; i++) {
         const seg = cleanSegments[i]
         const segDuration = seg.end - seg.start
-        const segFile = path.join(tmpDir, `velora_edit_${Date.now()}_seg_${i}${ext}`)
+        const segFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_seg_${i}${ext}`)
         tempFilesToClean.push(segFile)
         segmentFiles.push(segFile)
 
@@ -416,7 +414,7 @@ export async function editVideoSegments(
       onProgress?.(75, '正在合并多个片段')
 
       // 生成 concat 描述文件
-      const concatListFile = path.join(tmpDir, `velora_edit_${Date.now()}_concat.txt`)
+      const concatListFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_concat.txt`)
       tempFilesToClean.push(concatListFile)
       const concatContent = segmentFiles
         .map(f => `file '${f.replace(/\\/g, '/')}'`)
@@ -762,8 +760,9 @@ export async function mergeVideos(
   const preferredDir = path.dirname(outputPath)
   const tmpDir = getTempDir(preferredDir)
   const outExt = path.extname(outputPath) || '.mp4'
-  const tempOutputFile = path.join(tmpDir, `velora_merge_${Date.now()}_final${outExt}`)
-  const concatListFile = path.join(tmpDir, `velora_merge_${Date.now()}_concat.txt`)
+  const randToken = Math.random().toString(36).substring(2, 7)
+  const tempOutputFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_merge${outExt}`)
+  const concatListFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_merge_concat.txt`)
   const tempFilesToClean: string[] = [tempOutputFile, concatListFile]
 
   // 预检合并总输入大小并预留磁盘空间
@@ -959,7 +958,8 @@ export async function compressVideo(
   const preferredDir = outputPath ? path.dirname(outputPath) : path.dirname(filePath)
   const tmpDir = getTempDir(preferredDir)
   const outExt = path.extname(filePath) || '.mp4'
-  const tempOutputFile = path.join(tmpDir, `velora_compress_${Date.now()}_out${outExt}`)
+  const randToken = Math.random().toString(36).substring(2, 7)
+  const tempOutputFile = path.join(tmpDir, `~velora_temp_${Date.now()}_${randToken}_compress${outExt}`)
   const tempFilesToClean: string[] = [tempOutputFile]
 
   // 磁盘空间预检：压缩过程至少预留源文件 0.8 倍（或至少 50MB）的磁盘空间
