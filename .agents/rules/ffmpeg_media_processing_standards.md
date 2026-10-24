@@ -173,19 +173,26 @@ proc.stdout.on('data', (chunk) => {
 
 ## 5. 临时文件生命周期与原子落盘安全 (File Lifecycle & Safety)
 
-### 5.1 临时目录隔离
-- 所有音视频剪辑分片、临时合并产物必须生成在专用临时目录：`getTempDir()`（即 `userData/tmp`）。
-- 文件命名需包含时间戳与唯一标识（如 `velora_merge_${Date.now()}_final.mp4`）。
+### 5.1 统一应用目录操作与源目录防污染
+- **严禁污染源目录**：所有音视频切片分片（`editVideoSegments`）、视频合并（`mergeVideos`）、视频压缩（`compressVideo`）的中间分段与 Concat 清单文件，必须统一在应用数据临时目录操作：`getAppTempDir()`（即 `app.getPath('userData')/tmp` 或可执行文件目录下的 `tmp/`）。
+- 绝不在源视频文件或目标输出路径所在目录创建任何中间分片、临时合并文件或 probe 探测文件，保持源目录与目标目录 100% 洁净。
+- 文件命名约定：必须包含业务前缀、时间戳与随机唯一标识（如 `velora_edit_${Date.now()}_${randToken}_seg_${i}.mp4`、`velora_merge_${Date.now()}_${randToken}_concat.txt`）。
 
-### 5.2 资源清理保证 (Mandatory Cleanup)
-- 记录所有创建的中间文件路径 `tempFilesToClean: string[]`。
-- **必须在 `finally` 块中遍历删除所有存在的临时文件**，防止磁盘垃圾残留。
+### 5.2 双重磁盘空间预检 (Dual Disk Space Pre-check)
+- 由于应用临时目录（通常位于系统盘 C 盘）与用户源目录/目标输出目录可能分属不同磁盘分区，转码前必须分别执行双重空间检查：
+  1. **应用临时目录预检**：预留转码切片与中间清单的处理空间（如源文件的 1.1x ~ 1.2x，或至少 50MB）；
+  2. **目标磁盘预检**：当目标路径分区与应用临时目录不同时，预检目标目录是否能容纳最终产物（如 0.6x ~ 0.9x 源文件大小）；
+- 空间不足时提前阻断并给出精准指向的中文错误提示（区分“应用临时目录空间不足”与“目标磁盘空间不足”）。
 
-### 5.3 原子替换与跨盘安全
-- 将临时文件移动至最终目标路径时，使用原子替换操作：
-  - 同分区：`fs.renameSync(tempFile, targetPath)`。
-  - 跨分区（捕获 `EXDEV` 错误）：执行 `fs.copyFileSync` + `fs.unlinkSync`，或调用 `safeAtomicReplace`。
-- 覆盖已有原文件时（如原位剪辑保存），必须预先记录源文件的 `mtime` / `atime`，写入完成后通过 `fs.utimesSync` 精准恢复，避免破坏资源管理器排序。
+### 5.3 资源清理保证与自愈清理 (Cleanup & Self-Healing)
+- **单次任务保障**：记录所有创建的中间文件与清单路径 `tempFilesToClean: string[]`，必须在 `finally` 块中遍历执行无条件删除（`fs.rmSync(file, { force: true })`）。
+- **启动自愈清理**：在应用启动阶段（`app.whenReady()` 首要执行）调用 `cleanupAppTempDir()`，自动扫描并清理应用临时目录中因应用崩溃或异常强退遗留的历史孤儿临时文件（匹配 `velora_*` 或 `~velora_*`）。
+
+### 5.4 原子迁移与跨盘兼容
+- 将临时文件移动至最终目标路径时，统一调用 `moveOrCopyFile`：
+  - **同分区**：调用 `fs.renameSync(tempFile, targetPath)` 实现秒级原子替换。
+  - **跨分区**：捕获 `EXDEV`（跨设备链接）错误，平滑降级为 `fs.copyFileSync` + `fs.unlinkSync` 复制后删除临时文件。
+- **元数据与时间戳保护**：覆盖已有原文件时（如原位剪辑保存），必须预先记录源文件的 `mtime` / `atime`，完成写入后通过 `fs.utimesSync` 精准恢复，避免破坏系统文件管理器的排序状态。
 
 ---
 

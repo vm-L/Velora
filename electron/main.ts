@@ -35,7 +35,7 @@ app.setPath('sessionData', path.join(localDataPath, 'session'));
 import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
 import { getHeadersForUrl } from './downloader'
 import { logger } from './logger'
-import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams } from './videoEditor'
+import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams, cleanupAppTempDir } from './videoEditor'
 import { videoTaskManager } from './videoTaskManager'
 
 let streamServerPort = 0;
@@ -1166,6 +1166,9 @@ ipcMain.handle('show-save-dialog', async (event, options: { defaultPath?: string
 });
 
 app.whenReady().then(async () => {
+  // 0. 自动扫描并清理应用临时目录的历史孤儿文件，保持磁盘干净
+  cleanupAppTempDir();
+
   // 1. 【最高优先级】瞬间秒开 Splash 悬浮卡片（0ms 阻塞，依据系统明暗色偏好极速呈现）
   const initialTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   createSplashWindow(initialTheme);
