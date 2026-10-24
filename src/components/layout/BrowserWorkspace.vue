@@ -549,7 +549,7 @@ const executeMatchedRulesForDomain = async (
           id: toastId,
           text: `解析失败：未从页面匹配到有效的文件名或文件链接${shortLabel ? ` (${shortLabel})` : ''}`,
           type: 'error',
-          duration: 2500
+          duration: 3000
         });
         return;
       }
@@ -569,7 +569,7 @@ const executeMatchedRulesForDomain = async (
         id: toastId,
         text: `解析成功${shortLabel ? `: ${shortLabel}` : ''}`,
         type: 'success',
-        duration: 1500
+        duration: 2000
       });
     } else if (rule.actionType === 'copy') {
       hasExec = true;
@@ -589,14 +589,14 @@ const executeMatchedRulesForDomain = async (
           id: toastId,
           text: `解析成功，数据已复制到剪切板！${shortLabel ? ` (${shortLabel})` : ''}`,
           type: 'success',
-          duration: 1500
+          duration: 2000
         });
       } catch (err: any) {
         showMessage({
           id: toastId,
           text: `复制到剪切板失败: ${err.message || err}`,
           type: 'error',
-          duration: 2500
+          duration: 3000
         });
       }
     }
@@ -670,7 +670,7 @@ const onRuleSelectCancelled = () => {
       id: current.toastId,
       text: `已取消规则选择 (${current.shortLabel})`,
       type: 'info',
-      duration: 1500
+      duration: 2000
     });
   }
 
@@ -799,7 +799,7 @@ const executeSingleParseTask = async (task: {
             id: toastId,
             text: `获取当前页面内容失败: ${err.message || err}`,
             type: 'error',
-            duration: 2500
+            duration: 3000
           });
           return;
         }
@@ -816,7 +816,7 @@ const executeSingleParseTask = async (task: {
         id: toastId,
         text: `未匹配到任何解析规则 (${shortLabel})`,
         type: 'error',
-        duration: 2500
+        duration: 3000
       });
       return;
     }
@@ -850,7 +850,7 @@ const executeSingleParseTask = async (task: {
       id: toastId,
       text: `解析发生异常 (${shortLabel}): ${err.message || err}`,
       type: 'error',
-      duration: 2500
+      duration: 3000
     });
   } finally {
     if (isLink) {

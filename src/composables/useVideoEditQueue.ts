@@ -1,6 +1,5 @@
 import { ref, computed } from 'vue';
 import { useMessage } from './useMessage';
-import { useNotification } from './useNotification';
 
 export interface VideoEditTaskItem {
   id: string;
@@ -77,7 +76,6 @@ function initGlobalQueueSync() {
   isInitialized = true;
 
   const { showMessage } = useMessage();
-  const { showNotification } = useNotification();
 
   if (window.electronAPI?.getVideoQueueState) {
     window.electronAPI.getVideoQueueState().then((state) => {
@@ -101,32 +99,20 @@ function initGlobalQueueSync() {
         showMessage({
           text: `${cleanTitle} 处理完成`,
           type: 'success',
-          duration: 3500
-        });
-        showNotification({
-          type: 'success',
-          title: '处理完成',
-          message: cleanTitle,
-          duration: 3000
+          duration: 2000
         });
       } else if (task.status === 'cancelled') {
         showMessage({
           text: `${cleanTitle} 任务已取消`,
           type: 'info',
-          duration: 2500
+          duration: 2000
         });
       } else {
         const errMsg = task.error || '处理失败';
         showMessage({
           text: `${cleanTitle} 处理失败: ${errMsg}`,
           type: 'error',
-          duration: 4000
-        });
-        showNotification({
-          type: 'error',
-          title: '处理失败',
-          message: `${cleanTitle}: ${errMsg}`,
-          duration: 0
+          duration: 3000
         });
       }
     });

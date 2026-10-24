@@ -956,7 +956,7 @@ const handleUpdateAllRules = async () => {
 
   try {
     await syncAllAdBlockSources();
-    showMessage(`规则同步完成，当前已生效 ${totalActiveRulesCount.value.toLocaleString()} 条过滤规则`, 'success', 2500, undefined, msgId);
+    showMessage(`规则同步完成，当前已生效 ${totalActiveRulesCount.value.toLocaleString()} 条过滤规则`, 'success', 2000, undefined, msgId);
   } catch (err: any) {
     showMessage(`更新失败: ${err.message}`, 'error', 3000, undefined, msgId);
   } finally {

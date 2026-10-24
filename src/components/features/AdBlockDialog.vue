@@ -187,7 +187,7 @@ const handleSyncSource = async (source: AdBlockSource) => {
   if (res.success) {
     showMessage(`成功同步 ${source.name} (${res.count} 条规则)`, 'success', 2000, undefined, msgId);
   } else {
-    showMessage(`同步失败: ${res.error}`, 'error', 2500, undefined, msgId);
+    showMessage(`同步失败: ${res.error}`, 'error', 3000, undefined, msgId);
   }
 };
 
@@ -200,7 +200,7 @@ const handleSyncAll = async () => {
     const count = await syncAllAdBlockSources();
     showMessage(`成功完成 ${count} 个规则源的更新`, 'success', 2000, undefined, msgId);
   } catch (err: any) {
-    showMessage(`同步异常: ${err.message}`, 'error', 2500, undefined, msgId);
+    showMessage(`同步异常: ${err.message}`, 'error', 3000, undefined, msgId);
   } finally {
     isSyncingAll.value = false;
   }

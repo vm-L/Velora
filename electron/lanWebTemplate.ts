@@ -2016,7 +2016,7 @@ export function getLanWebHtml(): string {
       el.className = 'toast';
       el.innerText = msg;
 
-      var stayDuration = typeof duration === 'number' ? duration : 2500;
+      var stayDuration = typeof duration === 'number' ? duration : 2000;
 
       container.appendChild(el);
 
@@ -4044,7 +4044,7 @@ export function getLanWebHtml(): string {
               showToast(cleanTitle + ' 任务已取消');
             } else {
               var errMsg = finishedTask.error || '未知错误';
-              showToast(cleanTitle + ' 处理失败: ' + errMsg);
+              showToast(cleanTitle + ' 处理失败: ' + errMsg, 3000);
             }
             return;
           }

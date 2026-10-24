@@ -1176,7 +1176,7 @@ const handleCompressDirectory = async (item: LocalFileItem) => {
       }));
       isBatchCompressDialogVisible.value = true;
     } else {
-      showMessage(`目录 "${item.name}" 及其子目录中未发现可压缩的视频文件`, 'warning', 2500, undefined, msgId);
+      showMessage(`目录 "${item.name}" 及其子目录中未发现可压缩的视频文件`, 'warning', 3000, undefined, msgId);
     }
   } catch (err: any) {
     showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
@@ -1200,9 +1200,9 @@ const openMergeVideoModal = async () => {
       }));
       isMergeVideoDialogVisible.value = true;
     } else if (res && res.success && res.videos && res.videos.length === 1) {
-      showMessage('请至少选择 2 个视频文件进行合并', 'warning', 2500, undefined, msgId);
+      showMessage('请至少选择 2 个视频文件进行合并', 'warning', 3000, undefined, msgId);
     } else {
-      showMessage('所选项目中未发现足够的视频文件进行合并', 'warning', 2500, undefined, msgId);
+      showMessage('所选项目中未发现足够的视频文件进行合并', 'warning', 3000, undefined, msgId);
     }
   } catch (err: any) {
     showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
@@ -1231,7 +1231,7 @@ const openBatchCompressModal = async () => {
       }));
       isBatchCompressDialogVisible.value = true;
     } else {
-      showMessage('所选项目及子目录中未发现可压缩的视频文件', 'warning', 2500, undefined, msgId);
+      showMessage('所选项目及子目录中未发现可压缩的视频文件', 'warning', 3000, undefined, msgId);
     }
   } catch (err: any) {
     showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
