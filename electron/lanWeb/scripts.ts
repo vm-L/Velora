@@ -582,7 +582,11 @@ export const lanWebScripts = `function escapeHtml(str) {
     }
 
     function isRecentFile(item) {
-      if (!item || item.isDirectory || !item.mtime) return false;
+      if (!item) return false;
+      if (item.isDirectory) {
+        return !!item.hasRecentFile;
+      }
+      if (!item.mtime) return false;
       var diff = Date.now() - item.mtime;
       return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
     }

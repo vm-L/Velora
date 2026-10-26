@@ -10,6 +10,7 @@ export interface Tab {
   sniffedImages: { url: string, timestamp: number }[]
   sniffedVideos: { url: string, timestamp: number }[]
   sniffedAudios: { url: string, timestamp: number }[]
+  isBlank?: boolean
 }
 
 export interface Workspace {
@@ -44,16 +45,17 @@ export const useWorkspaces = () => {
 
   const getWorkspace = (resourceId: string) => workspaces[resourceId]
 
-  const addTab = (resourceId: string, url: string, favicon?: string, activate = true) => {
+  const addTab = (resourceId: string, url: string, favicon?: string, activate = true, isBlank = false) => {
     const ws = workspaces[resourceId]
     if (!ws) return null
     const tabId = generateId()
     ws.tabs.push({
       id: tabId,
       url,
-      title: 'Loading...',
-      loading: true,
-      favicon,
+      title: isBlank ? '新标签页' : 'Loading...',
+      loading: !isBlank,
+      favicon: isBlank ? undefined : favicon,
+      isBlank,
       sniffedImages: [],
       sniffedVideos: [],
       sniffedAudios: []

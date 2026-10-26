@@ -429,6 +429,7 @@ export interface LocalFileItem {
   size: number;
   mtime: number;
   ext: string;
+  hasRecentFile?: boolean;
 }
 
 const props = defineProps<{
@@ -1330,7 +1331,11 @@ const formatTime = (ts: number): string => {
 };
 
 const isRecentFile = (item: LocalFileItem): boolean => {
-  if (!item || item.isDirectory || !item.mtime) return false;
+  if (!item) return false;
+  if (item.isDirectory) {
+    return !!item.hasRecentFile;
+  }
+  if (!item.mtime) return false;
   const diff = Date.now() - item.mtime;
   return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
 };

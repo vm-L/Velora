@@ -33,6 +33,9 @@
         <v-button variant="icon" class="func-btn" v-tooltip="'刷新'" @click="onRefresh">
           <VIcon name="refresh" size="16" />
         </v-button>
+        <v-button variant="icon" class="func-btn" v-tooltip="'主页'" @click="onGoHome($event)" @auxclick="onGoHomeAux($event)">
+          <VIcon name="home" size="16" />
+        </v-button>
       </div>
 
       <div class="address-bar-container">
@@ -132,12 +135,26 @@
 
     <!-- Webviews -->
     <div class="webview-container" :class="{ 'pointer-disabled': isInteracting || isDraggingAnyDialog }">
-      <webview v-for="tab in workspace?.tabs || []" :key="tab.id" v-show="workspace?.activeTabId === tab.id"
-        :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
-        @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
-        @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate($event, tab.id)" @did-navigate-in-page="onDidNavigate($event, tab.id)"
-        @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
-      </webview>
+      <!-- 极简空白占位页 -->
+      <div v-if="activeTab?.isBlank" class="blank-tab-placeholder">
+        <div class="blank-placeholder-card">
+          <div class="blank-icon-wrap">
+            <img v-if="getResourceIcon()" :src="getResourceIcon()" class="blank-resource-icon" referrerpolicy="no-referrer" />
+            <VIcon v-else name="window" :size="36" class="blank-fallback-icon" />
+          </div>
+          <div class="blank-title">{{ getResourceName() || '新标签页' }}</div>
+          <div class="blank-subtitle">输入网址开始浏览</div>
+        </div>
+      </div>
+
+      <template v-for="tab in workspace?.tabs || []" :key="tab.id">
+        <webview v-if="!tab.isBlank" v-show="workspace?.activeTabId === tab.id"
+          :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
+          @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
+          @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate($event, tab.id)" @did-navigate-in-page="onDidNavigate($event, tab.id)"
+          @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
+        </webview>
+      </template>
     </div>
 
     <!-- Hidden Webviews for Concurrent Silent Link Parsing -->
@@ -908,6 +925,11 @@ const getResourceIcon = () => {
   return isExt?.icon;
 };
 
+const getResourceName = () => {
+  const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
+  return isExt?.name || '';
+};
+
 const init = () => {
   if (props.resourceId && currentResourceUrl.value) {
     initWorkspace(props.resourceId, currentResourceUrl.value, getResourceIcon());
@@ -1032,8 +1054,8 @@ watch(() => props.resourceId, () => {
 
 watch(() => workspace.value?.tabs.length, (newLen) => {
   if (newLen === 0) {
-    // Re-create default tab when all tabs are closed
-    initWorkspace(props.resourceId, props.resourceUrl, getResourceIcon());
+    // 当标签页完全清空时，默认打开一个空白标签页
+    addTab(props.resourceId, '', undefined, true, true);
   }
 });
 
@@ -1062,6 +1084,38 @@ const setActiveTab = (tabId: string) => {
 };
 
 const onCloseTab = (tabId: string) => {
+  if (!workspace.value) return;
+
+  // 如果当前只剩最后一个标签页，转为空白页
+  if (workspace.value.tabs.length === 1 && workspace.value.tabs[0].id === tabId) {
+    const currentTab = workspace.value.tabs[0];
+    // 如果已经处于空白页，静默保持，避免重载
+    if (currentTab.isBlank) {
+      return;
+    }
+    const wv = document.getElementById(`webview-${tabId}`) as any;
+    if (wv && typeof wv.stop === 'function') {
+      try { wv.stop(); } catch (e) {}
+    }
+    destroyWaterfallSession(tabId);
+    updateTab(props.resourceId, tabId, {
+      url: '',
+      title: '新标签页',
+      loading: false,
+      favicon: undefined,
+      isBlank: true,
+      sniffedImages: [],
+      sniffedVideos: [],
+      sniffedAudios: []
+    });
+    addressInputUrl.value = '';
+    nextTick(() => {
+      const input = document.querySelector('.address-bar-input') as HTMLInputElement | null;
+      input?.focus();
+    });
+    return;
+  }
+
   const wv = document.getElementById(`webview-${tabId}`) as any;
   if (wv && typeof wv.stop === 'function') {
     try {
@@ -1093,7 +1147,54 @@ const currentResourceUrl = computed(() => {
 });
 
 const onAddDefaultTab = () => {
-  addTab(props.resourceId, currentResourceUrl.value, getResourceIcon());
+  addTab(props.resourceId, '', undefined, true, true);
+  addressInputUrl.value = '';
+  nextTick(() => {
+    const input = document.querySelector('.address-bar-input') as HTMLInputElement | null;
+    input?.focus();
+  });
+};
+
+const onGoHome = (e?: MouseEvent) => {
+  const homeUrl = currentResourceUrl.value;
+  if (!homeUrl) return;
+
+  if (e && (e.ctrlKey || e.metaKey)) {
+    addTab(props.resourceId, homeUrl, getResourceIcon(), true, false);
+    return;
+  }
+
+  if (!activeTab.value) {
+    addTab(props.resourceId, homeUrl, getResourceIcon(), true, false);
+    return;
+  }
+
+  if (activeTab.value.isBlank) {
+    updateTab(props.resourceId, activeTab.value.id, {
+      url: homeUrl,
+      title: 'Loading...',
+      loading: true,
+      favicon: getResourceIcon(),
+      isBlank: false
+    });
+  } else {
+    const wv = activeWebview();
+    if (wv && wv.loadURL) {
+      wv.loadURL(homeUrl);
+    }
+  }
+  addressInputUrl.value = homeUrl;
+};
+
+const onGoHomeAux = (e: MouseEvent) => {
+  if (e.button === 1) {
+    e.preventDefault();
+    e.stopPropagation();
+    const homeUrl = currentResourceUrl.value;
+    if (homeUrl) {
+      addTab(props.resourceId, homeUrl, getResourceIcon(), true, false);
+    }
+  }
 };
 
 // Webview Events
@@ -1499,21 +1600,25 @@ const activeWebview = () => {
 };
 
 const onBack = () => {
+  if (activeTab.value?.isBlank) return;
   const wv = activeWebview();
   if (wv && wv.canGoBack()) wv.goBack();
 };
 
 const onForward = () => {
+  if (activeTab.value?.isBlank) return;
   const wv = activeWebview();
   if (wv && wv.canGoForward()) wv.goForward();
 };
 
 const onRefresh = () => {
+  if (activeTab.value?.isBlank) return;
   const wv = activeWebview();
   if (wv) wv.reload();
 };
 
 const onDevTools = () => {
+  if (activeTab.value?.isBlank) return;
   const wv = activeWebview();
   if (wv) wv.openDevTools();
 };
@@ -1521,6 +1626,10 @@ const onDevTools = () => {
 const addressInputUrl = ref('');
 
 const syncAddressBar = () => {
+  if (activeTab.value?.isBlank) {
+    addressInputUrl.value = '';
+    return;
+  }
   const wv = activeWebview();
   if (wv && wv.getURL) {
     addressInputUrl.value = wv.getURL();
@@ -1541,9 +1650,18 @@ const handleAddressBarEnter = () => {
   }
   addressInputUrl.value = url;
   
-  const wv = activeWebview();
-  if (wv && wv.loadURL) {
-    wv.loadURL(url);
+  if (activeTab.value?.isBlank) {
+    updateTab(props.resourceId, activeTab.value.id, {
+      url,
+      title: 'Loading...',
+      loading: true,
+      isBlank: false
+    });
+  } else {
+    const wv = activeWebview();
+    if (wv && wv.loadURL) {
+      wv.loadURL(url);
+    }
   }
 };
 
@@ -3039,6 +3157,63 @@ watch([() => currentResourceDuplicateRules.value, isDupIndexReady, () => setting
 
 .pointer-disabled webview {
   pointer-events: none;
+}
+
+.blank-tab-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-soft);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.blank-placeholder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 40px;
+  max-width: 380px;
+}
+
+.blank-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+
+  .blank-resource-icon {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+
+  .blank-fallback-icon {
+    color: var(--text-tertiary);
+  }
+}
+
+.blank-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.blank-subtitle {
+  font-size: 13px;
+  color: var(--text-tertiary);
 }
 
 /* Custom Context Menu */
