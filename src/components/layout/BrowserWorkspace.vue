@@ -1038,7 +1038,6 @@ const handleGlobalKeydown = (e: KeyboardEvent) => {
     onRefresh();
   } else if (e.key === 'F12') {
     e.preventDefault();
-    onDevTools();
   }
 };
 
@@ -1088,8 +1087,13 @@ const onCloseTab = (tabId: string) => {
       return;
     }
     const wv = document.getElementById(`webview-${tabId}`) as any;
-    if (wv && typeof wv.stop === 'function') {
-      try { wv.stop(); } catch (e) {}
+    if (wv) {
+      if (typeof wv.closeDevTools === 'function') {
+        try { wv.closeDevTools(); } catch (e) {}
+      }
+      if (typeof wv.stop === 'function') {
+        try { wv.stop(); } catch (e) {}
+      }
     }
     destroyWaterfallSession(tabId);
     updateTab(props.resourceId, tabId, {
@@ -1111,10 +1115,13 @@ const onCloseTab = (tabId: string) => {
   }
 
   const wv = document.getElementById(`webview-${tabId}`) as any;
-  if (wv && typeof wv.stop === 'function') {
-    try {
-      wv.stop();
-    } catch (e) {}
+  if (wv) {
+    if (typeof wv.closeDevTools === 'function') {
+      try { wv.closeDevTools(); } catch (e) {}
+    }
+    if (typeof wv.stop === 'function') {
+      try { wv.stop(); } catch (e) {}
+    }
   }
   destroyWaterfallSession(tabId);
   closeTab(props.resourceId, tabId);
@@ -1619,7 +1626,13 @@ const onRefresh = () => {
 const onDevTools = () => {
   if (activeTab.value?.isBlank) return;
   const wv = activeWebview();
-  if (wv) wv.openDevTools();
+  if (wv) {
+    if (typeof wv.isDevToolsOpened === 'function' && wv.isDevToolsOpened()) {
+      wv.closeDevTools();
+    } else if (typeof wv.openDevTools === 'function') {
+      wv.openDevTools();
+    }
+  }
 };
 
 const addressInputUrl = ref('');
