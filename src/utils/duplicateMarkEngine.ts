@@ -93,11 +93,12 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
         '  border-radius: 9999px !important;',
         '  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;',
         '  user-select: none !important;',
-        '  pointer-events: none !important;',
+        '  pointer-events: auto !important;',
+        '  cursor: pointer !important;',
         '  box-sizing: border-box !important;',
         '  transition: background-color 0.15s ease !important;',
         '}',
-        '*:hover > .velora-dup-badge {',
+        '.velora-dup-badge:hover {',
         '  background: color-mix(in srgb, var(--bg-surface-hover) 40%, transparent) !important;',
         '}',
         '.velora-dup-badge-dot {',
@@ -123,7 +124,8 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
         '  font-family: inherit !important;',
         '  line-height: 1.5 !important;',
         '  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;',
-        '  pointer-events: none !important;',
+        '  pointer-events: auto !important;',
+        '  user-select: text !important;',
         '  opacity: 0 !important;',
         '  visibility: hidden !important;',
         '  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease !important;',
@@ -428,9 +430,13 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
       }
 
       // 5. Popover 交互事件处理
-      function onMountElMouseEnter(e) {
-        var mountEl = e.currentTarget;
-        var badge = mountEl.querySelector(':scope > .velora-dup-badge');
+      var popoverHideTimer = null;
+
+      function showBadgePopover(badge) {
+        if (popoverHideTimer) {
+          clearTimeout(popoverHideTimer);
+          popoverHideTimer = null;
+        }
         if (!badge) return;
         var paths = badge.__veloraPaths || [];
         if (!paths.length) return;
@@ -476,12 +482,36 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
         pop.style.left = left + 'px';
       }
 
-      function onMountElMouseLeave() {
-        var pop = document.getElementById('velora-dup-global-popover');
-        if (pop) {
-          pop.classList.remove('visible');
-          pop.style.display = 'none';
-        }
+      function scheduleHideBadgePopover() {
+        if (popoverHideTimer) clearTimeout(popoverHideTimer);
+        popoverHideTimer = setTimeout(function() {
+          var pop = document.getElementById('velora-dup-global-popover');
+          if (pop) {
+            pop.classList.remove('visible');
+            pop.style.display = 'none';
+          }
+        }, 120);
+      }
+
+      function onBadgeMouseEnter(e) {
+        showBadgePopover(e.currentTarget);
+      }
+
+      function onBadgeMouseLeave() {
+        scheduleHideBadgePopover();
+      }
+
+      if (!popover.__veloraBound) {
+        popover.addEventListener('mouseenter', function() {
+          if (popoverHideTimer) {
+            clearTimeout(popoverHideTimer);
+            popoverHideTimer = null;
+          }
+        });
+        popover.addEventListener('mouseleave', function() {
+          scheduleHideBadgePopover();
+        });
+        popover.__veloraBound = true;
       }
 
       // 6. 扫描并注入胶囊
@@ -560,10 +590,8 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
             badge.__veloraPaths = match.paths;
             badge.__veloraMatchedName = match.name;
             
-            mountEl.removeEventListener('mouseenter', onMountElMouseEnter);
-            mountEl.removeEventListener('mouseleave', onMountElMouseLeave);
-            mountEl.addEventListener('mouseenter', onMountElMouseEnter);
-            mountEl.addEventListener('mouseleave', onMountElMouseLeave);
+            badge.addEventListener('mouseenter', onBadgeMouseEnter);
+            badge.addEventListener('mouseleave', onBadgeMouseLeave);
             
             mountEl.appendChild(badge);
             mountEl.dataset.veloraDupProcessed = 'true';
@@ -592,6 +620,7 @@ export const getDuplicateMarkScript = (options: DuplicateMarkEngineOptions): str
       window.__veloraDupMarkCancel = function() {
         if (observer) observer.disconnect();
         if (debounceTimer) clearTimeout(debounceTimer);
+        if (popoverHideTimer) clearTimeout(popoverHideTimer);
         if (checkCache) checkCache.clear();
         document.querySelectorAll('.velora-dup-badge').forEach(function(b) { b.remove(); });
         var pop = document.getElementById('velora-dup-global-popover');

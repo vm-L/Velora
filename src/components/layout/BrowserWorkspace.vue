@@ -311,6 +311,7 @@ import {
   getDuplicateMarkScript,
   getDuplicateMarkCleanupScript
 } from '@/utils/duplicateMarkEngine';
+import { getVideoQuickDownloadScript } from '@/utils/videoQuickDownloadEngine';
 import { isUrlMatchPattern, getDefaultUrlPattern } from '@/utils/urlMatcher';
 import type { WaterfallRule, DuplicateMarkRule } from '@/composables/useSettings';
 import { useFileDeduplication } from '@/composables/useFileDeduplication';
@@ -1223,6 +1224,9 @@ const injectTabBaseScripts = async (tabId: string) => {
       } else if (typeof e.message === 'string' && e.message.startsWith('__velora_wf_retry__:')) {
         const triggerTabId = e.message.slice('__velora_wf_retry__:'.length);
         retryWaterfall(triggerTabId || tabId);
+      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_video_quick_download__:')) {
+        const rawJson = e.message.slice('__velora_video_quick_download__:'.length);
+        handleVideoQuickDownload(rawJson, tabId);
       }
     });
   }
@@ -1344,6 +1348,7 @@ const onDomReady = async (tabId: string) => {
   refreshWebviewScripts(tabId, 'dom-ready');
   await injectTabBaseScripts(tabId);
   await applyDuplicateMarksToTab(tabId);
+  await applyVideoQuickDownloadToTab(tabId);
 
   // 检查并自动应用已开启的瀑布流规则
   const webview = document.getElementById(`webview-${tabId}`) as any;
@@ -1552,6 +1557,7 @@ const onStopLoading = (tabId: string) => {
   refreshWebviewScripts(tabId, 'document-end');
   checkAutoApplyWaterfall(tabId);
   applyDuplicateMarksToTab(tabId);
+  applyVideoQuickDownloadToTab(tabId);
 };
 
 const onTitleUpdated = (event: any, tabId: string) => {
@@ -1754,6 +1760,82 @@ const onDownloadVideo = (url: string) => {
     type: 'video',
     pageUrl: getCurrentPageOrigin()
   });
+};
+
+const applyVideoQuickDownloadToTab = async (tabId: string) => {
+  const webview = document.getElementById(`webview-${tabId}`) as any;
+  if (!webview || typeof webview.executeJavaScript !== 'function') return;
+
+  try {
+    const isDark = settingsState.theme === 'dark' || document.documentElement.classList.contains('dark');
+    const script = getVideoQuickDownloadScript({
+      theme: isDark ? 'dark' : 'light'
+    });
+    await webview.executeJavaScript(script);
+  } catch (err: any) {
+    logger.warn('BrowserWorkspace', `执行视频快捷下载脚本失败: ${err?.message || err}`);
+  }
+};
+
+const handleVideoQuickDownload = (rawJson: string, tabId: string) => {
+  let payload: { src?: string; title?: string; pageUrl?: string } = {};
+  try {
+    payload = JSON.parse(rawJson);
+  } catch {
+    payload = { src: rawJson };
+  }
+
+  const rawSrc = (payload.src || '').trim();
+  const pageTitle = (payload.title || '').trim();
+
+  // 1. 若为有效的 HTTP/HTTPS 直链（非 blob: 协议）
+  if (rawSrc && (rawSrc.startsWith('http://') || rawSrc.startsWith('https://'))) {
+    let name = '';
+    try {
+      const u = new URL(rawSrc);
+      const parts = u.pathname.split('/');
+      name = parts[parts.length - 1] || '';
+    } catch {}
+    if (!name || !name.includes('.')) {
+      name = (pageTitle ? sanitizeFilename(pageTitle) : 'video') + '.mp4';
+    }
+    openSaveMediaDialog({
+      url: rawSrc,
+      defaultName: name,
+      defaultDir: settingsState.videoDirectory,
+      type: 'video',
+      pageUrl: payload.pageUrl || getCurrentPageOrigin()
+    });
+    return;
+  }
+
+  // 2. 若为 blob: 协议或当前视频标签无直接直链，优先从当前标签页的嗅探列表中提取
+  const currentTab = workspace.value?.tabs?.find(t => t.id === tabId);
+  const sniffedVideos = currentTab?.sniffedVideos || [];
+
+  if (sniffedVideos.length > 0) {
+    const targetVideo = sniffedVideos[sniffedVideos.length - 1];
+    let name = '';
+    try {
+      const u = new URL(targetVideo.url);
+      const parts = u.pathname.split('/');
+      name = parts[parts.length - 1] || '';
+    } catch {}
+    if (!name || !name.includes('.')) {
+      name = (pageTitle ? sanitizeFilename(pageTitle) : 'video') + '.mp4';
+    }
+    openSaveMediaDialog({
+      url: targetVideo.url,
+      defaultName: name,
+      defaultDir: settingsState.videoDirectory,
+      type: 'video',
+      pageUrl: payload.pageUrl || getCurrentPageOrigin()
+    });
+    return;
+  }
+
+  // 3. 若为 blob 协议且暂未在嗅探器中捕获到直链，弹出 Toast 提示
+  showMessage('未捕获到视频直链，请等待视频缓冲或在嗅探器中查看', 'info');
 };
 
 // Element Picker Logic
