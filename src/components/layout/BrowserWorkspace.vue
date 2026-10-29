@@ -139,10 +139,8 @@
       <div v-if="activeTab?.isBlank" class="blank-tab-placeholder">
         <div class="blank-placeholder-card">
           <div class="blank-icon-wrap">
-            <img v-if="getResourceIcon()" :src="getResourceIcon()" class="blank-resource-icon" referrerpolicy="no-referrer" />
-            <VIcon v-else name="window" :size="36" class="blank-fallback-icon" />
+            <img src="/icon.png" class="blank-resource-icon" alt="Velora Logo" />
           </div>
-          <div class="blank-title">{{ getResourceName() || '新标签页' }}</div>
           <div class="blank-subtitle">输入网址开始浏览</div>
         </div>
       </div>
@@ -924,11 +922,6 @@ const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === worksp
 const getResourceIcon = () => {
   const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
   return isExt?.icon;
-};
-
-const getResourceName = () => {
-  const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
-  return isExt?.name || '';
 };
 
 const init = () => {
@@ -3271,26 +3264,15 @@ watch([() => currentResourceDuplicateRules.value, isDupIndexReady, () => setting
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   box-shadow: var(--shadow-sm);
 
   .blank-resource-icon {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: 8px;
   }
-
-  .blank-fallback-icon {
-    color: var(--text-tertiary);
-  }
-}
-
-.blank-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
 }
 
 .blank-subtitle {

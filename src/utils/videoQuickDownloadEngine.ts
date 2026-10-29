@@ -58,8 +58,6 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         '.velora-video-download-btn {',
         '  position: absolute !important;',
         '  z-index: 2147483640 !important;',
-        '  top: 12px !important;',
-        '  right: 12px !important;',
         '  display: inline-flex !important;',
         '  align-items: center !important;',
         '  justify-content: center !important;',
@@ -82,8 +80,7 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         '  box-sizing: border-box !important;',
         '  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, transform 0.15s ease !important;',
         '}',
-        '*:hover > .velora-video-download-btn,',
-        '.velora-video-download-btn:hover {',
+        '.velora-video-download-btn.visible {',
         '  opacity: 1 !important;',
         '  pointer-events: auto !important;',
         '}',
@@ -95,10 +92,14 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         '.velora-video-download-btn:active {',
         '  transform: scale(0.97) !important;',
         '}',
-        '.velora-video-download-icon {',
+        '.velora-video-download-icon,',
+        '.velora-video-download-icon * {',
         '  width: 13px !important;',
         '  height: 13px !important;',
-        '  flex-shrink: 0 !important;',
+        '  fill: none !important;',
+        '  stroke: currentColor !important;',
+        '  background: transparent !important;',
+        '  box-sizing: border-box !important;',
         '}'
       ].join('\\n');
 
@@ -128,7 +129,23 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         return '';
       }
 
-      // 4. 为可见 video 挂载下载按钮
+      // 4. 精准计算按钮相对于父容器、贴附在 video 画面右上角的位置
+      function updateButtonPosition(video, btn, parent) {
+        if (!video || !btn || !parent) return;
+        try {
+          var vRect = video.getBoundingClientRect();
+          var pRect = parent.getBoundingClientRect();
+          var btnWidth = btn.offsetWidth || 76;
+          var top = (vRect.top - pRect.top) + 12;
+          var left = (vRect.right - pRect.left) - btnWidth - 12;
+
+          btn.style.top = Math.max(4, Math.round(top)) + 'px';
+          btn.style.left = Math.max(4, Math.round(left)) + 'px';
+          btn.style.right = 'auto';
+        } catch (e) {}
+      }
+
+      // 5. 为可见 video 挂载下载按钮并绑定专属 Hover 事件
       function attachButtonToVideo(video) {
         if (!isElementVisible(video)) return;
         var parent = video.parentElement;
@@ -159,6 +176,29 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
           '<span>下载资源</span>'
         ].join('');
 
+        // 仅在鼠标进入该 video 或按钮自身时显现，离开时平滑淡出
+        var hideTimer = null;
+        function showBtn() {
+          if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+          }
+          updateButtonPosition(video, btn, parent);
+          btn.classList.add('visible');
+        }
+
+        function scheduleHideBtn() {
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(function() {
+            btn.classList.remove('visible');
+          }, 120);
+        }
+
+        video.addEventListener('mouseenter', showBtn);
+        video.addEventListener('mouseleave', scheduleHideBtn);
+        btn.addEventListener('mouseenter', showBtn);
+        btn.addEventListener('mouseleave', scheduleHideBtn);
+
         btn.addEventListener('click', function(e) {
           e.stopPropagation();
           e.preventDefault();
@@ -174,7 +214,7 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         parent.appendChild(btn);
       }
 
-      // 5. 扫描并处理当前页面所有 video
+      // 6. 扫描并处理当前页面所有 video
       function processAllVideos() {
         var videos = document.querySelectorAll('video');
         for (var i = 0; i < videos.length; i++) {
@@ -184,7 +224,7 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
 
       processAllVideos();
 
-      // 6. 挂载 MutationObserver 动态感知 DOM 变化与新 video 注入
+      // 7. 挂载 MutationObserver 动态感知 DOM 变化与新 video 注入
       var observerTimer = null;
       var observer = new MutationObserver(function() {
         if (observerTimer) clearTimeout(observerTimer);
@@ -200,7 +240,7 @@ export const getVideoQuickDownloadScript = (options: VideoQuickDownloadOptions =
         attributeFilter: ['style', 'class', 'src']
       });
 
-      // 7. 注册全局清理函数
+      // 8. 注册全局清理函数
       window.__veloraVideoQuickDownloadCancel = function() {
         if (observer) observer.disconnect();
         if (observerTimer) clearTimeout(observerTimer);
