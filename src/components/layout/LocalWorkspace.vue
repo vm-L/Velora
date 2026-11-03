@@ -204,7 +204,7 @@
         <div
           class="context-menu"
           :style="{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }"
-          @click.stop
+          @click.stop="onContextMenuClick"
           @mousedown.stop
           @contextmenu.stop
         >
@@ -310,17 +310,17 @@
 
           <!-- Blank Area Menu -->
           <template v-else>
-            <div class="menu-action-item" @click="showNewFolderModal = true">
+            <div class="menu-action-item" @click="closeContextMenu(); showNewFolderModal = true">
               <VIcon name="plus" :size="14" />
               <span>新建文件夹</span>
             </div>
 
-            <div class="menu-action-item" @click="loadDirectory(currentPath)">
+            <div class="menu-action-item" @click="closeContextMenu(); loadDirectory(currentPath)">
               <VIcon name="refresh" :size="14" />
               <span>刷新</span>
             </div>
 
-            <div class="menu-action-item" @click="openInExplorer(currentPath)">
+            <div class="menu-action-item" @click="closeContextMenu(); openInExplorer(currentPath)">
               <VIcon name="external-link" :size="14" />
               <span>在资源管理器中打开</span>
             </div>
@@ -806,6 +806,7 @@ const handlePreview = async (item: LocalFileItem) => {
 };
 
 const openInExplorer = (targetPath: string) => {
+  closeContextMenu();
   if (!targetPath || !window.electronAPI) return;
   window.electronAPI.showItemInFolder(targetPath);
 };
@@ -1035,6 +1036,13 @@ const onBodyContextMenu = (e: MouseEvent) => {
 
 const closeContextMenu = () => {
   contextMenu.value.visible = false;
+};
+
+const onContextMenuClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('.menu-action-item')) {
+    closeContextMenu();
+  }
 };
 
 const handleContextPreview = (item: LocalFileItem) => {
@@ -1656,6 +1664,13 @@ const handleBatchDelete = async () => {
 const handleKeyDown = (e: KeyboardEvent) => {
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+
+  if (e.key === 'Escape') {
+    if (contextMenu.value.visible) {
+      closeContextMenu();
+      return;
+    }
+  }
 
   // Select all
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {

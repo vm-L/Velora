@@ -258,7 +258,7 @@
     />
 
     <!-- Context Menu -->
-    <div v-show="contextMenuVisible" class="context-menu" tabindex="-1" ref="contextMenuRef" @blur="hideAllContextMenus"
+    <div v-show="contextMenuVisible" class="context-menu" tabindex="-1" ref="contextMenuRef" @blur="hideAllContextMenus" @keydown.esc="hideAllContextMenus"
       :style="{ top: contextMenuPos.y + 'px', left: contextMenuPos.x + 'px' }" @click.stop>
       <div class="menu-item" @click="triggerPickImage">
         <VIcon name="pick-image" size="14" />
@@ -402,7 +402,7 @@ const handleWebviewContextMenu = (e: any, tabId: string) => {
   });
 };
 
-const hideAllContextMenus = (e?: MouseEvent | FocusEvent) => {
+const hideAllContextMenus = (e?: Event) => {
   if (e && e instanceof MouseEvent && e.button !== 0) return;
   contextMenuVisible.value = false;
 };
