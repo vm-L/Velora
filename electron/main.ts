@@ -1359,7 +1359,7 @@ ipcMain.handle('compile-adblock-rules', async (_event, sourcesData: Record<strin
   return updateCompiledRules(sourcesData);
 });
 
-ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => {
+ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string, options?: { autoRename?: boolean }) => {
   try {
     if (!oldPath || !newPath) {
       return { success: false, error: '文件路径不能为空' };
@@ -1379,17 +1379,28 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
     const newDir = path.dirname(newPath);
     await fs.promises.mkdir(newDir, { recursive: true });
 
+    let finalDestPath = newPath;
+    if (options?.autoRename && fs.existsSync(finalDestPath) && path.resolve(oldPath).toLowerCase() !== path.resolve(finalDestPath).toLowerCase()) {
+      const parsed = path.parse(finalDestPath);
+      let counter = 1;
+      while (fs.existsSync(finalDestPath)) {
+        const candidateName = isDir ? `${parsed.name} (${counter})` : `${parsed.name} (${counter})${parsed.ext}`;
+        finalDestPath = path.join(parsed.dir, candidateName);
+        counter++;
+      }
+    }
+
     // 2. 带毫秒级退避重试执行重命名/移动，平滑抵御 Windows 句柄异步释放延迟
     await retryFileOperation(async () => {
       try {
-        await fs.promises.rename(oldPath, newPath);
+        await fs.promises.rename(oldPath, finalDestPath);
       } catch (err: any) {
         if (err.code === 'EXDEV') {
           if (isDir) {
-            await copyDirRecursive(oldPath, newPath);
+            await copyDirRecursive(oldPath, finalDestPath);
             await fs.promises.rm(oldPath, { recursive: true, force: true });
           } else {
-            await fs.promises.copyFile(oldPath, newPath);
+            await fs.promises.copyFile(oldPath, finalDestPath);
             await fs.promises.unlink(oldPath);
           }
         } else {
@@ -1399,14 +1410,14 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
     });
 
     broadcastFileSystemChange({
-      type: path.dirname(oldPath) === path.dirname(newPath) ? 'rename' : 'move',
+      type: path.dirname(oldPath) === path.dirname(finalDestPath) ? 'rename' : 'move',
       oldPath,
-      newPath,
-      name: path.basename(newPath),
+      newPath: finalDestPath,
+      name: path.basename(finalDestPath),
       isDirectory: isDir
     });
 
-    return { success: true };
+    return { success: true, finalPath: finalDestPath };
   } catch (err: any) {
     logger.error('Main', `Failed to move/rename file from ${oldPath} to ${newPath}: ${err.message}`);
     return { success: false, error: err.message };

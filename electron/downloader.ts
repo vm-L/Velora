@@ -133,15 +133,58 @@ export function formatTransientErrorMessage(err: any): string {
 
 /**
  * 计算网络重试等待延迟（毫秒）
- * - 默认瞬态错误：起始 300ms，指数平滑递增，最大封顶 1500ms
- * - HTTP 429 限流错误：起始 1000ms，最大封顶 2500ms（防封禁）
+ * - 1~5 次（快速响应期）：起始 300ms，指数递增至 1.5s，快速自愈偶发断流
+ * - 6~15 次（连接冷却期）：2000ms ~ 4000ms 逐步拉开重试步长，避免打爆连接池或被服务端硬限流
+ * - 16 次以上（长效重试期）：固定 5000ms 稳妥探测
+ * - HTTP 429 限流错误：起始 1500ms，最大封顶 4000ms
  */
 export function getTransientRetryDelay(attempts: number, err?: any): number {
   const errMsg = err ? (err.message || String(err)).toLowerCase() : ''
   if (errMsg.includes('429')) {
-    return Math.min(2500, Math.round(1000 * Math.pow(1.3, Math.min(attempts, 4))))
+    return Math.min(4000, Math.round(1500 * Math.pow(1.3, Math.min(attempts, 5))))
   }
-  return Math.min(1500, Math.round(300 * Math.pow(1.3, Math.max(0, attempts - 1))))
+  if (attempts <= 5) {
+    return Math.min(1500, Math.round(300 * Math.pow(1.3, Math.max(0, attempts - 1))))
+  } else if (attempts <= 15) {
+    return Math.min(4000, 2000 + (attempts - 5) * 200)
+  } else {
+    return 5000
+  }
+}
+
+/**
+ * 带有超时控制的 fetch 封装（防止请求挂起导致 worker 永久卡死）
+ */
+async function fetchWithTimeout(fetchUrl: string, fetchOptions: any, timeoutMs: number = 20000): Promise<any> {
+  const timeoutCtrl = new AbortController()
+  const timer = setTimeout(() => {
+    timeoutCtrl.abort(new Error(`请求超时 (${timeoutMs}ms 未响应)`))
+  }, timeoutMs)
+
+  const parentSignal: AbortSignal | undefined = fetchOptions?.signal
+  const onParentAbort = () => {
+    timeoutCtrl.abort(parentSignal?.reason)
+  }
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      clearTimeout(timer)
+      throw new DOMException('User aborted download', 'AbortError')
+    }
+    parentSignal.addEventListener('abort', onParentAbort, { once: true })
+  }
+
+  try {
+    const res = await net.fetch(fetchUrl, {
+      ...fetchOptions,
+      signal: timeoutCtrl.signal as any
+    })
+    return res
+  } finally {
+    clearTimeout(timer)
+    if (parentSignal) {
+      parentSignal.removeEventListener('abort', onParentAbort)
+    }
+  }
 }
 
 /**
@@ -529,18 +572,19 @@ class Downloader {
     const tempMp4Path = finalSavePath + '.temp.mp4'
     const tempTsPath = finalSavePath + '.temp.ts'
 
-    // 1. 检查是否已有完整封装的目标文件（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
+    // 1. 检查是否已有完整封装的目标文件（仅当记录的分片数已达到总分片数且有效封装时才跳过）
     if (fs.existsSync(finalSavePath) && !fs.existsSync(tempMp4Path) && !fs.existsSync(tempTsPath)) {
       try {
         const stat = fs.statSync(finalSavePath)
-        if (stat.size > 0) {
+        const isSegmentsFullyRecorded = cmd.totalSegments && cmd.downloadedSegments && cmd.downloadedSegments >= cmd.totalSegments
+        if (stat.size > 0 && isSegmentsFullyRecorded) {
           const info = await this.getVideoDurationAndBitrate(finalSavePath)
           if (info.duration > 0) {
             logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标文件已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
             return {
               filePath: finalSavePath,
               fileSize: stat.size,
-              totalSegments: cmd.totalSegments || cmd.downloadedSegments || 1
+              totalSegments: cmd.totalSegments
             }
           }
         }
@@ -599,7 +643,7 @@ class Downloader {
       workSavePath = tempTsPath
     }
 
-    // 2. 检查临时文件是否已全量就绪（在格式转换阶段暂停后继续，跳过网络请求直接执行格式转换）
+    // 2. 检查临时文件是否已全量就绪（必须满足分片数全量达到总分片数，严禁只凭临时文件大小判定就绪）
     if (fs.existsSync(workSavePath)) {
       try {
         const stat = fs.statSync(workSavePath)
@@ -607,8 +651,7 @@ class Downloader {
           cmd.downloadedSegments > 0 &&
           (
             (cmd.totalSegments !== undefined && cmd.downloadedSegments >= cmd.totalSegments) ||
-            (cmd.downloadedSegments >= segments.length) ||
-            (cmd.startBytes !== undefined && cmd.startBytes > 0 && stat.size >= cmd.startBytes)
+            (segments.length > 0 && cmd.downloadedSegments >= segments.length)
           ) &&
           stat.size > 0
 
@@ -701,7 +744,7 @@ class Downloader {
       }
     }
 
-    const concurrency = 8
+    const concurrency = 5
     let segQueueIndex = skipSegments
 
     const fetchNextSegment = async (): Promise<void> => {
@@ -722,20 +765,21 @@ class Downloader {
         let attempts = 0
         let success = false
         const maxAttempts = 5
+        const maxTransientAttempts = 30
 
         while (!success) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
           try {
-            const res = await net.fetch(seg.url, { headers, signal: abortController.signal as any })
+            const res = await fetchWithTimeout(seg.url, { headers, signal: abortController.signal as any }, 20000)
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
             let buf = Buffer.from(await res.arrayBuffer())
 
             if (seg.key && seg.key.method === 'AES-128') {
               let keyBuf = keyCache.get(seg.key.url)
               if (!keyBuf) {
-                const keyRes = await net.fetch(seg.key.url, { headers, signal: abortController.signal as any })
+                const keyRes = await fetchWithTimeout(seg.key.url, { headers, signal: abortController.signal as any }, 15000)
                 if (!keyRes.ok) throw new Error(`Key fetch failed: ${seg.key.url}`)
                 keyBuf = Buffer.from(await keyRes.arrayBuffer())
                 keyCache.set(seg.key.url, keyBuf)
@@ -790,6 +834,11 @@ class Downloader {
             if (e.name === 'AbortError' || abortController.signal.aborted) throw e
             attempts++
             if (isTransientNetworkError(e)) {
+              if (attempts >= maxTransientAttempts) {
+                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxTransientAttempts} 次网络错误均无法恢复，终止任务: ${e.message}`)
+                abortController.abort()
+                throw new Error(`分片 ${seg.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${e.message})`)
+              }
               const friendlyMsg = formatTransientErrorMessage(e)
               logger.warn('Downloader', `[M3U8Downloader] 分片 ${seg.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${e.message}`)
               this.sendProgress({
@@ -848,7 +897,7 @@ class Downloader {
         flushMemoryToDisk(false)
         fs.closeSync(fd)
       } catch {}
-      if (err.name === 'AbortError') {
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
         const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : totalReceivedBytes
         this.sendProgress({
           id,
@@ -1102,7 +1151,7 @@ class Downloader {
       }
 
       let chunkQueueIndex = 0
-      const concurrency = 8
+      const concurrency = 5
 
       const fetchNextChunk = async (): Promise<void> => {
         while (chunkQueueIndex < chunks.length) {
@@ -1112,17 +1161,18 @@ class Downloader {
           const chunkItem = chunks[chunkQueueIndex++]
           let attempts = 0
           let success = false
-
           const maxAttempts = 5
-          while (attempts < maxAttempts && !success) {
+          const maxTransientAttempts = 30
+
+          while (!success) {
             if (abortController.signal.aborted) {
               throw new DOMException('User aborted download', 'AbortError')
             }
             try {
-              const chunkRes = await net.fetch(url, {
+              const chunkRes = await fetchWithTimeout(url, {
                 headers: { ...headers, 'Range': `bytes=${chunkItem.start}-${chunkItem.end}` },
                 signal: abortController.signal as any
-              })
+              }, 20000)
               if (!chunkRes.ok && chunkRes.status !== 206) throw new Error(`HTTP ${chunkRes.status}`)
               
               if (!chunkRes.body) throw new Error("No response body")
@@ -1188,6 +1238,11 @@ class Downloader {
               if (err.name === 'AbortError' || abortController.signal.aborted) throw err
               attempts++
               if (isTransientNetworkError(err)) {
+                if (attempts >= maxTransientAttempts) {
+                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 ${maxTransientAttempts} 次均失败: ${err.message}`)
+                  abortController.abort()
+                  throw new Error(`分块 ${chunkItem.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${err.message})`)
+                }
                 const friendlyMsg = formatTransientErrorMessage(err)
                 logger.warn('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${err.message}`)
                 this.sendProgress({

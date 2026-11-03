@@ -39,7 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compressVideoTask: (taskId: string, filePath: string, targetBitrateKbps: number) => ipcRenderer.invoke('compress-video-task', taskId, filePath, targetBitrateKbps),
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
-  moveFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('move-file', oldPath, newPath),
+  moveFile: (oldPath: string, newPath: string, options?: { autoRename?: boolean }) => ipcRenderer.invoke('move-file', oldPath, newPath, options),
   getDirectoryTree: (rootDir: string, maxDepth?: number) => ipcRenderer.invoke('get-directory-tree', rootDir, maxDepth),
   scanDirectoryMediaFiles: (rootDir: string, maxDepth?: number) => ipcRenderer.invoke('scan-directory-media-files', rootDir, maxDepth),
   scanDirectoriesAllFiles: (rootDirs: string[], maxDepth?: number) => ipcRenderer.invoke('scan-directories-all-files', rootDirs, maxDepth),

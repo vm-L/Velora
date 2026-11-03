@@ -37,7 +37,7 @@ interface Window {
     compressVideoTask: (taskId: string, filePath: string, targetBitrateKbps: number) => Promise<{ success: boolean; newSize?: number; error?: string }>
     deleteFile: (filePath: string) => Promise<boolean>
     fileExists: (filePath: string) => Promise<boolean>
-    moveFile: (oldPath: string, newPath: string) => Promise<{ success: boolean, error?: string }>
+    moveFile: (oldPath: string, newPath: string, options?: { autoRename?: boolean }) => Promise<{ success: boolean, finalPath?: string, error?: string }>
     getDirectoryTree: (rootDir: string, maxDepth?: number) => Promise<Array<{ path: string, name: string, depth: number }>>
     scanDirectoryMediaFiles: (rootDir: string, maxDepth?: number) => Promise<Array<{ name: string; path: string; dir: string; relativeDir: string }>>
     scanDirectoriesAllFiles: (rootDirs: string[], maxDepth?: number) => Promise<Array<{ name: string; path: string }>>
