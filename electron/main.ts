@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
-import { scanDirectory, resolveAppIconPath } from './utils/fileSystem'
+import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive } from './utils/fileSystem'
 
 // 启动渲染与图形硬件加速配置
 app.commandLine.appendSwitch('disable-http-cache', 'false');
@@ -38,6 +38,44 @@ import { logger } from './logger'
 import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams, cleanupAppTempDir } from './videoEditor'
 import { videoTaskManager } from './videoTaskManager'
 
+interface ActiveMediaStream {
+  filePath: string;
+  fileStream: fs.ReadStream;
+  res: http.ServerResponse;
+}
+
+const activeMediaStreams = new Set<ActiveMediaStream>();
+
+export function releaseLocalMediaStreams(targetPath: string): number {
+  if (!targetPath) return 0;
+  const normalizedTarget = path.normalize(targetPath).toLowerCase();
+  let closedCount = 0;
+
+  for (const item of Array.from(activeMediaStreams)) {
+    const itemNorm = path.normalize(item.filePath).toLowerCase();
+    const isDirectMatch = itemNorm === normalizedTarget;
+    const isSubPathMatch = itemNorm.startsWith(normalizedTarget.endsWith(path.sep) ? normalizedTarget : normalizedTarget + path.sep);
+
+    if (isDirectMatch || isSubPathMatch) {
+      try {
+        item.fileStream.destroy();
+      } catch {}
+      try {
+        if (!item.res.writableEnded) {
+          item.res.destroy();
+        }
+      } catch {}
+      activeMediaStreams.delete(item);
+      closedCount++;
+    }
+  }
+
+  if (closedCount > 0) {
+    logger.info('Main', `[MediaServer] 已强制释放 ${closedCount} 个本地媒体流句柄: ${targetPath}`);
+  }
+  return closedCount;
+}
+
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
   try {
@@ -54,12 +92,21 @@ const mediaServer = http.createServer(async (req, res) => {
       
       let contentType = 'application/octet-stream';
       const ext = filePath.split('.').pop()?.toLowerCase();
-      if (ext === 'mp4') contentType = 'video/mp4';
+      if (ext === 'mp4' || ext === 'm4v') contentType = 'video/mp4';
       else if (ext === 'm3u8') contentType = 'application/x-mpegURL';
       else if (ext === 'ts') contentType = 'video/MP2T';
       else if (ext === 'mp3') contentType = 'audio/mpeg';
       else if (ext === 'webm') contentType = 'video/webm';
+      else if (ext === 'mkv') contentType = 'video/x-matroska';
+      else if (ext === 'flv' || ext === 'f4v') contentType = 'video/x-flv';
+      else if (ext === 'mov' || ext === 'qt') contentType = 'video/quicktime';
+      else if (ext === 'avi') contentType = 'video/x-msvideo';
+      else if (ext === 'wmv') contentType = 'video/x-ms-wmv';
+      else if (ext === '3gp') contentType = 'video/3gpp';
+      else if (ext === 'ogg' || ext === 'ogv') contentType = 'video/ogg';
       else if (ext === 'png') contentType = 'image/png';
+      else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+      else if (ext === 'webp') contentType = 'image/webp';
       else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
       else if (ext === 'webp') contentType = 'image/webp';
       else if (ext === 'gif') contentType = 'image/gif';
@@ -124,19 +171,24 @@ const mediaServer = http.createServer(async (req, res) => {
           'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath, { start, end });
+        const streamEntry: ActiveMediaStream = { filePath, fileStream, res };
+        activeMediaStreams.add(streamEntry);
+        const cleanUpStream = () => {
+          activeMediaStreams.delete(streamEntry);
+          try { fileStream.destroy(); } catch {}
+        };
+
         fileStream.on('error', (err) => {
           logger.warn('Protocol', `Local media stream pipe error: ${err.message}`);
+          cleanUpStream();
           if (!res.headersSent) {
             res.writeHead(500);
           }
           res.end();
         });
-        req.on('close', () => {
-          fileStream.destroy();
-        });
-        res.on('finish', () => {
-          fileStream.destroy();
-        });
+        req.on('close', cleanUpStream);
+        res.on('finish', cleanUpStream);
+        fileStream.on('close', () => activeMediaStreams.delete(streamEntry));
         fileStream.pipe(res);
       } else {
         res.writeHead(200, {
@@ -146,19 +198,24 @@ const mediaServer = http.createServer(async (req, res) => {
           'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath);
+        const streamEntry: ActiveMediaStream = { filePath, fileStream, res };
+        activeMediaStreams.add(streamEntry);
+        const cleanUpStream = () => {
+          activeMediaStreams.delete(streamEntry);
+          try { fileStream.destroy(); } catch {}
+        };
+
         fileStream.on('error', (err) => {
           logger.warn('Protocol', `Local media full stream error: ${err.message}`);
+          cleanUpStream();
           if (!res.headersSent) {
             res.writeHead(500);
           }
           res.end();
         });
-        req.on('close', () => {
-          fileStream.destroy();
-        });
-        res.on('finish', () => {
-          fileStream.destroy();
-        });
+        req.on('close', cleanUpStream);
+        res.on('finish', cleanUpStream);
+        fileStream.on('close', () => activeMediaStreams.delete(streamEntry));
         fileStream.pipe(res);
       }
     } else {
@@ -300,13 +357,6 @@ function updateSplashTheme(theme: string) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
   splashWindow.webContents.executeJavaScript(`
     window.setTheme && window.setTheme(${JSON.stringify(theme)});
-  `).catch(() => {});
-}
-
-function updateSplashText(text: string) {
-  if (!splashWindow || splashWindow.isDestroyed()) return;
-  splashWindow.webContents.executeJavaScript(`
-    window.setStatusText && window.setStatusText(${JSON.stringify(text)});
   `).catch(() => {});
 }
 
@@ -846,8 +896,8 @@ function setupNetworkInterceptors() {
         return callback({});
       }
 
-      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/i);
-      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|mkv|avi)$/i);
+      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac|wma|opus|aiff|ape)$/i);
+      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|f4v|mkv|avi|mov|qt|wmv|asf|3gp|3g2|m2ts|vob|mpg|mpeg|ogv)$/i);
 
       if (isAudioExt) type = 'audio';
       else if (isVideoExt) type = 'video';
@@ -897,14 +947,9 @@ function setupNetworkInterceptors() {
       }
       let type = '';
 
-      const isImageExt = pathname.match(/\.(png|jpe?g|gif|webp|svg|ico)$/i);
-      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/i);
-      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|mkv|avi)$/i);
-
-      // Require a whitelisted suffix, otherwise block/ignore from sniffing
-      if (!isImageExt && !isAudioExt && !isVideoExt) {
-        return callback({ responseHeaders });
-      }
+      const isImageExt = pathname.match(/\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff)$/i);
+      const isAudioExt = pathname.match(/\.(mp3|wav|ogg|m4a|aac|flac|wma|opus|aiff|ape)$/i);
+      const isVideoExt = pathname.match(/\.(mp4|webm|m3u8|flv|f4v|mkv|avi|mov|qt|wmv|asf|3gp|3g2|m2ts|vob|mpg|mpeg|ogv)$/i);
 
       if (pathname.endsWith('.m4s') || pathname.endsWith('.mpd') || pathname.endsWith('.ts')) {
         return callback({ responseHeaders });
@@ -920,15 +965,34 @@ function setupNetworkInterceptors() {
         }
       }
 
-      const audioMimeWhitelist = ['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/aac', 'audio/flac', 'audio/x-m4a', 'audio/mp4'];
-      const videoMimeWhitelist = ['video/mp4', 'video/webm', 'video/x-flv', 'video/avi', 'video/mpeg', 'application/x-mpegurl', 'application/vnd.apple.mpegurl'];
-      const imageMimeWhitelist = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'image/x-icon'];
+      const audioMimeWhitelist = [
+        'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/aac',
+        'audio/flac', 'audio/x-m4a', 'audio/mp4', 'audio/x-ms-wma', 'audio/opus',
+        'audio/x-wav', 'audio/aiff'
+      ];
+      const videoMimeWhitelist = [
+        'video/mp4', 'video/webm', 'video/x-flv', 'video/flv', 'video/avi',
+        'video/x-msvideo', 'video/quicktime', 'video/x-matroska', 'video/x-ms-wmv',
+        'video/x-ms-asf', 'video/3gpp', 'video/3gpp2', 'video/mpeg', 'video/mp2t',
+        'video/ogg', 'application/x-mpegurl', 'application/vnd.apple.mpegurl',
+        'application/dash+xml'
+      ];
+      const imageMimeWhitelist = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'image/x-icon', 'image/bmp'];
 
-      if (isImageExt && (details.resourceType === 'image' || imageMimeWhitelist.some(mime => contentType.startsWith(mime)))) {
+      const matchesAudioMime = audioMimeWhitelist.some(mime => contentType.startsWith(mime));
+      const matchesVideoMime = videoMimeWhitelist.some(mime => contentType.startsWith(mime) || contentType.includes('mpegurl'));
+      const matchesImageMime = imageMimeWhitelist.some(mime => contentType.startsWith(mime));
+
+      // 若既无匹配后缀，且 Content-Type 也不在白名单中，并且资源类型不是 media/image，则忽略
+      if (!isImageExt && !isAudioExt && !isVideoExt && !matchesAudioMime && !matchesVideoMime && !matchesImageMime) {
+        return callback({ responseHeaders });
+      }
+
+      if (isImageExt && (details.resourceType === 'image' || matchesImageMime)) {
         type = 'image';
-      } else if (isAudioExt && audioMimeWhitelist.some(mime => contentType.startsWith(mime))) {
+      } else if (matchesAudioMime || (isAudioExt && (details.resourceType === 'media' || !contentType || matchesAudioMime))) {
         type = 'audio';
-      } else if (isVideoExt && videoMimeWhitelist.some(mime => contentType.startsWith(mime) || contentType.includes('mpegurl'))) {
+      } else if (matchesVideoMime || (isVideoExt && (details.resourceType === 'media' || !contentType || matchesVideoMime))) {
         type = 'video';
       }
 
@@ -1029,6 +1093,7 @@ const getMountedLocalResources = async () => {
 
 const initOrRestartLanServer = async () => {
   lanServer.setFileSystemChangeCallback(broadcastFileSystemChange);
+  lanServer.setReleaseMediaStreamsCallback(releaseLocalMediaStreams);
   const enabled = await storeManager.getSetting('lanShareEnabled');
   if (!enabled) {
     await lanServer.stop();
@@ -1241,7 +1306,7 @@ app.on('before-quit', (e) => {
   }
 })
 
-app.on('web-contents-created', (event, contents) => {
+app.on('web-contents-created', (_, contents) => {
   contents.once('destroyed', () => {
     webContentsUrlMap.delete(contents.id);
   });
@@ -1305,19 +1370,33 @@ ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string) => 
       isDir = stat.isDirectory();
     } catch {}
 
+    // 1. 操作前主动释放所有关联媒体读流句柄（涵盖单文件及父目录场景）
+    releaseLocalMediaStreams(oldPath);
+    if (lanServer && typeof lanServer.releaseStreams === 'function') {
+      lanServer.releaseStreams(oldPath);
+    }
+
     const newDir = path.dirname(newPath);
     await fs.promises.mkdir(newDir, { recursive: true });
 
-    try {
-      await fs.promises.rename(oldPath, newPath);
-    } catch (err: any) {
-      if (err.code === 'EXDEV') {
-        await fs.promises.copyFile(oldPath, newPath);
-        await fs.promises.unlink(oldPath);
-      } else {
-        throw err;
+    // 2. 带毫秒级退避重试执行重命名/移动，平滑抵御 Windows 句柄异步释放延迟
+    await retryFileOperation(async () => {
+      try {
+        await fs.promises.rename(oldPath, newPath);
+      } catch (err: any) {
+        if (err.code === 'EXDEV') {
+          if (isDir) {
+            await copyDirRecursive(oldPath, newPath);
+            await fs.promises.rm(oldPath, { recursive: true, force: true });
+          } else {
+            await fs.promises.copyFile(oldPath, newPath);
+            await fs.promises.unlink(oldPath);
+          }
+        } else {
+          throw err;
+        }
       }
-    }
+    });
 
     broadcastFileSystemChange({
       type: path.dirname(oldPath) === path.dirname(newPath) ? 'rename' : 'move',
@@ -1390,8 +1469,8 @@ ipcMain.handle('scan-directory-media-files', async (_event, rootDir: string, max
     }
 
     const MEDIA_EXTS = new Set([
-      'mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v', 'ts', 'm3u8',
-      'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'jpg', 'png', 'webp'
+      'mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'f4v', 'm4v', 'ts', 'm3u8', '3gp', '3g2', 'wmv', 'asf', 'vob', 'mpg', 'mpeg', 'ogv',
+      'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'wma', 'opus', 'aiff', 'ape', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'
     ]);
 
     interface ExistingMediaFile {
@@ -1533,7 +1612,18 @@ ipcMain.handle('delete-local-path', async (_event, targetPath: string) => {
       const stat = await fs.promises.stat(targetPath);
       isDir = stat.isDirectory();
     } catch {}
-    await fs.promises.rm(targetPath, { recursive: true, force: true });
+
+    // 1. 操作前主动释放所有关联媒体读流句柄
+    releaseLocalMediaStreams(targetPath);
+    if (lanServer && typeof lanServer.releaseStreams === 'function') {
+      lanServer.releaseStreams(targetPath);
+    }
+
+    // 2. 带毫秒级退避重试执行删除
+    await retryFileOperation(async () => {
+      await fs.promises.rm(targetPath, { recursive: true, force: true });
+    });
+
     broadcastFileSystemChange({
       type: 'delete',
       path: targetPath,
@@ -1548,7 +1638,10 @@ ipcMain.handle('delete-local-path', async (_event, targetPath: string) => {
 });
 
 ipcMain.handle('scan-local-videos', async (_event, targetPaths: string[]) => {
-  const VIDEO_EXTS = new Set(['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v', 'ts', 'm3u8']);
+  const VIDEO_EXTS = new Set([
+    'mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'f4v', 'm4v', 'ts', 'm3u8',
+    '3gp', '3g2', 'wmv', 'asf', 'vob', 'mpg', 'mpeg', 'ogv'
+  ]);
   const results: Array<{ name: string; path: string; size: number }> = [];
 
   const scanPath = async (p: string) => {

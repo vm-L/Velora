@@ -1783,6 +1783,54 @@ const applyVideoQuickDownloadToTab = async (tabId: string) => {
   }
 };
 
+const getBestSniffedVideo = (sniffedVideos: Array<{ url: string; timestamp: number }>): { url: string; timestamp: number } | null => {
+  if (!sniffedVideos || sniffedVideos.length === 0) return null;
+
+  // 1. 优先过滤掉单一的音视频切片片段（如 .m4s, .ts）
+  const nonFragments = sniffedVideos.filter(item => {
+    try {
+      const pathname = new URL(item.url).pathname.toLowerCase();
+      if (pathname.endsWith('.m4s') || pathname.endsWith('.ts')) return false;
+    } catch {}
+    return true;
+  });
+
+  const candidates = nonFragments.length > 0 ? nonFragments : sniffedVideos;
+
+  // 2. 严格优先查找 .m3u8 完整播放列表
+  const m3u8List = candidates.filter(item => {
+    try {
+      const u = new URL(item.url);
+      return u.pathname.toLowerCase().endsWith('.m3u8') || u.href.toLowerCase().includes('.m3u8');
+    } catch {
+      return false;
+    }
+  });
+
+  if (m3u8List.length > 0) {
+    // 优先选择包含完整主播放源特征（如 time=0、master、playlist）的 m3u8，若无则取最新的一条 m3u8
+    const preferred = m3u8List.find(m => m.url.includes('time=0') || m.url.includes('master') || m.url.includes('playlist')) || m3u8List[m3u8List.length - 1];
+    return preferred;
+  }
+
+  // 3. 其次查找主流直链视频格式
+  const directVideos = candidates.filter(item => {
+    try {
+      const pathname = new URL(item.url).pathname.toLowerCase();
+      return /\.(mp4|webm|flv|f4v|mkv|mov|avi|wmv|3gp)$/i.test(pathname);
+    } catch {
+      return false;
+    }
+  });
+
+  if (directVideos.length > 0) {
+    return directVideos[directVideos.length - 1];
+  }
+
+  // 4. 回退到候选列表中最新的一项
+  return candidates[candidates.length - 1];
+};
+
 const handleVideoQuickDownload = (rawJson: string, tabId: string) => {
   let payload: { src?: string; title?: string; pageUrl?: string } = {};
   try {
@@ -1793,45 +1841,43 @@ const handleVideoQuickDownload = (rawJson: string, tabId: string) => {
 
   const rawSrc = (payload.src || '').trim();
   const pageTitle = (payload.title || '').trim();
-
-  // 1. 若为有效的 HTTP/HTTPS 直链（非 blob: 协议）
-  if (rawSrc && (rawSrc.startsWith('http://') || rawSrc.startsWith('https://'))) {
-    let name = '';
-    try {
-      const u = new URL(rawSrc);
-      const parts = u.pathname.split('/');
-      name = parts[parts.length - 1] || '';
-    } catch {}
-    if (!name || !name.includes('.')) {
-      name = (pageTitle ? sanitizeFilename(pageTitle) : 'video') + '.mp4';
-    }
-    openSaveMediaDialog({
-      url: rawSrc,
-      defaultName: name,
-      defaultDir: settingsState.videoDirectory,
-      type: 'video',
-      pageUrl: payload.pageUrl || getCurrentPageOrigin()
-    });
-    return;
-  }
-
-  // 2. 若为 blob: 协议或当前视频标签无直接直链，优先从当前标签页的嗅探列表中提取
   const currentTab = workspace.value?.tabs?.find(t => t.id === tabId);
   const sniffedVideos = currentTab?.sniffedVideos || [];
+  const bestSniffed = getBestSniffedVideo(sniffedVideos);
 
-  if (sniffedVideos.length > 0) {
-    const targetVideo = sniffedVideos[sniffedVideos.length - 1];
+  let targetUrl = '';
+  const isRawFragment = rawSrc && (rawSrc.toLowerCase().includes('.m4s') || rawSrc.toLowerCase().includes('.ts'));
+
+  // 1. 若原始 src 是非 blob 直链且不是局部切片（.m4s/.ts），直接使用
+  if (rawSrc && (rawSrc.startsWith('http://') || rawSrc.startsWith('https://')) && !rawSrc.startsWith('blob:') && !isRawFragment) {
+    targetUrl = rawSrc;
+  } else if (bestSniffed) {
+    // 2. 否则从嗅探器列表中提取最优的完整视频流（如 .m3u8 完整主播放列表）
+    targetUrl = bestSniffed.url;
+  } else if (rawSrc && !rawSrc.startsWith('blob:')) {
+    targetUrl = rawSrc;
+  }
+
+  if (targetUrl) {
     let name = '';
     try {
-      const u = new URL(targetVideo.url);
+      const u = new URL(targetUrl);
       const parts = u.pathname.split('/');
       name = parts[parts.length - 1] || '';
     } catch {}
-    if (!name || !name.includes('.')) {
+
+    const isHls = targetUrl.toLowerCase().includes('.m3u8');
+    if (isHls || !name || !name.includes('.')) {
       name = (pageTitle ? sanitizeFilename(pageTitle) : 'video') + '.mp4';
+    } else {
+      const hasValidExt = /\.(mp4|webm|mkv|flv|f4v|mov|avi|wmv|3gp)$/i.test(name);
+      if (!hasValidExt) {
+        name = name.replace(/\.[^.]+$/, '') + '.mp4';
+      }
     }
+
     openSaveMediaDialog({
-      url: targetVideo.url,
+      url: targetUrl,
       defaultName: name,
       defaultDir: settingsState.videoDirectory,
       type: 'video',

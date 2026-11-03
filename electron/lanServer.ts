@@ -5,15 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { logger } from './logger';
 import { getLanWebHtml } from './lanWebTemplate';
-import { scanDirectory, resolveAppIconPath } from './utils/fileSystem';
-import {
-  editVideoSegments,
-  mergeVideos,
-  compressVideo,
-  cancelVideoEdit,
-  cancelVideoMerge,
-  cancelVideoCompress
-} from './videoEditor';
+import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive } from './utils/fileSystem';
 import { videoTaskManager, VideoQueueState } from './videoTaskManager';
 
 function sanitizeFilename(filename: string, fallback: string): string {
@@ -57,11 +49,47 @@ export class LanServer {
   private taskQueueSubscribers = new Set<http.ServerResponse>();
   private latestTaskEvents = new Map<string, TaskEvent>();
   private onFileSystemChangeCallback: ((event: any) => void) | null = null;
+  private onReleaseMediaStreamsCallback: ((targetPath: string) => void) | null = null;
+  private activeStreams = new Set<{ filePath: string; fileStream: fs.ReadStream; res: http.ServerResponse }>();
 
   constructor() {}
 
   public setFileSystemChangeCallback(cb: (event: any) => void) {
     this.onFileSystemChangeCallback = cb;
+  }
+
+  public setReleaseMediaStreamsCallback(cb: (targetPath: string) => void) {
+    this.onReleaseMediaStreamsCallback = cb;
+  }
+
+  public releaseStreams(targetPath: string): number {
+    if (!targetPath) return 0;
+    const normalizedTarget = path.normalize(targetPath).toLowerCase();
+    let closedCount = 0;
+
+    for (const item of Array.from(this.activeStreams)) {
+      const itemNorm = path.normalize(item.filePath).toLowerCase();
+      const isDirectMatch = itemNorm === normalizedTarget;
+      const isSubPathMatch = itemNorm.startsWith(normalizedTarget.endsWith(path.sep) ? normalizedTarget : normalizedTarget + path.sep);
+
+      if (isDirectMatch || isSubPathMatch) {
+        try { item.fileStream.destroy(); } catch {}
+        try { if (!item.res.writableEnded) item.res.destroy(); } catch {}
+        this.activeStreams.delete(item);
+        closedCount++;
+      }
+    }
+
+    if (this.onReleaseMediaStreamsCallback) {
+      try {
+        this.onReleaseMediaStreamsCallback(targetPath);
+      } catch {}
+    }
+
+    if (closedCount > 0) {
+      logger.info('LanServer', `[LanServer] 已强制释放 ${closedCount} 个局域网读流句柄: ${targetPath}`);
+    }
+    return closedCount;
   }
 
   public broadcastTaskQueueState(state: VideoQueueState) {
@@ -502,19 +530,24 @@ export class LanServer {
           });
 
           const fileStream = fs.createReadStream(filePath, { start, end });
+          const streamEntry = { filePath, fileStream, res };
+          this.activeStreams.add(streamEntry);
+          const cleanUpStream = () => {
+            this.activeStreams.delete(streamEntry);
+            try { fileStream.destroy(); } catch {}
+          };
+
           fileStream.on('error', (err) => {
             logger.warn('LanServer', `Stream pipe error for ${filePath}: ${err.message}`);
+            cleanUpStream();
             if (!res.headersSent) {
               res.writeHead(500);
             }
             res.end();
           });
-          req.on('close', () => {
-            fileStream.destroy();
-          });
-          res.on('finish', () => {
-            fileStream.destroy();
-          });
+          req.on('close', cleanUpStream);
+          res.on('finish', cleanUpStream);
+          fileStream.on('close', () => this.activeStreams.delete(streamEntry));
           return fileStream.pipe(res);
         } else {
           res.writeHead(200, {
@@ -524,16 +557,24 @@ export class LanServer {
             'Accept-Ranges': 'bytes'
           });
           const fileStream = fs.createReadStream(filePath);
+          const streamEntry = { filePath, fileStream, res };
+          this.activeStreams.add(streamEntry);
+          const cleanUpStream = () => {
+            this.activeStreams.delete(streamEntry);
+            try { fileStream.destroy(); } catch {}
+          };
+
           fileStream.on('error', (err) => {
             logger.warn('LanServer', `Full stream error for ${filePath}: ${err.message}`);
+            cleanUpStream();
             if (!res.headersSent) {
               res.writeHead(500);
             }
             res.end();
           });
-          req.on('close', () => {
-            fileStream.destroy();
-          });
+          req.on('close', cleanUpStream);
+          res.on('finish', cleanUpStream);
+          fileStream.on('close', () => this.activeStreams.delete(streamEntry));
           return fileStream.pipe(res);
         }
       }
@@ -559,6 +600,16 @@ export class LanServer {
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', stat.size);
         const fileStream = fs.createReadStream(filePath);
+        const streamEntry = { filePath, fileStream, res };
+        this.activeStreams.add(streamEntry);
+        const cleanUpStream = () => {
+          this.activeStreams.delete(streamEntry);
+          try { fileStream.destroy(); } catch {}
+        };
+        fileStream.on('error', cleanUpStream);
+        req.on('close', cleanUpStream);
+        res.on('finish', cleanUpStream);
+        fileStream.on('close', () => this.activeStreams.delete(streamEntry));
         return fileStream.pipe(res);
       }
 
@@ -650,15 +701,25 @@ export class LanServer {
           const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
           const dir = path.dirname(targetPath);
           const newPath = path.join(dir, newName);
-          await fs.promises.rename(targetPath, newPath);
-          this.notifyFileSystemChange({
-            type: 'rename',
-            oldPath: targetPath,
-            newPath,
-            name: newName,
-            isDirectory: isDir
-          });
-          return this.sendJson(res, 200, { success: true });
+
+          this.releaseStreams(targetPath);
+
+          try {
+            await retryFileOperation(async () => {
+              await fs.promises.rename(targetPath, newPath);
+            });
+            this.notifyFileSystemChange({
+              type: 'rename',
+              oldPath: targetPath,
+              newPath,
+              name: newName,
+              isDirectory: isDir
+            });
+            return this.sendJson(res, 200, { success: true });
+          } catch (err: any) {
+            logger.error('LanServer', `重命名失败: ${err.message}`);
+            return this.sendJson(res, 500, { success: false, error: `重命名失败: ${err.message}` });
+          }
         }
 
         if (pathname === '/api/delete') {
@@ -667,13 +728,23 @@ export class LanServer {
           const isAllowed = await this.isPathInAllowedResources(targetPath);
           if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
           const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
-          await fs.promises.rm(targetPath, { recursive: true, force: true });
-          this.notifyFileSystemChange({
-            type: 'delete',
-            path: targetPath,
-            isDirectory: isDir
-          });
-          return this.sendJson(res, 200, { success: true });
+
+          this.releaseStreams(targetPath);
+
+          try {
+            await retryFileOperation(async () => {
+              await fs.promises.rm(targetPath, { recursive: true, force: true });
+            });
+            this.notifyFileSystemChange({
+              type: 'delete',
+              path: targetPath,
+              isDirectory: isDir
+            });
+            return this.sendJson(res, 200, { success: true });
+          } catch (err: any) {
+            logger.error('LanServer', `删除失败: ${err.message}`);
+            return this.sendJson(res, 500, { success: false, error: `删除失败: ${err.message}` });
+          }
         }
 
         if (pathname === '/api/move') {
@@ -742,7 +813,26 @@ export class LanServer {
             }
 
             try {
-              await fs.promises.rename(src, destPath);
+              this.releaseStreams(src);
+
+              await retryFileOperation(async () => {
+                try {
+                  await fs.promises.rename(src, destPath);
+                } catch (err: any) {
+                  if (err.code === 'EXDEV') {
+                    if (srcStat.isDirectory()) {
+                      await copyDirRecursive(src, destPath);
+                      await fs.promises.rm(src, { recursive: true, force: true });
+                    } else {
+                      await fs.promises.copyFile(src, destPath);
+                      await fs.promises.unlink(src);
+                    }
+                  } else {
+                    throw err;
+                  }
+                }
+              });
+
               movedPaths.push(destPath.replace(/\\/g, '/'));
               this.notifyFileSystemChange({
                 type: 'move',
@@ -752,25 +842,7 @@ export class LanServer {
                 isDirectory: srcStat.isDirectory()
               });
             } catch (err: any) {
-              if (err.code === 'EXDEV') {
-                if (srcStat.isDirectory()) {
-                  await fs.promises.cp(src, destPath, { recursive: true });
-                  await fs.promises.rm(src, { recursive: true, force: true });
-                } else {
-                  await fs.promises.copyFile(src, destPath);
-                  await fs.promises.unlink(src);
-                }
-                movedPaths.push(destPath.replace(/\\/g, '/'));
-                this.notifyFileSystemChange({
-                  type: 'move',
-                  oldPath: src,
-                  newPath: destPath,
-                  name: path.basename(destPath),
-                  isDirectory: srcStat.isDirectory()
-                });
-              } else {
-                errors.push(`移动失败: ${baseName} (${err.message || '未知原因'})`);
-              }
+              errors.push(`移动失败: ${baseName} (${err.message || '未知原因'})`);
             }
           }
 
@@ -891,7 +963,7 @@ export class LanServer {
 
         // Cut video segments (Unified via VideoTaskManager)
         if (pathname === '/api/video-cut') {
-          const { taskId, sourcePath, segments, cutMode, mode, customFilename } = params;
+          const { taskId, sourcePath, segments, mode, customFilename } = params;
           if (!sourcePath || !Array.isArray(segments) || segments.length === 0) {
             return this.sendJson(res, 400, { success: false, error: '参数缺失' });
           }

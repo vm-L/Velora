@@ -43,10 +43,111 @@ export interface M3U8Segment {
   key?: { method: string, url: string, iv?: string }
 }
 
+export interface M3U8ParseResult {
+  segments: M3U8Segment[]
+  isFmp4: boolean
+}
+
 /**
- * 智能解析 M3U8 Playlist (自动处理 Master Playlist 与相对路径)
+ * 判断是否为瞬态网络波动错误（连接重置、超时、临时断网、网关抖动等）
  */
-async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8Segment[]> {
+export function isTransientNetworkError(err: any): boolean {
+  if (!err) return false
+  if (err.name === 'AbortError') return false
+
+  const msg = (err.message || String(err)).toLowerCase()
+  const code = (err.code || '').toLowerCase()
+
+  // 明确的致命错误，不可按瞬态重试
+  if (
+    msg.includes('http 404') ||
+    msg.includes('http 403') ||
+    msg.includes('http 401') ||
+    msg.includes('http 410') ||
+    code === 'enospc' ||
+    msg.includes('enospc') ||
+    code === 'eacces' ||
+    code === 'eperm' ||
+    code === 'erofs'
+  ) {
+    return false
+  }
+
+  // 瞬态网络特征匹配
+  const transientPatterns = [
+    'err_connection_reset',
+    'err_connection_closed',
+    'err_connection_refused',
+    'err_connection_timed_out',
+    'err_timed_out',
+    'err_network_changed',
+    'err_internet_disconnected',
+    'err_name_not_resolved',
+    'err_address_unreachable',
+    'err_ssl_protocol_error',
+    'econnreset',
+    'etimedout',
+    'econnrefused',
+    'ehostunreach',
+    'enetunreach',
+    'enotfound',
+    'fetch failed',
+    'socket hang up',
+    'premature close',
+    'network error',
+    'timeout',
+    'http 429',
+    'http 500',
+    'http 502',
+    'http 503',
+    'http 504'
+  ]
+
+  return transientPatterns.some(pattern => msg.includes(pattern) || code.includes(pattern))
+}
+
+/**
+ * 格式化瞬态错误信息为简明直观的提示（用于界面红字提示）
+ */
+export function formatTransientErrorMessage(err: any): string {
+  if (!err) return '网络连接异常'
+  const msg = err.message || String(err)
+
+  if (/err_connection_reset/i.test(msg)) return 'net::ERR_CONNECTION_RESET'
+  if (/err_connection_closed/i.test(msg)) return 'net::ERR_CONNECTION_CLOSED'
+  if (/err_connection_refused/i.test(msg)) return 'net::ERR_CONNECTION_REFUSED'
+  if (/err_connection_timed_out|err_timed_out|etimedout/i.test(msg)) return '连接超时 (ETIMEDOUT)'
+  if (/err_network_changed/i.test(msg)) return '网络发生变动'
+  if (/err_internet_disconnected/i.test(msg)) return '网络已断开'
+  if (/err_name_not_resolved|enotfound/i.test(msg)) return '域名解析失败 (ENOTFOUND)'
+  if (/econnreset/i.test(msg)) return '连接重置 (ECONNRESET)'
+  if (/http 429/i.test(msg)) return '请求过于频繁 (HTTP 429)'
+  if (/http 502/i.test(msg)) return '网关错误 (HTTP 502)'
+  if (/http 503/i.test(msg)) return '服务暂不可用 (HTTP 503)'
+  if (/http 504/i.test(msg)) return '网关超时 (HTTP 504)'
+  if (/http 500/i.test(msg)) return '服务器内部错误 (HTTP 500)'
+
+  const firstLine = msg.split('\n')[0].trim()
+  return firstLine.length > 35 ? firstLine.slice(0, 35) + '...' : firstLine
+}
+
+/**
+ * 计算网络重试等待延迟（毫秒）
+ * - 默认瞬态错误：起始 300ms，指数平滑递增，最大封顶 1500ms
+ * - HTTP 429 限流错误：起始 1000ms，最大封顶 2500ms（防封禁）
+ */
+export function getTransientRetryDelay(attempts: number, err?: any): number {
+  const errMsg = err ? (err.message || String(err)).toLowerCase() : ''
+  if (errMsg.includes('429')) {
+    return Math.min(2500, Math.round(1000 * Math.pow(1.3, Math.min(attempts, 4))))
+  }
+  return Math.min(1500, Math.round(300 * Math.pow(1.3, Math.max(0, attempts - 1))))
+}
+
+/**
+ * 智能解析 M3U8 Playlist (自动处理 Master Playlist 与相对路径，识别 fMP4/m4s 切片)
+ */
+async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8ParseResult> {
   const response = await net.fetch(playlistUrl, { headers: originHeaders })
   if (!response.ok) {
     throw new Error(`无法获取 M3U8 播放列表: HTTP ${response.status}`)
@@ -93,6 +194,11 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
   let currentDuration = 0
   let index = 0
   let currentKey: { method: string, url: string, iv?: string } | undefined = undefined
+  let isFmp4 = false
+
+  if (text.includes('#EXT-X-MAP:')) {
+    isFmp4 = true
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -114,6 +220,7 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
         }
       }
     } else if (line.startsWith('#EXT-X-MAP:')) {
+      isFmp4 = true
       const uriMatch = line.match(/URI="([^"]+)"/)
       if (uriMatch) {
         segments.push({
@@ -130,6 +237,10 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
       }
     } else if (line && !line.startsWith('#')) {
       const segUrl = resolveUrl(playlistUrl, line)
+      const segLower = segUrl.toLowerCase()
+      if (segLower.includes('.m4s') || segLower.includes('.mp4')) {
+        isFmp4 = true
+      }
       segments.push({
         index: index++,
         url: segUrl,
@@ -139,7 +250,7 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8S
     }
   }
 
-  return segments
+  return { segments, isFmp4 }
 }
 
 function resolveUrl(baseUrl: string, relativeOrAbsolute: string): string {
@@ -407,7 +518,7 @@ class Downloader {
     }
 
     let finalSavePath = savePath
-    if (!finalSavePath.toLowerCase().endsWith('.mp4')) {
+    if (!finalSavePath.toLowerCase().endsWith('.mp4') && !finalSavePath.toLowerCase().endsWith('.mkv')) {
       if (finalSavePath.toLowerCase().endsWith('.m3u8') || finalSavePath.toLowerCase().endsWith('.ts')) {
         finalSavePath = finalSavePath.replace(/\.(m3u8|ts)$/i, '.mp4')
       } else {
@@ -415,16 +526,17 @@ class Downloader {
       }
     }
     const isTargetMp4 = true
-    const workSavePath = finalSavePath + '.temp.ts'
+    const tempMp4Path = finalSavePath + '.temp.mp4'
+    const tempTsPath = finalSavePath + '.temp.ts'
 
-    // 1. 检查是否已有完整封装的目标 MP4（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
-    if (fs.existsSync(finalSavePath) && !fs.existsSync(workSavePath)) {
+    // 1. 检查是否已有完整封装的目标文件（例如之前下载与转封装已完成，处于排队压缩或压缩中暂停后恢复）
+    if (fs.existsSync(finalSavePath) && !fs.existsSync(tempMp4Path) && !fs.existsSync(tempTsPath)) {
       try {
         const stat = fs.statSync(finalSavePath)
         if (stat.size > 0) {
           const info = await this.getVideoDurationAndBitrate(finalSavePath)
           if (info.duration > 0) {
-            logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标 MP4 已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
+            logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 目标文件已完整存在 (大小: ${stat.size}B, 时长: ${info.duration}s)，跳过下载`)
             return {
               filePath: finalSavePath,
               fileSize: stat.size,
@@ -437,7 +549,57 @@ class Downloader {
       }
     }
 
-    // 2. 检查临时 TS 文件是否已全量就绪（在格式转换阶段暂停后继续，跳过网络请求直接执行格式转换）
+    logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
+
+    let maxMemoryMB = 128
+    try {
+      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 128
+    } catch {
+      maxMemoryMB = 128
+    }
+    const maxMemoryBytes = maxMemoryMB * 1024 * 1024
+
+    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
+
+    let parseResult: M3U8ParseResult | null = null
+    let parseAttempts = 0
+    while (!parseResult) {
+      if (abortController.signal.aborted) {
+        throw new DOMException('User aborted download', 'AbortError')
+      }
+      try {
+        parseResult = await parseM3U8(url, headers)
+      } catch (err: any) {
+        if (abortController.signal.aborted || err.name === 'AbortError') throw err
+        if (isTransientNetworkError(err)) {
+          parseAttempts++
+          const friendlyMsg = formatTransientErrorMessage(err)
+          logger.warn('Downloader', `[M3U8Downloader] 解析 M3U8 列表遭遇网络波动，正在后台自动重试 (第 ${parseAttempts} 次): ${err.message}`)
+          this.sendProgress({
+            id,
+            status: 'resolving',
+            speed: 0,
+            errorMsg: `正在重试: ${friendlyMsg}`
+          })
+          await new Promise(r => setTimeout(r, getTransientRetryDelay(parseAttempts, err)))
+          continue
+        }
+        throw err
+      }
+    }
+
+    const { segments, isFmp4 } = parseResult
+    if (segments.length === 0) {
+      throw new Error('M3U8 列表中未解析到任何可下载的分片视频')
+    }
+    logger.info('Downloader', `[M3U8Downloader] 成功解析出 ${segments.length} 个 ${isFmp4 ? 'fMP4/m4s' : 'TS'} 视频分片`)
+
+    let workSavePath = isFmp4 ? tempMp4Path : tempTsPath
+    if (!fs.existsSync(workSavePath) && fs.existsSync(tempTsPath)) {
+      workSavePath = tempTsPath
+    }
+
+    // 2. 检查临时文件是否已全量就绪（在格式转换阶段暂停后继续，跳过网络请求直接执行格式转换）
     if (fs.existsSync(workSavePath)) {
       try {
         const stat = fs.statSync(workSavePath)
@@ -445,14 +607,15 @@ class Downloader {
           cmd.downloadedSegments > 0 &&
           (
             (cmd.totalSegments !== undefined && cmd.downloadedSegments >= cmd.totalSegments) ||
+            (cmd.downloadedSegments >= segments.length) ||
             (cmd.startBytes !== undefined && cmd.startBytes > 0 && stat.size >= cmd.startBytes)
           ) &&
           stat.size > 0
 
         if (isReadyForConvert) {
-          logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 临时 TS 文件已完整落盘 (${stat.size} 字节, ${cmd.downloadedSegments}/${cmd.totalSegments || cmd.downloadedSegments} 分片)，直接进入格式转换`)
+          logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 临时文件已完整落盘 (${stat.size} 字节, ${cmd.downloadedSegments}/${cmd.totalSegments || cmd.downloadedSegments} 分片)，直接进入格式转换`)
           if (isTargetMp4) {
-            await this.convertTsToMp4(workSavePath, finalSavePath, abortController, id)
+            await this.remuxToMp4(workSavePath, finalSavePath, isFmp4, abortController, id)
           }
           const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
           const finalFileSize = fs.existsSync(targetVideoFile) ? fs.statSync(targetVideoFile).size : stat.size
@@ -477,29 +640,11 @@ class Downloader {
           })
           throw e
         }
-        logger.warn('Downloader', `[M3U8Downloader] 检查临时 TS 转换就绪异常: ${e.message}，回退至正常解析流程`)
+        logger.warn('Downloader', `[M3U8Downloader] 检查临时文件转换就绪异常: ${e.message}，回退至正常解析流程`)
       }
     }
 
-    logger.info('Downloader', `[M3U8Downloader] 开始解析并下载 M3U8 资源: ${url}`)
-
-    let maxMemoryMB = 128
-    try {
-      maxMemoryMB = (await storeManager.getSetting('maxMemoryBufferMB')) || 128
-    } catch {
-      maxMemoryMB = 128
-    }
-    const maxMemoryBytes = maxMemoryMB * 1024 * 1024
-
-    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
-
-    const segments = await parseM3U8(url, headers)
-    if (segments.length === 0) {
-      throw new Error('M3U8 列表中未解析到任何可下载的分片视频')
-    }
-    logger.info('Downloader', `[M3U8Downloader] 成功解析出 ${segments.length} 个 TS 视频分片`)
-
-    // 检查断点续传：目标文件是否已存在及大小
+    // 检查断点续传：临时文件是否已存在及大小
     let existingBytes = 0
     let skipSegments = 0
     let fileFlags = 'w'
@@ -565,11 +710,20 @@ class Downloader {
           throw new DOMException('User aborted download', 'AbortError')
         }
 
+        // 背压控制：当滞留内存超过上限两倍时稍作等待，防止某分片较慢时后续分片大量积压在内存中
+        while (currentBufferedBytes >= maxMemoryBytes * 2) {
+          if (abortController.signal.aborted) {
+            throw new DOMException('User aborted download', 'AbortError')
+          }
+          await new Promise(r => setTimeout(r, 100))
+        }
+
         const seg = segments[segQueueIndex++]
         let attempts = 0
         let success = false
+        const maxAttempts = 5
 
-        while (attempts < 3 && !success) {
+        while (!success) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
@@ -624,7 +778,8 @@ class Downloader {
                 downloadedSegments: nextFlushIndex,
                 totalSegments: segments.length,
                 speed,
-                status: 'downloading'
+                status: 'downloading',
+                errorMsg: ''
               })
               lastReportTime = now
               lastReportBytes = totalReceivedBytes
@@ -632,14 +787,30 @@ class Downloader {
 
             success = true
           } catch (e: any) {
+            if (e.name === 'AbortError' || abortController.signal.aborted) throw e
             attempts++
-            if (e.name === 'AbortError') throw e
-            if (attempts >= 5) {
-              logger.info('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 5 次均失败: ${e.message}`)
-              abortController.abort()
-              throw new Error(`分片 ${seg.index} 下载失败 (${e.message})`)
+            if (isTransientNetworkError(e)) {
+              const friendlyMsg = formatTransientErrorMessage(e)
+              logger.warn('Downloader', `[M3U8Downloader] 分片 ${seg.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${e.message}`)
+              this.sendProgress({
+                id,
+                totalBytes: 0,
+                receivedBytes: totalReceivedBytes,
+                downloadedSegments: nextFlushIndex,
+                totalSegments: segments.length,
+                speed: 0,
+                status: 'downloading',
+                errorMsg: `正在重试: ${friendlyMsg}`
+              })
+              await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, e)))
+            } else {
+              if (attempts >= maxAttempts) {
+                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxAttempts} 次均失败: ${e.message}`)
+                abortController.abort()
+                throw new Error(`分片 ${seg.index} 下载失败 (${e.message})`)
+              }
+              await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, e)))
             }
-            await new Promise(r => setTimeout(r, Math.min(3000, 1000 * Math.pow(1.5, attempts))))
           }
         }
       }
@@ -655,8 +826,12 @@ class Downloader {
       flushMemoryToDisk(true)
       fs.closeSync(fd)
 
+      if (nextFlushIndex < segments.length) {
+        throw new Error(`M3U8 分片未全部完成落盘: 仅写入 ${nextFlushIndex}/${segments.length} 分片`)
+      }
+
       if (isTargetMp4) {
-        await this.convertTsToMp4(workSavePath, finalSavePath, abortController, id)
+        await this.remuxToMp4(workSavePath, finalSavePath, isFmp4, abortController, id)
       }
 
       const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
@@ -690,15 +865,16 @@ class Downloader {
   }
 
   /**
-   * 将分片合并落盘的 TS 临时视频无损封装为 MP4 格式 (消费 stdout/stderr 避免管道死锁)
+   * 将分片合并落盘的视频无损转封装为标准 MP4 格式 (根据 fMP4 / TS 自动选择最佳参数，消费 stdout/stderr 避免管道死锁)
    */
-  private async convertTsToMp4(
+  private async remuxToMp4(
     workSavePath: string,
     finalSavePath: string,
+    isFmp4: boolean,
     abortController: AbortController,
     taskId: string
   ): Promise<void> {
-    logger.info('Downloader', `[M3U8Downloader] 准备将 TS 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
+    logger.info('Downloader', `[M3U8Downloader] 准备将临时 ${isFmp4 ? 'fMP4' : 'TS'} 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
     const totalBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
     this.sendProgress({
       id: taskId,
@@ -708,54 +884,82 @@ class Downloader {
       speed: 0
     })
 
-    await new Promise<void>((resolve, reject) => {
-      const ffmpegBin = 'ffmpeg'
-      const child = spawn(ffmpegBin, [
+    const runFfmpeg = (args: string[]): Promise<void> => {
+      return new Promise<void>((resolve, reject) => {
+        const ffmpegBin = 'ffmpeg'
+        const child = spawn(ffmpegBin, args)
+
+        let stderrBuffer = ''
+        child.stderr?.on('data', (chunk) => {
+          stderrBuffer += chunk.toString()
+          if (stderrBuffer.length > 5000) {
+            stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 5000)
+          }
+        })
+
+        child.stdout?.on('data', () => {
+          // 消费 stdout 避免管道挂起
+        })
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            try { fs.unlinkSync(workSavePath) } catch {}
+            resolve()
+          } else {
+            logger.warn('Downloader', `[M3U8Downloader] FFmpeg 封装失败 (code ${code}): ${stderrBuffer.slice(-300)}`)
+            reject(new Error(`FFmpeg exited with code ${code}: ${stderrBuffer.slice(-200)}`))
+          }
+        })
+
+        child.on('error', (err) => {
+          logger.error('Downloader', `[M3U8Downloader] FFmpeg 启动异常: ${err.message}`)
+          reject(err)
+        })
+
+        if (abortController.signal.aborted) {
+          child.kill('SIGKILL')
+          reject(new DOMException('User aborted download', 'AbortError'))
+        } else {
+          abortController.signal.addEventListener('abort', () => {
+            child.kill('SIGKILL')
+            reject(new DOMException('User aborted download', 'AbortError'))
+          }, { once: true })
+        }
+      })
+    }
+
+    if (isFmp4) {
+      // fMP4 流: 原生已经具备 ISO MP4 音频格式头，直接 -c copy 转封装，严禁添加 -bsf:a aac_adtstoasc
+      await runFfmpeg([
         '-y',
         '-i', workSavePath,
         '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
         '-movflags', '+faststart',
         finalSavePath
       ])
-
-      let stderrBuffer = ''
-      child.stderr?.on('data', (chunk) => {
-        stderrBuffer += chunk.toString()
-        if (stderrBuffer.length > 5000) {
-          stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 5000)
-        }
-      })
-
-      child.stdout?.on('data', () => {
-        // 消费 stdout 避免管道挂起
-      })
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          try { fs.unlinkSync(workSavePath) } catch {}
-          resolve()
-        } else {
-          logger.error('Downloader', `[M3U8Downloader] FFmpeg 封装失败 (code ${code}): ${stderrBuffer}`)
-          reject(new Error(`FFmpeg exited with code ${code}: ${stderrBuffer.slice(-200)}`))
-        }
-      })
-
-      child.on('error', (err) => {
-        logger.error('Downloader', `[M3U8Downloader] FFmpeg 启动异常: ${err.message}`)
-        reject(err)
-      })
-
-      if (abortController.signal.aborted) {
-        child.kill('SIGKILL')
-        reject(new DOMException('User aborted download', 'AbortError'))
-      } else {
-        abortController.signal.addEventListener('abort', () => {
-          child.kill('SIGKILL')
-          reject(new DOMException('User aborted download', 'AbortError'))
-        })
+    } else {
+      // MPEG-TS 流: 优先尝试 -bsf:a aac_adtstoasc 过滤，若失败则自适应回退到无滤镜 copy
+      try {
+        await runFfmpeg([
+          '-y',
+          '-i', workSavePath,
+          '-c', 'copy',
+          '-bsf:a', 'aac_adtstoasc',
+          '-movflags', '+faststart',
+          finalSavePath
+        ])
+      } catch (err: any) {
+        if (abortController.signal.aborted) throw err
+        logger.warn('Downloader', `[M3U8Downloader] TS 转封装带 aac_adtstoasc 失败，尝试回退无滤镜纯 copy 转封装: ${err.message}`)
+        await runFfmpeg([
+          '-y',
+          '-i', workSavePath,
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          finalSavePath
+        ])
       }
-    })
+    }
   }
 
   /**
@@ -909,7 +1113,8 @@ class Downloader {
           let attempts = 0
           let success = false
 
-          while (attempts < 3 && !success) {
+          const maxAttempts = 5
+          while (attempts < maxAttempts && !success) {
             if (abortController.signal.aborted) {
               throw new DOMException('User aborted download', 'AbortError')
             }
@@ -951,7 +1156,8 @@ class Downloader {
                     totalBytes,
                     receivedBytes: totalReceivedBytes,
                     speed,
-                    status: 'downloading'
+                    status: 'downloading',
+                    errorMsg: ''
                   })
                   lastReportTime = now
                   lastReportBytes = totalReceivedBytes
@@ -972,20 +1178,35 @@ class Downloader {
                   totalBytes,
                   receivedBytes: totalReceivedBytes,
                   speed: isNaN(speed) ? 0 : speed,
-                  status: 'downloading'
+                  status: 'downloading',
+                  errorMsg: ''
                 })
               }
 
               success = true
             } catch (err: any) {
+              if (err.name === 'AbortError' || abortController.signal.aborted) throw err
               attempts++
-              if (err.name === 'AbortError') throw err
-              if (attempts >= 5) {
-                logger.info('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 5 次均失败: ${err.message}`)
-                abortController.abort()
-                throw new Error(`分块 ${chunkItem.index} 下载失败 (${err.message})`)
+              if (isTransientNetworkError(err)) {
+                const friendlyMsg = formatTransientErrorMessage(err)
+                logger.warn('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${err.message}`)
+                this.sendProgress({
+                  id,
+                  totalBytes,
+                  receivedBytes: totalReceivedBytes,
+                  speed: 0,
+                  status: 'downloading',
+                  errorMsg: `正在重试: ${friendlyMsg}`
+                })
+                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, err)))
+              } else {
+                if (attempts >= 5) {
+                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 5 次均失败: ${err.message}`)
+                  abortController.abort()
+                  throw new Error(`分块 ${chunkItem.index} 下载失败 (${err.message})`)
+                }
+                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, err)))
               }
-              await new Promise(r => setTimeout(r, Math.min(3000, 1000 * Math.pow(1.5, attempts))))
             }
           }
         }
@@ -1018,91 +1239,138 @@ class Downloader {
       }
     }
 
-    // 3. 不支持 Range 时的退化降级：单线程流式下载
-    if (startBytes > 0) {
-      headers['Range'] = `bytes=${startBytes}-`
-    }
+    // 3. 不支持 Range 时的退化降级：单线程流式下载（带瞬态网络异常自动续传重试）
+    let singleStreamAttempts = 0
+    let receivedBytes = startBytes
+    let finalTotalBytes = 0
 
-    const response = await net.fetch(url, { headers, signal: abortController.signal as any })
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`)
-    }
-
-    const contentLength = response.headers.get('content-length')
-    const finalTotalBytes = contentLength ? parseInt(contentLength, 10) + startBytes : 0
-
-    let flags = 'a'
-    let actualStart = startBytes
-    if (startBytes > 0 && response.status === 200) {
-      flags = 'w'
-      actualStart = 0
-    }
-
-    const fileStream = fs.createWriteStream(savePath, { flags })
-
-    this.sendProgress({
-      id,
-      totalBytes: finalTotalBytes,
-      receivedBytes: actualStart,
-      status: 'downloading'
-    })
-
-    if (!response.body) throw new Error('No response body')
-
-    const nodeStream = Readable.fromWeb(response.body as any)
-    let receivedBytes = actualStart
-    let lastReportTime = Date.now()
-    let lastReportBytes = receivedBytes
-
-    let memoryChunks: Buffer[] = []
-    let memoryChunkBytes = 0
-
-    const flushStreamBuffer = () => {
-      if (memoryChunks.length > 0) {
-        const combined = Buffer.concat(memoryChunks)
-        fileStream.write(combined)
-        memoryChunks = []
-        memoryChunkBytes = 0
-      }
-    }
-
-    nodeStream.on('data', (chunk: Buffer) => {
-      receivedBytes += chunk.length
-      memoryChunks.push(chunk)
-      memoryChunkBytes += chunk.length
-
-      if (memoryChunkBytes >= maxMemoryBytes) {
-        flushStreamBuffer()
+    while (true) {
+      if (abortController.signal.aborted) {
+        throw new DOMException('User aborted download', 'AbortError')
       }
 
-      const now = Date.now()
-      if (now - lastReportTime > 500) {
-        const speed = ((receivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+      try {
+        const streamHeaders = { ...headers }
+        if (receivedBytes > 0) {
+          streamHeaders['Range'] = `bytes=${receivedBytes}-`
+        }
+
+        const response = await net.fetch(url, { headers: streamHeaders, signal: abortController.signal as any })
+        if (!response.ok && response.status !== 206) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`)
+        }
+
+        const contentLength = response.headers.get('content-length')
+        if (contentLength && finalTotalBytes === 0) {
+          finalTotalBytes = parseInt(contentLength, 10) + receivedBytes
+        }
+
+        let flags = 'a'
+        if (receivedBytes === 0) {
+          flags = 'w'
+        } else if (response.status === 200 && receivedBytes > 0) {
+          // 服务器不支持 Range 续传，只能重新从头开始写入
+          flags = 'w'
+          receivedBytes = 0
+        }
+
+        const fileStream = fs.createWriteStream(savePath, { flags })
+
         this.sendProgress({
           id,
-          receivedBytes,
           totalBytes: finalTotalBytes,
-          speed,
-          status: 'downloading'
+          receivedBytes,
+          speed: 0,
+          status: 'downloading',
+          errorMsg: ''
         })
-        lastReportTime = now
-        lastReportBytes = receivedBytes
-      }
-    })
 
-    await new Promise<void>((resolve, reject) => {
-      nodeStream.on('end', () => {
-        flushStreamBuffer()
-        fileStream.end()
-        resolve()
-      })
-      nodeStream.on('error', reject)
-      fileStream.on('error', reject)
-      abortController.signal.addEventListener('abort', () => {
-        fileStream.end()
-        reject(new DOMException('The user aborted a request.', 'AbortError'))
-      })
-    })
+        if (!response.body) throw new Error('No response body')
+
+        const nodeStream = Readable.fromWeb(response.body as any)
+        let lastReportTime = Date.now()
+        let lastReportBytes = receivedBytes
+
+        let memoryChunks: Buffer[] = []
+        let memoryChunkBytes = 0
+
+        const flushStreamBuffer = () => {
+          if (memoryChunks.length > 0) {
+            const combined = Buffer.concat(memoryChunks)
+            fileStream.write(combined)
+            memoryChunks = []
+            memoryChunkBytes = 0
+          }
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          nodeStream.on('data', (chunk: Buffer) => {
+            receivedBytes += chunk.length
+            memoryChunks.push(chunk)
+            memoryChunkBytes += chunk.length
+
+            if (memoryChunkBytes >= maxMemoryBytes) {
+              flushStreamBuffer()
+            }
+
+            const now = Date.now()
+            if (now - lastReportTime > 500) {
+              const speed = ((receivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+              this.sendProgress({
+                id,
+                receivedBytes,
+                totalBytes: finalTotalBytes,
+                speed,
+                status: 'downloading',
+                errorMsg: ''
+              })
+              lastReportTime = now
+              lastReportBytes = receivedBytes
+            }
+          })
+
+          nodeStream.on('end', () => {
+            flushStreamBuffer()
+            fileStream.end()
+            resolve()
+          })
+          nodeStream.on('error', (err) => {
+            flushStreamBuffer()
+            fileStream.end()
+            reject(err)
+          })
+          fileStream.on('error', (err) => {
+            reject(err)
+          })
+          abortController.signal.addEventListener('abort', () => {
+            fileStream.end()
+            reject(new DOMException('The user aborted a request.', 'AbortError'))
+          })
+        })
+
+        // 下载正常完成，跳出重试循环
+        break
+      } catch (err: any) {
+        if (err.name === 'AbortError' || abortController.signal.aborted) throw err
+        singleStreamAttempts++
+        if (isTransientNetworkError(err)) {
+          const friendlyMsg = formatTransientErrorMessage(err)
+          logger.warn('Downloader', `[DirectDownloader] 单流下载遭遇网络波动，正在后台自动重试 (第 ${singleStreamAttempts} 次): ${err.message}`)
+          this.sendProgress({
+            id,
+            totalBytes: finalTotalBytes,
+            receivedBytes,
+            speed: 0,
+            status: 'downloading',
+            errorMsg: `正在重试: ${friendlyMsg}`
+          })
+          await new Promise(r => setTimeout(r, getTransientRetryDelay(singleStreamAttempts, err)))
+        } else {
+          logger.error('Downloader', `[DirectDownloader] 单流下载遇到非瞬态错误: ${err.message}`)
+          throw err
+        }
+      }
+    }
 
     const finalFileSize = fs.existsSync(savePath) ? fs.statSync(savePath).size : receivedBytes
     logger.info('Downloader', `[DirectDownloader] 单文件流式下载完成: ${savePath}，大小: ${finalFileSize}`)

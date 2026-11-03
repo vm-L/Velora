@@ -127,3 +127,45 @@ export function resolveAppIconPath(): string | null {
   }
   return null;
 }
+
+/**
+ * 带指数退避的原子文件系统操作重试器（专门解决 Windows 平台下的短暂 EBUSY/EPERM 文件句柄释放延迟）
+ */
+export async function retryFileOperation<T>(
+  operation: () => Promise<T>,
+  maxAttempts = 5,
+  baseDelay = 60
+): Promise<T> {
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      lastError = err;
+      const isLockError = err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES';
+      if (!isLockError || attempt === maxAttempts) {
+        throw err;
+      }
+      const delay = Math.min(400, Math.round(baseDelay * Math.pow(1.5, attempt - 1)));
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * 递归复制目录及其全部内容（用于跨分区 EXDEV 移动文件夹时的数据迁移兜底）
+ */
+export async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await fs.promises.mkdir(dest, { recursive: true });
+  const entries = await fs.promises.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await fs.promises.copyFile(srcPath, destPath);
+    }
+  }
+}

@@ -125,9 +125,6 @@ export const useDownloads = () => {
           
           if (data.status) {
             t.status = data.status
-            if (t.status !== 'error') {
-              delete t.errorMsg
-            }
           }
           if (data.totalBytes !== undefined) t.totalBytes = data.totalBytes
           if (data.receivedBytes !== undefined) t.receivedBytes = data.receivedBytes
@@ -143,9 +140,13 @@ export const useDownloads = () => {
           } else if (t.status !== 'compressing' && t.status !== 'processing') {
             delete t.etaSeconds
           }
-          if (data.errorMsg) {
-            t.errorMsg = data.errorMsg
-          } else if (t.status !== 'error') {
+          if (data.errorMsg !== undefined) {
+            if (data.errorMsg) {
+              t.errorMsg = data.errorMsg
+            } else {
+              delete t.errorMsg
+            }
+          } else if (t.status === 'completed' || t.status === 'paused') {
             delete t.errorMsg
           }
 

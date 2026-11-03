@@ -144,7 +144,7 @@
 
             <div class="task-meta">
               <span class="status-text" :class="task.status">{{ getStatusText(task.status, task) }}</span>
-              <span v-if="task.status === 'error' && task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
+              <span v-if="task.errorMsg" class="error-msg" :title="task.errorMsg"> - {{ task.errorMsg }}</span>
               <span class="meta-divider">•</span>
               <span class="size-text">{{ formatBytes(task.receivedBytes) }} {{ task.totalBytes > 0 ? '/ ' + formatBytes(task.totalBytes) : '' }}</span>
               <template v-if="task.totalSegments && task.totalSegments > 0">

@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
 import { logger } from './logger'
-import { getAvailableEncoders, getEncoderArgs, isGpuEncoder, VideoEncoder } from './gpuAccelerator'
+import { getAvailableEncoders, getEncoderArgs, isGpuEncoder } from './gpuAccelerator'
 
 export interface VideoSegment {
   start: number

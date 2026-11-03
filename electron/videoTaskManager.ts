@@ -1,4 +1,3 @@
-import path from 'path';
 import { logger } from './logger';
 import {
   editVideoSegments,

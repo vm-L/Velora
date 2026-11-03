@@ -1006,9 +1006,40 @@ const handleContextPreview = (item: LocalFileItem) => {
   handleItemDblClick(item);
 };
 
+// 检查指定路径（或该目录下的子文件）当前是否正被播放器/预览器打开播放中
+const isPathCurrentlyPlayingOrPreviewed = (targetPath: string): { occupied: boolean; mediaName?: string } => {
+  if (!targetPath) return { occupied: false };
+  const normalizedTarget = targetPath.trim().replace(/\\/g, '/').toLowerCase();
+
+  const activeMediaPaths = [
+    activeVideoUrl.value,
+    activeAudioUrl.value,
+    activeImageUrl.value
+  ].filter(Boolean) as string[];
+
+  for (const activePath of activeMediaPaths) {
+    const normalizedActive = activePath.trim().replace(/\\/g, '/').toLowerCase();
+    const isExactMatch = normalizedActive === normalizedTarget;
+    const isInsideFolder = normalizedActive.startsWith(normalizedTarget.endsWith('/') ? normalizedTarget : normalizedTarget + '/');
+
+    if (isExactMatch || isInsideFolder) {
+      const parts = activePath.replace(/\\/g, '/').split('/');
+      const mediaName = parts[parts.length - 1] || '媒体文件';
+      return { occupied: true, mediaName };
+    }
+  }
+
+  return { occupied: false };
+};
+
 // Rename
 const openRenameModal = (item: LocalFileItem) => {
   closeContextMenu();
+  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+  if (check.occupied) {
+    showMessage(`无法重命名：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
+    return;
+  }
   renameModal.value = {
     visible: true,
     item,
@@ -1019,6 +1050,12 @@ const openRenameModal = (item: LocalFileItem) => {
 const handleConfirmRename = async () => {
   const { item, newName } = renameModal.value;
   if (!item || !newName.trim() || !window.electronAPI) return;
+
+  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+  if (check.occupied) {
+    showMessage(`无法重命名：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
+    return;
+  }
 
   const trimmed = newName.trim();
   const dir = item.path.substring(0, item.path.lastIndexOf(/[\\/]/.test(item.path) ? item.path.match(/[\\/]/)![0] : '/'));
@@ -1062,6 +1099,11 @@ const handleConfirmNewFolder = async () => {
 // Move
 const openMoveModal = (item: LocalFileItem) => {
   closeContextMenu();
+  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+  if (check.occupied) {
+    showMessage(`无法移动：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
+    return;
+  }
   moveDialog.value = {
     visible: true,
     items: [item]
@@ -1071,6 +1113,13 @@ const openMoveModal = (item: LocalFileItem) => {
 const openBatchMoveModal = () => {
   closeContextMenu();
   if (selectedItems.value.length === 0) return;
+  for (const item of selectedItems.value) {
+    const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+    if (check.occupied) {
+      showMessage(`无法移动：项目 "${item.name}" 正在播放预览中，请先关闭播放器`, 'warning');
+      return;
+    }
+  }
   moveDialog.value = {
     visible: true,
     items: [...selectedItems.value]
@@ -1080,6 +1129,14 @@ const openBatchMoveModal = () => {
 const handleConfirmMove = async (targetDir: string) => {
   const targetItems = moveDialog.value.items;
   if (!targetItems || targetItems.length === 0 || !targetDir || !window.electronAPI) return;
+
+  for (const item of targetItems) {
+    const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+    if (check.occupied) {
+      showMessage(`无法移动：项目 "${item.name}" 正在播放预览中，请先关闭播放器`, 'warning');
+      return;
+    }
+  }
 
   const count = targetItems.length;
   if (count === 1) {
@@ -1252,6 +1309,12 @@ const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbp
 // Single Delete
 const handleDelete = async (item: LocalFileItem) => {
   closeContextMenu();
+  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
+  if (check.occupied) {
+    showMessage(`无法删除：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
+    return;
+  }
+
   const isDir = item.isDirectory;
   const confirmed = await confirm({
     title: isDir ? '删除文件夹' : '删除文件',
@@ -1281,6 +1344,16 @@ const handleBatchDelete = async () => {
   closeContextMenu();
   const count = selectedPaths.value.size;
   if (count === 0 || !window.electronAPI) return;
+
+  for (const p of Array.from(selectedPaths.value)) {
+    const check = isPathCurrentlyPlayingOrPreviewed(p);
+    if (check.occupied) {
+      const parts = p.replace(/\\/g, '/').split('/');
+      const name = parts[parts.length - 1] || '文件';
+      showMessage(`无法删除：项目 "${name}" 正在播放预览中，请先关闭播放器`, 'warning');
+      return;
+    }
+  }
 
   const confirmed = await confirm({
     title: '批量删除',
