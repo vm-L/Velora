@@ -83,6 +83,10 @@ interface Window {
       dirPath?: string;
       files?: Array<{ name: string; path: string }>;
     }) => void) => () => void
+    trayAction?: (action: string) => void
+    syncTrayPausedState?: (hasPaused: boolean) => void
+    onTrayResumeAll?: (callback: () => void) => () => void
+    onTrayPauseAll?: (callback: () => void) => () => void
   }
 }
 

@@ -249,6 +249,7 @@ import { storeManager, setupStoreHandlers } from './store'
 import { downloader } from './downloader'
 import { lanServer } from './lanServer'
 import { getSplashHtml } from './splash'
+import { trayWindowManager } from './trayWindow'
 
 let tray: Tray | null = null
 let mainWindow: BrowserWindow | null = null
@@ -1278,15 +1279,80 @@ app.whenReady().then(async () => {
   const appIcon = getAppIcon();
   const trayIcon = appIcon.isEmpty() ? nativeImage.createFromDataURL(iconBase64) : appIcon.resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '显示应用', click: () => { if (mainWindow) mainWindow.show() } },
-    { type: 'separator' },
-    { label: '完全退出', click: () => { app.quit() } }
-  ]);
   tray.setToolTip('Velora');
-  tray.setContextMenu(contextMenu);
-  
-  tray.on('click', () => { if (mainWindow) mainWindow.show() });
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  const savedUserTheme = (await storeManager.getSetting('theme')) || (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+  trayWindowManager.init(tray, {
+    onShowApp: () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+    onResumeAll: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray-resume-all');
+      }
+    },
+    onPauseAll: () => {
+      downloader.pauseAll();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray-pause-all');
+      }
+    },
+    onQuitApp: () => {
+      app.quit();
+    }
+  }, savedUserTheme);
+
+  // 监听主题配置变更，动态同步至托盘浮窗
+  storeManager.onSettingChange((key, value) => {
+    if (key === 'theme') {
+      trayWindowManager.updateTheme(value);
+    }
+  });
+
+  // 监听原生系统明暗色偏好变化
+  nativeTheme.on('updated', () => {
+    storeManager.getSetting('theme').then((t) => {
+      if (!t) {
+        trayWindowManager.updateTheme(nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
+      }
+    });
+  });
+
+  // 托盘动态状态节流调度
+  let trayUpdateTimer: NodeJS.Timeout | null = null;
+  const updateTrayStatsThrottled = () => {
+    const stats = downloader.getTaskStats();
+    trayWindowManager.updateStats(stats);
+
+    const isBusy = (stats.downloadingCount > 0 || stats.queuedCount > 0 || stats.compressingCount > 0 || stats.speed > 0);
+    if (isBusy && !trayUpdateTimer) {
+      trayUpdateTimer = setInterval(() => {
+        const currentStats = downloader.getTaskStats();
+        trayWindowManager.updateStats(currentStats);
+        if (currentStats.downloadingCount === 0 && currentStats.queuedCount === 0 && currentStats.compressingCount === 0 && currentStats.speed === 0) {
+          if (trayUpdateTimer) {
+            clearInterval(trayUpdateTimer);
+            trayUpdateTimer = null;
+          }
+        }
+      }, 1000);
+    }
+  };
+
+  downloader.setOnStatsChange(() => {
+    updateTrayStatsThrottled();
+  });
 });
 
 app.on('window-all-closed', () => {

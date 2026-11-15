@@ -42,9 +42,16 @@ class StoreManager {
     return this.store.store || {}
   }
 
+  private changeListeners: Array<(key: string, value: any) => void> = []
+
+  onSettingChange(cb: (key: string, value: any) => void) {
+    this.changeListeners.push(cb)
+  }
+
   async setSetting(key: string, value: any) {
     await this.initPromise
     this.store.set(key, value)
+    this.changeListeners.forEach(cb => cb(key, value))
   }
 }
 

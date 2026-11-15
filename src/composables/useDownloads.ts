@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { db, type DownloadTask } from '@/db'
 import { logger } from '@/services/logger'
 import { useFileDeduplication } from '@/composables/useFileDeduplication'
@@ -205,6 +205,33 @@ export const useDownloads = () => {
         }
       })
     }
+
+    if (window.electronAPI && window.electronAPI.onTrayResumeAll) {
+      window.electronAPI.onTrayResumeAll(async () => {
+        logger.info('Downloads', `[Renderer] 收到托盘「全部继续」指令`)
+        const eligibleTasks = tasks.value.filter(t => ['paused', 'error', 'file_removed', 'file_corrupted'].includes(t.status))
+        for (const t of eligibleTasks) {
+          await resumeTask(t.id)
+        }
+      })
+    }
+
+    if (window.electronAPI && window.electronAPI.onTrayPauseAll) {
+      window.electronAPI.onTrayPauseAll(async () => {
+        logger.info('Downloads', `[Renderer] 收到托盘「全部暂停」指令`)
+        const eligibleTasks = tasks.value.filter(t => ['downloading', 'compressing', 'converting', 'processing', 'waiting', 'resolving'].includes(t.status))
+        for (const t of eligibleTasks) {
+          await pauseTask(t.id)
+        }
+      })
+    }
+
+    watch(tasks, (current) => {
+      const hasPaused = current.some(t => ['paused', 'error', 'file_removed', 'file_corrupted'].includes(t.status))
+      if (window.electronAPI && window.electronAPI.syncTrayPausedState) {
+        window.electronAPI.syncTrayPausedState(hasPaused)
+      }
+    }, { deep: true, immediate: true })
   }
 
   const addDownload = async (url: string, name: string, savePath: string, customReferer?: string): Promise<boolean> => {

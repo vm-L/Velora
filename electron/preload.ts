@@ -101,5 +101,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('file-system-changed', handler);
     };
+  },
+  trayAction: (action: string) => ipcRenderer.send('tray-action', action),
+  syncTrayPausedState: (hasPaused: boolean) => ipcRenderer.send('tray-paused-state', hasPaused),
+  onTrayResumeAll: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('tray-resume-all', handler);
+    return () => {
+      ipcRenderer.removeListener('tray-resume-all', handler);
+    };
+  },
+  onTrayPauseAll: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('tray-pause-all', handler);
+    return () => {
+      ipcRenderer.removeListener('tray-pause-all', handler);
+    };
   }
 })

@@ -437,6 +437,22 @@ interface CompressQueueItem {
   reject?: (err: any) => void
 }
 
+export interface TaskStats {
+  downloadingCount: number;
+  queuedCount: number;
+  compressingCount: number;
+  speed: number;
+  speedText: string;
+}
+
+export function formatSpeed(bytesPerSec: number): string {
+  if (!bytesPerSec || bytesPerSec <= 0 || isNaN(bytesPerSec)) return '0 B/s';
+  if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  if (bytesPerSec < 1024 * 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+  return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(2)} GB/s`;
+}
+
 class Downloader {
   private activeDownloads: Map<string, { abortController: AbortController, tempPaths?: string[] }> = new Map()
   private pendingQueue: DownloadCommand[] = []
@@ -446,6 +462,67 @@ class Downloader {
   private activeCompressController: AbortController | null = null
   private activeCompressTempPath: string | null = null
   private mainWindow: any = null
+  private taskSpeedMap: Map<string, { speed: number; lastTime: number }> = new Map()
+  private onStatsChangeCallback?: () => void
+
+  setOnStatsChange(callback: () => void) {
+    this.onStatsChangeCallback = callback
+  }
+
+  getTaskStats(): TaskStats {
+    const downloadingCount = this.activeDownloads.size
+    const queuedCount = this.pendingQueue.length
+    const compressingCount = (this.activeCompressTaskId ? 1 : 0) + this.compressQueue.length
+
+    let totalSpeed = 0
+    const now = Date.now()
+
+    if (downloadingCount === 0) {
+      this.taskSpeedMap.clear()
+    } else {
+      const toDelete: string[] = []
+      this.taskSpeedMap.forEach((record, id) => {
+        if (!this.activeDownloads.has(id) || now - record.lastTime > 4000) {
+          toDelete.push(id)
+        } else {
+          totalSpeed += record.speed
+        }
+      })
+      toDelete.forEach(id => this.taskSpeedMap.delete(id))
+    }
+
+    return {
+      downloadingCount,
+      queuedCount,
+      compressingCount,
+      speed: Math.round(totalSpeed),
+      speedText: formatSpeed(totalSpeed)
+    }
+  }
+
+  pauseAll() {
+    logger.info('Downloader', `[Downloader] 执行 pauseAll: 暂停所有活跃、排队与压缩任务`)
+    const queuedIds = this.pendingQueue.map(c => c.id)
+    for (const id of queuedIds) {
+      this.pauseDownload(id)
+    }
+    const compQueueIds = this.compressQueue.map(c => c.taskId)
+    for (const id of compQueueIds) {
+      this.pauseDownload(id)
+    }
+    if (this.activeCompressTaskId) {
+      this.pauseDownload(this.activeCompressTaskId)
+    }
+    const activeIds: string[] = []
+    this.activeDownloads.forEach((_, id) => {
+      activeIds.push(id)
+    })
+    for (const id of activeIds) {
+      this.pauseDownload(id)
+    }
+    this.taskSpeedMap.clear()
+    this.onStatsChangeCallback?.()
+  }
 
   setWindow(window: any) {
     this.mainWindow = window
@@ -495,7 +572,15 @@ class Downloader {
   }
 
   private sendProgress(payload: any) {
-    if (this.mainWindow) {
+    if (payload?.id) {
+      if (payload.status === 'downloading' && typeof payload.speed === 'number') {
+        this.taskSpeedMap.set(payload.id, { speed: Math.max(0, payload.speed), lastTime: Date.now() })
+      } else if (payload.status && ['completed', 'paused', 'error', 'failed'].includes(payload.status)) {
+        this.taskSpeedMap.delete(payload.id)
+      }
+    }
+    this.onStatsChangeCallback?.()
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('download-progress', payload)
     }
   }
