@@ -17,6 +17,13 @@ class Logger {
     }
     this.logPath = path.join(baseDir, 'app.log')
     this.isDev = !app.isPackaged
+
+    // 每次程序启动时清空旧日志并重新记录
+    try {
+      fs.writeFileSync(this.logPath, '', 'utf8')
+    } catch (err) {
+      process.stderr.write(`Failed to initialize log file: ${err}\n`)
+    }
   }
 
   perf(scope: string, message: string) {

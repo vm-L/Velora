@@ -1734,9 +1734,11 @@ class Downloader {
         speed: 0
       })
       this.compressQueue.push(item)
+      this.onStatsChangeCallback?.()
     } else {
       this.isCompressingActive = true
       this.activeCompressTaskId = item.taskId
+      this.onStatsChangeCallback?.()
       this.executeCompressQueueItem(item)
     }
   }
@@ -1923,12 +1925,14 @@ class Downloader {
       logger.info('Downloader', `[CompressQueue] 启动队列下一个压缩任务: ${nextItem.taskId}`)
       this.isCompressingActive = true
       this.activeCompressTaskId = nextItem.taskId
+      this.onStatsChangeCallback?.()
       this.executeCompressQueueItem(nextItem)
     } else {
       this.isCompressingActive = false
       this.activeCompressTaskId = null
       this.activeCompressController = null
       this.activeCompressTempPath = null
+      this.onStatsChangeCallback?.()
     }
   }
 

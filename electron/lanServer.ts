@@ -5,7 +5,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { logger } from './logger';
 import { getLanWebHtml } from './lanWebTemplate';
-import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive } from './utils/fileSystem';
+import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive, searchDirectoryRecursive } from './utils/fileSystem';
 import { videoTaskManager, VideoQueueState } from './videoTaskManager';
 
 function sanitizeFilename(filename: string, fallback: string): string {
@@ -425,6 +425,37 @@ export class LanServer {
         }
 
         return this.sendJson(res, 200, { success: true, items: scanRes.items });
+      }
+
+      // API: search (递归深度搜索)
+      if (pathname === '/api/search') {
+        const resourceId = urlObj.searchParams.get('id') || '';
+        let targetPath = urlObj.searchParams.get('path') || '';
+        const query = urlObj.searchParams.get('q') || '';
+
+        const resources = await this.getResourcesCallback();
+        if (!targetPath && resourceId) {
+          const matched = resources.find(r => r.id === resourceId);
+          if (matched && matched.path) {
+            targetPath = matched.path;
+          }
+        }
+
+        if (!targetPath) {
+          return this.sendJson(res, 400, { success: false, error: '缺少路径参数' });
+        }
+
+        const isAllowed = await this.isPathInAllowedResources(targetPath);
+        if (!isAllowed) {
+          return this.sendJson(res, 403, { success: false, error: '拒绝访问非挂载资源目录' });
+        }
+
+        const searchRes = await searchDirectoryRecursive(targetPath, query);
+        if (!searchRes.success) {
+          return this.sendJson(res, 400, { success: false, error: searchRes.error });
+        }
+
+        return this.sendJson(res, 200, { success: true, items: searchRes.items });
       }
 
       // Stream Range Stream (Video / Audio / Image / Static Files)

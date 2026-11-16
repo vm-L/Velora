@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
-import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive } from './utils/fileSystem'
+import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive, searchDirectoryRecursive } from './utils/fileSystem'
 
 // 启动渲染与图形硬件加速配置
 app.commandLine.appendSwitch('disable-http-cache', 'false');
@@ -1310,6 +1310,9 @@ app.whenReady().then(async () => {
     },
     onQuitApp: () => {
       app.quit();
+    },
+    getTaskStats: () => {
+      return downloader.getTaskStats();
     }
   }, savedUserTheme);
 
@@ -1663,6 +1666,14 @@ ipcMain.handle('read-local-directory', async (_event, dirPath: string) => {
       dirPath: dirPath.replace(/\\/g, '/'),
       files
     });
+  }
+  return res;
+});
+
+ipcMain.handle('search-local-files', async (_event, dirPath: string, query: string) => {
+  const res = await searchDirectoryRecursive(dirPath, query);
+  if (!res.success) {
+    logger.error('Main', `Failed to search directory ${dirPath} for "${query}": ${res.error}`);
   }
   return res;
 });

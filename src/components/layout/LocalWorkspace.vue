@@ -51,10 +51,24 @@
       <div class="header-actions">
         <!-- Search Input -->
         <div class="search-wrap">
-          <VIcon name="search" :size="14" class="search-icon" />
-          <v-input v-model="searchQuery" type="text" placeholder="搜索文件或目录" class="search-input" />
-          <button v-if="searchQuery" class="clear-search-btn" @click="searchQuery = ''">
-            <VIcon name="close" :size="12" />
+          <v-input
+            v-model="searchQuery"
+            type="text"
+            placeholder=""
+            class="search-input"
+            @keyup.enter="handleExecuteSearch"
+          />
+          <div class="search-icon-btn" title="点击搜索 (Enter)" @click="handleExecuteSearch">
+            <VIcon name="search" :size="13" class="search-icon" />
+          </div>
+          <button
+            class="clear-search-btn"
+            :class="{ active: !!searchQuery }"
+            title="清空"
+            type="button"
+            @click="handleClearSearch"
+          >
+            <VIcon name="close" :size="11" />
           </button>
         </div>
 
@@ -120,8 +134,9 @@
       <!-- Empty State -->
       <div v-else-if="filteredItems.length === 0" class="state-container">
         <VIcon name="folder" :size="48" class="empty-icon" />
-        <span class="state-title">{{ searchQuery ? '未找到匹配项' : '当前目录为空' }}</span>
-        <v-button v-if="!searchQuery" variant="secondary" size="small" @click="showNewFolderModal = true">创建新文件夹</v-button>
+        <span class="state-title">{{ isSearching ? '未找到匹配项' : '当前目录为空' }}</span>
+        <v-button v-if="!isSearching" variant="secondary" size="small" @click="showNewFolderModal = true">创建新文件夹</v-button>
+        <v-button v-else variant="secondary" size="small" @click="handleClearSearch">返回目录</v-button>
       </div>
 
       <!-- Grid Cards View -->
@@ -170,7 +185,7 @@
 
           <!-- Title & Meta (3 Lines) -->
           <div class="card-info">
-            <div class="card-name" :title="item.name">{{ item.name }}</div>
+            <div class="card-name" :title="item.path">{{ item.name }}</div>
             <div class="card-size">
               <span v-if="!item.isDirectory">{{ formatBytes(item.size) }}</span>
               <span v-else class="meta-dir-tag">文件夹</span>
@@ -183,9 +198,10 @@
 
     <!-- Status Bar -->
     <div class="workspace-footer">
-      <span class="footer-count">共 {{ filteredItems.length }} 项</span>
-      <span v-if="selectedPaths.size === 1 && singleSelectedItem" class="footer-selected">
+      <span class="footer-count">{{ isSearching ? `搜索结果: 共 ${filteredItems.length} 项` : `共 ${filteredItems.length} 项` }}</span>
+      <span v-if="selectedPaths.size === 1 && singleSelectedItem" class="footer-selected" :title="singleSelectedItem.path">
         已选中: <strong>{{ singleSelectedItem.name }}</strong> ({{ singleSelectedItem.isDirectory ? '文件夹' : formatBytes(singleSelectedItem.size) }})
+        <span v-if="isSearching" style="margin-left: 8px; opacity: 0.75; font-size: 11px;">路径: {{ singleSelectedItem.path }}</span>
       </span>
       <span v-else-if="selectedPaths.size > 1" class="footer-selected">
         已选中: <strong>{{ selectedPaths.size }}</strong> 项 ({{ formatBytes(totalSelectedBytes) }})
@@ -471,6 +487,8 @@ const { confirm } = useConfirm();
 
 const currentPath = ref<string>(props.resourcePath);
 const items = ref<LocalFileItem[]>([]);
+const searchResults = ref<LocalFileItem[]>([]);
+const isSearching = ref<boolean>(false);
 const loading = ref<boolean>(false);
 const errorMsg = ref<string>('');
 const searchQuery = ref<string>('');
@@ -591,6 +609,9 @@ const loadDirectory = async (dirPath: string) => {
     if (res && res.success) {
       items.value = res.items || [];
       currentPath.value = dirPath;
+      if (isSearching.value && searchQuery.value.trim()) {
+        await handleExecuteSearch();
+      }
     } else {
       errorMsg.value = res?.error || '无法读取目录';
       items.value = [];
@@ -602,6 +623,49 @@ const loadDirectory = async (dirPath: string) => {
     loading.value = false;
   }
 };
+
+const handleExecuteSearch = async () => {
+  const q = searchQuery.value.trim();
+  if (!q) {
+    handleClearSearch();
+    return;
+  }
+  if (!currentPath.value || !window.electronAPI?.searchLocalFiles) return;
+
+  loading.value = true;
+  errorMsg.value = '';
+  selectedPaths.value.clear();
+  lastSelectedIndex.value = -1;
+  isSearching.value = true;
+
+  try {
+    const res = await window.electronAPI.searchLocalFiles(currentPath.value, q);
+    if (res && res.success) {
+      searchResults.value = res.items || [];
+    } else {
+      errorMsg.value = res?.error || '搜索失败';
+      searchResults.value = [];
+    }
+  } catch (err: any) {
+    errorMsg.value = err?.message || '搜索异常';
+    searchResults.value = [];
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleClearSearch = () => {
+  searchQuery.value = '';
+  isSearching.value = false;
+  searchResults.value = [];
+};
+
+watch(searchQuery, (newVal) => {
+  if (!newVal.trim() && isSearching.value) {
+    isSearching.value = false;
+    searchResults.value = [];
+  }
+});
 
 const refreshDirectorySilently = async () => {
   if (!currentPath.value || !window.electronAPI?.readLocalDirectory) return;
@@ -672,6 +736,7 @@ watch(() => route.fullPath, () => {
 watch(() => props.resourcePath, (newPath) => {
   if (newPath) {
     currentPath.value = newPath;
+    handleClearSearch();
     loadDirectory(newPath);
   }
 });
@@ -704,15 +769,9 @@ const getFileCategory = (item: LocalFileItem): 'folder' | 'video' | 'audio' | 'i
 };
 
 const filteredItems = computed(() => {
-  let list = [...items.value];
+  let list = isSearching.value ? [...searchResults.value] : [...items.value];
 
-  // 1. Search Query Filter
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase();
-    list = list.filter(item => item.name.toLowerCase().includes(q));
-  }
-
-  // 2. Sorting
+  // Sorting
   const [field, order] = sortBy.value.split('-');
   const isAsc = order === 'asc';
 
@@ -739,7 +798,8 @@ const filteredItems = computed(() => {
 });
 
 const selectedItems = computed(() => {
-  return items.value.filter(item => selectedPaths.value.has(item.path));
+  const currentList = isSearching.value ? searchResults.value : items.value;
+  return currentList.filter(item => selectedPaths.value.has(item.path));
 });
 
 const isAllSelectedVideos = computed(() => {
@@ -1807,39 +1867,70 @@ const isRecentFile = (item: LocalFileItem): boolean => {
 
 .search-wrap {
   position: relative;
-  width: 180px;
-
-  .search-icon {
-    position: absolute;
-    left: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    stroke: var(--text-muted);
-    pointer-events: none;
-  }
+  width: 170px;
+  display: flex;
+  align-items: center;
 
   .search-input {
     width: 100%;
-    padding-left: 30px !important;
-    padding-right: 26px !important;
+    padding-left: 24px !important;
+    padding-right: 22px !important;
     font-size: 12px;
     height: 30px;
+    box-sizing: border-box;
+  }
+
+  .search-icon-btn {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    cursor: pointer;
+    z-index: 2;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--color-accent);
+    }
+
+    .search-icon {
+      pointer-events: none;
+    }
   }
 
   .clear-search-btn {
     position: absolute;
-    right: 8px;
+    right: 5px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
     border: none;
-    padding: 2px;
-    cursor: pointer;
-    color: var(--text-muted);
+    padding: 0;
+    width: 16px;
+    height: 16px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    opacity: 0.35;
+    z-index: 2;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+
+    &.active {
+      opacity: 0.8;
+      color: var(--text-secondary);
+    }
 
     &:hover {
+      opacity: 1;
       color: var(--text-primary);
     }
   }

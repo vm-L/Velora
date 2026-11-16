@@ -52,13 +52,31 @@ export const lanWebMarkup = `<div id="app">
         </div>
 
         <div class="toolbar-tools">
-          <div class="search-wrap">
-            <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input type="text" id="search-input" class="v-input search-input" placeholder="搜索文件或目录">
-          </div>
+          <form id="search-form" class="search-wrap" action="javascript:void(0);" onsubmit="return false;">
+            <button id="search-btn" class="search-btn" title="点击搜索" type="button">
+              <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </button>
+            <input
+              type="search"
+              id="search-input"
+              class="v-input search-input"
+              placeholder=""
+              enterkeyhint="search"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+            >
+            <button id="clear-search-btn" class="clear-search-btn" title="清空搜索" type="button" style="display:none;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </form>
           <select id="sort-select" class="sort-select">
             <option value="mtime-desc">按修改时间 (最新)</option>
             <option value="mtime-asc">按修改时间 (最早)</option>

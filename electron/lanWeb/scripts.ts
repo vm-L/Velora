@@ -19,6 +19,8 @@ export const lanWebScripts = `function escapeHtml(str) {
       breadcrumbPaths: [],
       items: [],
       search: '',
+      isSearching: false,
+      searchResults: [],
       sort: 'mtime-desc',
       theme: localStorage.getItem('velora_theme') || 'light',
       selectedPaths: new Set(),
@@ -52,11 +54,7 @@ export const lanWebScripts = `function escapeHtml(str) {
     };
 
     function getFilteredAndSortedItems() {
-      var list = state.items.slice();
-      if (state.search.trim()) {
-        var q = state.search.trim().toLowerCase();
-        list = list.filter(function(i) { return i.name.toLowerCase().includes(q); });
-      }
+      var list = state.isSearching ? state.searchResults.slice() : state.items.slice();
 
       var parts = state.sort.split('-');
       var field = parts[0];
@@ -83,7 +81,10 @@ export const lanWebScripts = `function escapeHtml(str) {
     var resourceTabs = document.getElementById('resource-tabs');
     var breadcrumbs = document.getElementById('breadcrumbs');
     var navBackBtn = document.getElementById('nav-back-btn');
+    var searchForm = document.getElementById('search-form');
     var searchInput = document.getElementById('search-input');
+    var searchBtn = document.getElementById('search-btn');
+    var clearSearchBtn = document.getElementById('clear-search-btn');
     var sortSelect = document.getElementById('sort-select');
     var newFolderBtn = document.getElementById('new-folder-btn');
     var refreshBtn = document.getElementById('refresh-btn');
@@ -439,6 +440,9 @@ export const lanWebScripts = `function escapeHtml(str) {
       if (!res) return;
       state.currentResourceId = id;
       state.currentPath = res.path;
+      if (typeof clearSearch === 'function') {
+        clearSearch();
+      }
       renderResourceTabs();
       loadDirectory(res.path);
     };
@@ -472,7 +476,11 @@ export const lanWebScripts = `function escapeHtml(str) {
         var res = await apiFetch('/api/directory?id=' + encodeURIComponent(state.currentResourceId) + '&path=' + encodeURIComponent(path));
         if (res.success) {
           state.items = res.items || [];
-          renderFileGrid();
+          if (state.isSearching && searchInput && searchInput.value.trim()) {
+            await executeSearch();
+          } else {
+            renderFileGrid();
+          }
           if (preserveScroll) {
             window.scrollTo({ top: savedScrollY, behavior: 'instant' });
             requestAnimationFrame(function() {
@@ -611,7 +619,7 @@ export const lanWebScripts = `function escapeHtml(str) {
       var isSelected = state.selectedPaths.has(item.path);
       var cardClass = 'file-card' + (isSelected ? ' selected' : '') + (state.allowEdit ? ' has-actions' : '');
 
-      return '<div class="' + cardClass + '" data-idx="' + idx + '" data-path="' + encodedPath + '" onclick="handleCardClick(' + idx + ', event)">' +
+      return '<div class="' + cardClass + '" data-idx="' + idx + '" data-path="' + encodedPath + '" title="' + escapeHtml(item.path) + '" onclick="handleCardClick(' + idx + ', event)">' +
         (state.allowEdit ? '<div class="card-select-btn" onclick="event.stopPropagation(); toggleCardSelection(' + idx + ', event)">✓</div>' : '') +
         recentBadge +
         '<div class="card-icon-wrap">' +
@@ -636,7 +644,8 @@ export const lanWebScripts = `function escapeHtml(str) {
       }
 
       if (currentRenderedItems.length === 0) {
-        fileGrid.innerHTML = '<div class="empty-state"><span>未找到文件或目录为空</span></div>';
+        var emptyMsg = state.isSearching ? '未找到匹配的文件或目录' : '未找到文件或目录为空';
+        fileGrid.innerHTML = '<div class="empty-state"><span>' + emptyMsg + '</span></div>';
         state.renderedCount = 0;
         return;
       }
@@ -1138,16 +1147,90 @@ export const lanWebScripts = `function escapeHtml(str) {
       });
     }
 
-    // Search & Sort Event Listeners with Debounce
-    var searchDebounceTimer = null;
-    searchInput.addEventListener('input', function(e) {
-      var val = e.target.value;
-      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-      searchDebounceTimer = setTimeout(function() {
-        state.search = val;
+    // Search & Sort Event Listeners
+    function updateClearSearchBtn() {
+      if (clearSearchBtn) {
+        clearSearchBtn.style.display = searchInput && searchInput.value ? 'flex' : 'none';
+      }
+    }
+
+    async function executeSearch() {
+      if (!searchInput) return;
+      var q = searchInput.value.trim();
+      if (!q) {
+        clearSearch();
+        return;
+      }
+      state.isSearching = true;
+      fileGrid.innerHTML = '<div class="empty-state"><span>正在搜索...</span></div>';
+      try {
+        var res = await apiFetch('/api/search?id=' + encodeURIComponent(state.currentResourceId) + '&path=' + encodeURIComponent(state.currentPath) + '&q=' + encodeURIComponent(q));
+        if (res.success) {
+          state.searchResults = res.items || [];
+          renderFileGrid();
+        } else {
+          fileGrid.innerHTML = '<div class="empty-state"><span>搜索失败: ' + escapeHtml(res.error || '未知错误') + '</span></div>';
+        }
+      } catch (err) {
+        fileGrid.innerHTML = '<div class="empty-state"><span>搜索发生异常</span></div>';
+      }
+    }
+
+    function clearSearch() {
+      if (searchInput) searchInput.value = '';
+      updateClearSearchBtn();
+      if (state.isSearching) {
+        state.isSearching = false;
+        state.searchResults = [];
         renderFileGrid();
-      }, 250);
-    });
+      }
+    }
+
+    function triggerSearch() {
+      if (searchInput) searchInput.blur();
+      executeSearch();
+    }
+
+    if (searchForm) {
+      searchForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        triggerSearch();
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+          e.preventDefault();
+          triggerSearch();
+        }
+      });
+      searchInput.addEventListener('keyup', function(e) {
+        if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+          e.preventDefault();
+          triggerSearch();
+        }
+      });
+      searchInput.addEventListener('input', function() {
+        updateClearSearchBtn();
+        if (!searchInput.value.trim() && state.isSearching) {
+          clearSearch();
+        }
+      });
+    }
+
+    if (searchBtn) {
+      searchBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        triggerSearch();
+      });
+    }
+
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener('click', function() {
+        clearSearch();
+      });
+    }
 
     sortSelect.addEventListener('change', function(e) {
       state.sort = e.target.value;

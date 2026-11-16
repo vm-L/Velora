@@ -393,24 +393,67 @@ export const lanWebStyles = `/* Pristine Elegance OKLCH Theme Variables - 1:1 wi
 
     .search-wrap {
       position: relative;
-      width: 170px;
+      width: 190px;
+      margin: 0;
+      padding: 0;
     }
 
-    .search-wrap .search-icon {
+    .search-wrap .search-btn {
       position: absolute;
-      left: 10px;
+      left: 3px;
       top: 50%;
       transform: translateY(-50%);
-      stroke: var(--text-muted);
-      pointer-events: none;
+      background: none;
+      border: none;
+      padding: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      border-radius: 4px;
+      line-height: 1;
+    }
+
+    .search-wrap .search-btn:hover {
+      color: var(--color-accent);
+    }
+
+    .search-wrap .clear-search-btn {
+      position: absolute;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      border-radius: 4px;
+      line-height: 1;
+    }
+
+    .search-wrap .clear-search-btn:hover {
+      color: var(--text-primary);
     }
 
     .search-input {
       width: 100%;
-      padding-left: 28px !important;
-      padding-right: 10px !important;
+      padding-left: 24px !important;
+      padding-right: 22px !important;
       font-size: 12px;
       height: 32px;
+    }
+
+    .search-input[type="search"]::-webkit-search-decoration,
+    .search-input[type="search"]::-webkit-search-cancel-button,
+    .search-input[type="search"]::-webkit-search-results-button,
+    .search-input[type="search"]::-webkit-search-results-decoration {
+      display: none;
+      -webkit-appearance: none;
     }
 
     .sort-select {

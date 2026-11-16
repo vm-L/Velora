@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scanDirectoryMediaFiles: (rootDir: string, maxDepth?: number) => ipcRenderer.invoke('scan-directory-media-files', rootDir, maxDepth),
   scanDirectoriesAllFiles: (rootDirs: string[], maxDepth?: number) => ipcRenderer.invoke('scan-directories-all-files', rootDirs, maxDepth),
   readLocalDirectory: (dirPath: string) => ipcRenderer.invoke('read-local-directory', dirPath),
+  searchLocalFiles: (dirPath: string, query: string) => ipcRenderer.invoke('search-local-files', dirPath, query),
   createLocalFolder: (folderPath: string) => ipcRenderer.invoke('create-local-folder', folderPath),
   deleteLocalPath: (targetPath: string) => ipcRenderer.invoke('delete-local-path', targetPath),
   scanLocalVideos: (targetPaths: string[]) => ipcRenderer.invoke('scan-local-videos', targetPaths),

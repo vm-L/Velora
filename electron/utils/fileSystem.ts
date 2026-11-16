@@ -169,3 +169,86 @@ export async function copyDirRecursive(src: string, dest: string): Promise<void>
     }
   }
 }
+
+/**
+ * 递归全量搜索目录树下匹配关键词的所有文件与文件夹（无层级限制，自动过滤系统与临时目录）
+ */
+export async function searchDirectoryRecursive(
+  rootDir: string,
+  query: string
+): Promise<{ success: boolean; items: DirectoryItem[]; error?: string }> {
+  try {
+    if (!rootDir) {
+      return { success: false, error: '搜索根路径为空', items: [] };
+    }
+    const stat = await fs.promises.stat(rootDir);
+    if (!stat.isDirectory()) {
+      return { success: false, error: '目标路径不是有效目录', items: [] };
+    }
+
+    const trimmedQuery = (query || '').trim().toLowerCase();
+    if (!trimmedQuery) {
+      return { success: true, items: [] };
+    }
+
+    const items: DirectoryItem[] = [];
+    const now = Date.now();
+
+    const walk = async (currentDir: string) => {
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+      } catch {
+        return; // 忽略不可读或权限不足的文件夹
+      }
+
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        if (IGNORED_DIR_NAMES.has(entry.name.toLowerCase())) continue;
+
+        const fullPath = path.join(currentDir, entry.name).replace(/\\/g, '/');
+        const isDir = entry.isDirectory();
+
+        // 检查文件名是否命中关键词
+        const isMatched = entry.name.toLowerCase().includes(trimmedQuery);
+
+        if (isMatched) {
+          try {
+            const itemStat = await fs.promises.stat(fullPath);
+            const ext = isDir ? '' : path.extname(entry.name).toLowerCase().replace(/^\./, '');
+            const hasRecentFile = isDir ? await checkDirHasRecentFiles(fullPath, now) : false;
+            items.push({
+              name: entry.name,
+              path: fullPath,
+              isDirectory: isDir,
+              size: isDir ? 0 : itemStat.size,
+              mtime: itemStat.mtimeMs,
+              ext,
+              hasRecentFile
+            });
+          } catch {
+            items.push({
+              name: entry.name,
+              path: fullPath,
+              isDirectory: isDir,
+              size: 0,
+              mtime: 0,
+              ext: isDir ? '' : path.extname(entry.name).toLowerCase().replace(/^\./, ''),
+              hasRecentFile: false
+            });
+          }
+        }
+
+        // 继续深入递归子目录
+        if (isDir) {
+          await walk(fullPath);
+        }
+      }
+    };
+
+    await walk(rootDir);
+    return { success: true, items };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err), items: [] };
+  }
+}

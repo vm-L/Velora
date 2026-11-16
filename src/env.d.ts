@@ -42,6 +42,7 @@ interface Window {
     scanDirectoryMediaFiles: (rootDir: string, maxDepth?: number) => Promise<Array<{ name: string; path: string; dir: string; relativeDir: string }>>
     scanDirectoriesAllFiles: (rootDirs: string[], maxDepth?: number) => Promise<Array<{ name: string; path: string }>>
     readLocalDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string; items: Array<{ name: string; path: string; isDirectory: boolean; size: number; mtime: number; ext: string }> }>
+    searchLocalFiles: (dirPath: string, query: string) => Promise<{ success: boolean; error?: string; items: Array<{ name: string; path: string; isDirectory: boolean; size: number; mtime: number; ext: string }> }>
     createLocalFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
     deleteLocalPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
     scanLocalVideos: (targetPaths: string[]) => Promise<{ success: boolean; videos: Array<{ name: string; path: string; size: number }>; error?: string }>

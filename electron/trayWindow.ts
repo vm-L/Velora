@@ -8,6 +8,7 @@ export interface TrayCallbacks {
   onResumeAll: () => void;
   onPauseAll: () => void;
   onQuitApp: () => void;
+  getTaskStats?: () => TaskStats;
 }
 
 let trayWindow: BrowserWindow | null = null;
@@ -367,6 +368,11 @@ export class TrayWindowManager {
           break;
       }
     });
+
+    ipcMain.on('tray-paused-state', (_event, hasPaused: boolean) => {
+      hasPausedTasksState = !!hasPaused;
+      this.pushStatsToWindow();
+    });
   }
 
   private createWindow() {
@@ -400,6 +406,10 @@ export class TrayWindowManager {
     trayWindow.webContents.on('did-finish-load', () => {
       this.pushStatsToWindow();
     });
+
+    trayWindow.webContents.on('dom-ready', () => {
+      this.pushStatsToWindow();
+    });
   }
 
   toggle() {
@@ -415,6 +425,12 @@ export class TrayWindowManager {
       this.createWindow();
     }
     if (!trayWindow || !this.tray) return;
+
+    if (this.callbacks?.getTaskStats) {
+      try {
+        lastStats = this.callbacks.getTaskStats();
+      } catch {}
+    }
 
     this.pushStatsToWindow();
     this.repositionWindow();
