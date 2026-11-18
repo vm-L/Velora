@@ -123,7 +123,17 @@ import VIcon from '@/components/base/VIcon.vue';
 import VInput from '@/components/base/VInput.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
 
+const serverReadyTick = ref(0);
+if ((!window.__SERVER_PORT__ || !window.__SERVER_TOKEN__) && window.electronAPI?.getServerInfo) {
+  window.electronAPI.getServerInfo().then((info) => {
+    if (info?.port) window.__SERVER_PORT__ = info.port;
+    if (info?.token) window.__SERVER_TOKEN__ = info.token;
+    serverReadyTick.value++;
+  }).catch(() => {});
+}
+
 const formatMediaSrc = (rawUrl: string): string => {
+  void serverReadyTick.value;
   if (!rawUrl) return '';
   let cleanPath = rawUrl.trim().replace(/\\/g, '/');
   
@@ -136,7 +146,9 @@ const formatMediaSrc = (rawUrl: string): string => {
   }
   
   const port = window.__SERVER_PORT__ || 0;
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
+  const token = window.__SERVER_TOKEN__ || '';
+  if (!port || !token) return '';
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&token=${encodeURIComponent(token)}`;
 };
 
 const props = defineProps<{

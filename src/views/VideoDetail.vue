@@ -179,19 +179,10 @@ import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog'
 
 const { openSaveMediaDialog } = useSaveMediaDialog()
 
-// Hls.js 库的动态加载
-const loadHlsScript = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    if ((window as any).Hls) {
-      resolve()
-      return
-    }
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Failed to load Hls.js library'))
-    document.head.appendChild(script)
-  })
+// 本地按需加载已打包的 Hls.js 库（零外网 CDN 阻塞）
+const loadLocalHls = async (): Promise<any> => {
+  const mod = await import('hls.js')
+  return mod.default || mod
 }
 
 const props = defineProps<{ vodId: string, resourceId: string }>()
@@ -261,6 +252,9 @@ const isVisible = computed(() => {
 watch(isVisible, (visible) => {
   if (!videoPlayer.value) return
   if (visible) {
+    if (hlsInstance && typeof hlsInstance.startLoad === 'function') {
+      try { hlsInstance.startLoad() } catch {}
+    }
     if (wasPlayingBeforeHidden) {
       videoPlayer.value.play().catch(() => {})
       wasPlayingBeforeHidden = false
@@ -269,6 +263,9 @@ watch(isVisible, (visible) => {
     wasPlayingBeforeHidden = !videoPlayer.value.paused
     if (wasPlayingBeforeHidden) {
       videoPlayer.value.pause()
+    }
+    if (hlsInstance && typeof hlsInstance.stopLoad === 'function') {
+      try { hlsInstance.stopLoad() } catch {}
     }
   }
 })
@@ -351,8 +348,18 @@ const mapSourceName = (name: string) => {
 }
 
 
-const handleMediaSniffed = (data: { url: string, type: string, timestamp: number }) => {
-  if (data.type === 'video' && activeEpisode.value && !isNativeVideo.value && !sniffedMediaUrl.value) {
+const handleMediaSniffed = (data: { webContentsId?: number, url: string, type: string, timestamp: number }) => {
+  if (data.webContentsId !== undefined && webviewPlayer.value && typeof webviewPlayer.value.getWebContentsId === 'function') {
+    try {
+      if (webviewPlayer.value.getWebContentsId() !== data.webContentsId) {
+        return;
+      }
+    } catch {
+      return;
+    }
+  }
+
+  if (data.type === 'video' && data.url && activeEpisode.value && !isNativeVideo.value && !sniffedMediaUrl.value) {
     logger.info('VideoDetail', `Sniffed real media URL: ${data.url}`);
     sniffedMediaUrl.value = data.url;
     
@@ -367,12 +374,11 @@ const handleMediaSniffed = (data: { url: string, type: string, timestamp: number
       }
       
       if (data.url.toLowerCase().includes('.m3u8')) {
-        import('hls.js').then((HlsModule) => {
-          const Hls = HlsModule.default || HlsModule;
-          if (Hls.isSupported()) {
+        loadLocalHls().then((Hls) => {
+          if (Hls && Hls.isSupported() && videoPlayer.value) {
             hlsInstance = new Hls({ autoStartLoad: true, startPosition: -1 });
             hlsInstance.loadSource(data.url);
-            hlsInstance.attachMedia(videoPlayer.value!);
+            hlsInstance.attachMedia(videoPlayer.value);
             hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
               let maxLevel = -1;
               let maxBitrate = -1;
@@ -389,7 +395,7 @@ const handleMediaSniffed = (data: { url: string, type: string, timestamp: number
               videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e));
             });
           }
-        });
+        }).catch(() => {});
       } else {
         videoPlayer.value.src = data.url;
         videoPlayer.value.load();
@@ -399,10 +405,12 @@ const handleMediaSniffed = (data: { url: string, type: string, timestamp: number
   }
 }
 
+let offMediaSniffedFn: (() => void) | undefined;
+
 // 初始化加载
 onMounted(async () => {
-  if (window.electronAPI) {
-    window.electronAPI.onMediaSniffed(handleMediaSniffed);
+  if (window.electronAPI && window.electronAPI.onMediaSniffed) {
+    offMediaSniffedFn = window.electronAPI.onMediaSniffed(handleMediaSniffed);
   }
 
   await loadVideoDetail(vodId)
@@ -414,22 +422,12 @@ onMounted(async () => {
     const lastPlayedEp = currentSource.value.episodes.find(ep => playedHistory.value.includes(ep.url))
     playEpisode(lastPlayedEp || currentSource.value.episodes[0])
   }
-
-  // 监听网络嗅探器，自动记录网页内嵌播放时发起的真实媒体流 URL
-  if (window.electronAPI && window.electronAPI.onMediaSniffed) {
-    window.electronAPI.onMediaSniffed((data: any) => {
-      if (data.type === 'video' && data.url) {
-        sniffedMediaUrl.value = data.url
-      }
-    })
-  }
 })
 
 onUnmounted(() => {
+  offMediaSniffedFn?.();
+  offMediaSniffedFn = undefined;
   destroyPlayer()
-  if (window.electronAPI) {
-    window.electronAPI.offMediaSniffed();
-  }
 })
 
 // 销毁播放器
@@ -463,20 +461,20 @@ const playEpisode = async (episode: { name: string; url: string }) => {
   const url = episode.url
   logger.info('Player', '[Player] Playing URL: ' + url)
 
-  // 1. 如果是 .m3u8 后缀，使用 Hls.js 播放
+  // 1. 如果是 .m3u8 后缀，使用本地 Hls.js 播放
   if (url.toLowerCase().includes('.m3u8')) {
     try {
-      await loadHlsScript()
+      const Hls = await loadLocalHls()
       
-      if ((window as any).Hls && (window as any).Hls.isSupported()) {
-        const hls = new (window as any).Hls({
+      if (Hls && Hls.isSupported()) {
+        const hls = new Hls({
           maxMaxBufferLength: 30, // 优化缓冲性能
         })
         hls.loadSource(url)
         hls.attachMedia(videoPlayer.value)
         hlsInstance = hls
 
-        hls.on((window as any).Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
           // 恢复上一次观看的进度
           const savedProgress = getSavedProgress(url)
           if (savedProgress > 0 && videoPlayer.value) {
@@ -485,14 +483,14 @@ const playEpisode = async (episode: { name: string; url: string }) => {
           videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
         })
 
-        hls.on((window as any).Hls.Events.ERROR, (_event: any, data: any) => {
+        hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
           if (data.fatal) {
             switch (data.type) {
-              case (window as any).Hls.ErrorTypes.NETWORK_ERROR:
+              case Hls.ErrorTypes.NETWORK_ERROR:
                 logger.error('Player', '[Player] Fatal network error, trying to recover...')
                 hls.startLoad()
                 break
-              case (window as any).Hls.ErrorTypes.MEDIA_ERROR:
+              case Hls.ErrorTypes.MEDIA_ERROR:
                 logger.error('Player', '[Player] Fatal media error, trying to recover...')
                 hls.recoverMediaError()
                 break
@@ -512,12 +510,12 @@ const playEpisode = async (episode: { name: string; url: string }) => {
             videoPlayer.value.currentTime = savedProgress
           }
           videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
-        })
+        }, { once: true })
       } else {
         logger.error('Player', 'Browser does not support HLS playback')
       }
     } catch (e) {
-      logger.error('Player', 'Hls.js script load error: ' + e)
+      logger.error('Player', 'Hls.js load error: ' + e)
     }
   } else {
     // 2. 如果是普通 mp4，直接使用 HTML5 video 播放
@@ -529,7 +527,7 @@ const playEpisode = async (episode: { name: string; url: string }) => {
         videoPlayer.value.currentTime = savedProgress
       }
       videoPlayer.value?.play().catch(e => logger.warn('Player', 'Auto-play blocked: ' + e))
-    })
+    }, { once: true })
   }
 }
 

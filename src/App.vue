@@ -5,7 +5,7 @@
     <div class="main-panel">
       <router-view v-slot="{ Component, route }">
         <keep-alive>
-          <component :is="Component" :key="route.fullPath" />
+          <component :is="Component" :key="route.path" />
         </keep-alive>
       </router-view>
 
@@ -20,6 +20,10 @@
       <!-- Local Workspaces for multi-site v-show keep-alive -->
       <LocalWorkspace v-for="res in openedLocal" :key="res.id" :resourceId="res.id" :resourcePath="res.path" :resourceName="res.name"
         v-show="$route.name === 'Resource' && $route.params.type === 'local' && $route.params.id === res.id" class="global-workspace" />
+
+      <!-- Pan Workspaces for cloud drive management (lazy mounted on first visit) -->
+      <PanWorkspace v-for="account in mountedPanAccounts" :key="account.type" :panType="account.type" :account="account"
+        v-show="$route.name === 'Resource' && $route.params.type === 'pan' && $route.params.id === account.type" class="global-workspace" />
     </div>
   </div>
   <v-confirm-dialog />
@@ -30,8 +34,8 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import TitleBar from '@/components/layout/TitleBar.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import VConfirmDialog from '@/components/feedback/VConfirmDialog.vue';
@@ -42,20 +46,29 @@ import VideoEditQueueWidget from '@/components/features/VideoEditQueueWidget.vue
 const BrowserWorkspace = defineAsyncComponent(() => import('@/components/layout/BrowserWorkspace.vue'));
 const CMSWorkspace = defineAsyncComponent(() => import('@/components/layout/CMSWorkspace.vue'));
 const LocalWorkspace = defineAsyncComponent(() => import('@/components/layout/LocalWorkspace.vue'));
+const PanWorkspace = defineAsyncComponent(() => import('@/components/layout/PanWorkspace.vue'));
 import { useSettings } from '@/composables/useSettings';
 import { useDownloads } from '@/composables/useDownloads';
 import { useFileDeduplication } from '@/composables/useFileDeduplication';
 import { useOpenedResources } from '@/composables/useOpenedResources';
 import { useOpenedCMS } from '@/composables/useOpenedCMS';
 import { useOpenedLocal } from '@/composables/useOpenedLocal';
+import { usePanAccounts } from '@/composables/usePanAccounts';
 
 const route = useRoute();
+const router = useRouter();
 const { state, loadSettings } = useSettings();
 const { loadTasks, initListeners, isInitialized, auditDiskFiles } = useDownloads();
 const { initFileIndex } = useFileDeduplication();
 const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 const { openedLocal, openLocal } = useOpenedLocal();
+const { panAccounts, loadAccounts: loadPanAccounts } = usePanAccounts();
+const openedPanTypes = ref<string[]>([]);
+const panAccountsReady = ref(false);
+const mountedPanAccounts = computed(() =>
+  panAccounts.value.filter(a => openedPanTypes.value.includes(a.type))
+);
 
 const scheduleIdleTask = (fn: () => void, delay = 800) => {
   if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -74,6 +87,9 @@ onMounted(async () => {
     initListeners();
   }
 
+  await loadPanAccounts();
+  panAccountsReady.value = true;
+
   // 异步初始化建立全局文件去重内存 Map
   initFileIndex();
 
@@ -82,10 +98,9 @@ onMounted(async () => {
     window.electronAPI.notifyFirstScreenReady();
   }
 
-  // 延迟在首屏渲染完成后的空闲时间执行磁盘审计与后台资源预加载，避免启动风暴
+  // 延迟在首屏渲染完成后的空闲时间执行磁盘审计，避免启动风暴
   scheduleIdleTask(() => {
     auditDiskFiles();
-    preloadAllResources();
   }, 800);
 });
 
@@ -93,25 +108,7 @@ watch(() => state.theme, (newTheme) => {
   document.documentElement.dataset.theme = newTheme;
 });
 
-// 后台并发预加载函数 (仅预加载本地文件夹资源，外部网站与 CMS 改为点击时按需懒加载)
-const preloadAllResources = () => {
-  if (Array.isArray(state.localResources)) {
-    state.localResources.forEach(local => {
-      openLocal(local.id, local.path || local.url, local.name);
-    });
-  }
-};
-
-// 监听配置变更，动态同步预加载本地资源
-watch(() => state.localResources, (newList) => {
-  if (Array.isArray(newList)) {
-    newList.forEach(local => {
-      openLocal(local.id, local.path || local.url, local.name);
-    });
-  }
-}, { deep: true });
-
-// 监听路由以自动注册已经打开的资源与 CMS 站点，并实时同步最新活跃路由
+// 监听路由以自动注册已经打开的资源、本地、网盘与 CMS 站点，并实时同步最新活跃路由
 watch(() => [route.params.type, route.params.id, route.fullPath], ([type, id, fullPath]) => {
   const currentType = (type as string) || (route.path.includes('/cms/') ? 'cms' : '')
   const currentId = id as string
@@ -131,8 +128,29 @@ watch(() => [route.params.type, route.params.id, route.fullPath], ([type, id, fu
       openCMS(cms.id, cms.url, fullPath as string);
       updateLastRoute(cms.id, fullPath as string);
     }
+  } else if (currentType === 'pan' && currentId) {
+    if (!openedPanTypes.value.includes(currentId)) {
+      openedPanTypes.value.push(currentId);
+    }
   }
 }, { immediate: true });
+
+watch(
+  () => panAccounts.value.map(a => a.type),
+  (types) => {
+    if (!panAccountsReady.value) return;
+    const activeSet = new Set(types);
+    openedPanTypes.value = openedPanTypes.value.filter(t => activeSet.has(t));
+    if (
+      route.name === 'Resource' &&
+      route.params.type === 'pan' &&
+      typeof route.params.id === 'string' &&
+      !activeSet.has(route.params.id)
+    ) {
+      router.replace('/');
+    }
+  }
+);
 </script>
 
 <style lang="less">
@@ -274,11 +292,11 @@ textarea {
 }
 
 .global-workspace {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   z-index: 10;
   background: var(--bg-app);
 }

@@ -371,7 +371,9 @@ export class TrayWindowManager {
 
     ipcMain.on('tray-paused-state', (_event, hasPaused: boolean) => {
       hasPausedTasksState = !!hasPaused;
-      this.pushStatsToWindow();
+      if (this.isVisible) {
+        this.pushStatsToWindow();
+      }
     });
   }
 
@@ -447,10 +449,14 @@ export class TrayWindowManager {
     this.isVisible = false;
   }
 
-  updateStats(stats: TaskStats, hasPausedTasks: boolean = true) {
+  updateStats(stats: TaskStats, hasPausedTasks?: boolean) {
     lastStats = stats;
-    hasPausedTasksState = hasPausedTasks;
-    this.pushStatsToWindow();
+    if (typeof hasPausedTasks === 'boolean') {
+      hasPausedTasksState = hasPausedTasks;
+    }
+    if (this.isVisible) {
+      this.pushStatsToWindow();
+    }
   }
 
   updateTheme(theme: string) {

@@ -1,5 +1,16 @@
 import Dexie, { type Table } from 'dexie';
 
+export interface PanTaskContext {
+  panType: string;
+  mode: 'drive' | 'share';
+  fid: string;
+  fidToken?: string;
+  pwdId?: string;
+  stoken?: string;
+  cleanupDirFid?: string;
+  extra?: Record<string, any>;
+}
+
 export interface DownloadTask {
   id: string; // Unique ID (e.g. UUID)
   url: string;
@@ -13,6 +24,8 @@ export interface DownloadTask {
   downloadedSegments?: number;
   totalSegments?: number;
   referer?: string;
+  headers?: Record<string, string>;
+  panContext?: PanTaskContext;
   errorMsg?: string;
   speedText?: string;
   etaSeconds?: number;

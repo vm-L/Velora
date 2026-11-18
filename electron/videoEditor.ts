@@ -128,6 +128,42 @@ export function cleanupAppTempDir(): void {
 }
 
 export async function getVideoDuration(filePath: string): Promise<number> {
+  // 优先使用 ffprobe JSON 快速读取时长（~20ms），失败或返回 0 时回退至 ffmpeg -i
+  const probeViaFfprobe = (): Promise<number> => {
+    return new Promise((resolve) => {
+      try {
+        const child = spawn('ffprobe', [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'json',
+          filePath
+        ])
+        let stdout = ''
+        child.stdout.on('data', (data) => {
+          stdout += data.toString()
+        })
+        child.on('close', (code) => {
+          if (code === 0 && stdout) {
+            try {
+              const parsed = JSON.parse(stdout)
+              const dur = parseFloat(parsed?.format?.duration)
+              if (!isNaN(dur) && dur > 0) {
+                return resolve(dur)
+              }
+            } catch {}
+          }
+          resolve(0)
+        })
+        child.on('error', () => resolve(0))
+      } catch {
+        resolve(0)
+      }
+    })
+  }
+
+  const ffprobeDur = await probeViaFfprobe()
+  if (ffprobeDur > 0) return ffprobeDur
+
   return new Promise((resolve) => {
     const child = spawn('ffmpeg', ['-i', filePath])
     let stderr = ''

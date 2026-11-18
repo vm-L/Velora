@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, shallowRef, triggerRef, watch } from 'vue';
 import { db } from '@/db';
 import { useSettings } from '@/composables/useSettings';
 import { isSimilarExistingFile } from '@/utils/similarity';
@@ -10,8 +10,8 @@ export interface DuplicateCheckResult {
   paths: string[];
 }
 
-// 全局单例去重索引 Map: {"demo.txt": ['/path1/demo.txt', '/path2/demo.txt']}
-const fileIndexMap = ref<Map<string, string[]>>(new Map());
+// 全局单例浅响应式去重索引 Map: {"demo.txt": ['/path1/demo.txt', '/path2/demo.txt']}
+const fileIndexMap = shallowRef<Map<string, string[]>>(new Map());
 const isIndexing = ref(false);
 const isReady = ref(false);
 let initPromise: Promise<void> | null = null;
@@ -46,7 +46,7 @@ const getDirname = (p: string): string => {
 /**
  * 在内存 Map 中记录一个文件项
  */
-const recordFile = (name: string, filePath: string) => {
+const recordFile = (name: string, filePath: string, silent = false) => {
   if (!name || !filePath) return;
   const cleanPath = normalizePath(filePath);
   const existing = fileIndexMap.value.get(name);
@@ -55,15 +55,19 @@ const recordFile = (name: string, filePath: string) => {
   } else if (!existing.includes(cleanPath)) {
     existing.push(cleanPath);
   }
+  if (!silent) {
+    triggerRef(fileIndexMap);
+  }
 };
 
 /**
  * 从内存 Map 中移除一个文件路径或整个键
  */
-const removeFile = (name: string, filePath?: string) => {
+const removeFile = (name: string, filePath?: string, silent = false) => {
   if (!name) return;
   if (!filePath) {
     fileIndexMap.value.delete(name);
+    if (!silent) triggerRef(fileIndexMap);
     return;
   }
   const cleanPath = normalizePath(filePath);
@@ -75,6 +79,7 @@ const removeFile = (name: string, filePath?: string) => {
     } else {
       fileIndexMap.value.delete(name);
     }
+    if (!silent) triggerRef(fileIndexMap);
   }
 };
 
@@ -89,7 +94,8 @@ const handleFileSystemChange = (event: any) => {
     case 'overwrite': {
       if (event.path) {
         const name = event.name || getBasename(event.path);
-        recordFile(name, event.path);
+        recordFile(name, event.path, true);
+        triggerRef(fileIndexMap);
       }
       break;
     }
@@ -105,9 +111,11 @@ const handleFileSystemChange = (event: any) => {
             fileIndexMap.value.set(name, retained);
           }
         });
+        triggerRef(fileIndexMap);
       } else if (event.path) {
         const name = event.name || getBasename(event.path);
-        removeFile(name, event.path);
+        removeFile(name, event.path, true);
+        triggerRef(fileIndexMap);
       }
       break;
     }
@@ -134,11 +142,13 @@ const handleFileSystemChange = (event: any) => {
             fileIndexMap.value.set(name, updated);
           }
         });
+        triggerRef(fileIndexMap);
       } else if (event.oldPath && event.newPath) {
         const oldName = getBasename(event.oldPath);
         const newName = event.name || getBasename(event.newPath);
-        removeFile(oldName, event.oldPath);
-        recordFile(newName, event.newPath);
+        removeFile(oldName, event.oldPath, true);
+        recordFile(newName, event.newPath, true);
+        triggerRef(fileIndexMap);
       }
       break;
     }
@@ -151,7 +161,7 @@ const handleFileSystemChange = (event: any) => {
         // 1. 增量加入新文件
         for (const f of event.files) {
           if (f.name && f.path) {
-            recordFile(f.name, f.path);
+            recordFile(f.name, f.path, true);
           }
         }
 
@@ -169,6 +179,7 @@ const handleFileSystemChange = (event: any) => {
             fileIndexMap.value.set(name, retained);
           }
         });
+        triggerRef(fileIndexMap);
       }
       break;
     }
@@ -201,9 +212,10 @@ export const useFileDeduplication = () => {
       if (Array.isArray(scanned)) {
         for (const item of scanned) {
           if (item && item.name && item.path) {
-            recordFile(item.name, item.path);
+            recordFile(item.name, item.path, true);
           }
         }
+        triggerRef(fileIndexMap);
       }
     } catch (err: any) {
       logger.warn('Deduplication', `增量扫描目录失败: ${err.message}`);
@@ -230,7 +242,7 @@ export const useFileDeduplication = () => {
           const allTasks = await db.downloads.toArray();
           for (const t of allTasks) {
             if (t.name && t.savePath) {
-              recordFile(t.name, t.savePath);
+              recordFile(t.name, t.savePath, true);
             }
           }
         } catch (dbErr: any) {
@@ -252,7 +264,7 @@ export const useFileDeduplication = () => {
             if (Array.isArray(files)) {
               for (const f of files) {
                 if (f && f.name && f.path) {
-                  recordFile(f.name, f.path);
+                  recordFile(f.name, f.path, true);
                 }
               }
             }
@@ -261,6 +273,7 @@ export const useFileDeduplication = () => {
           }
         }
 
+        triggerRef(fileIndexMap);
         isReady.value = true;
         const elapsed = (performance.now() - startTime).toFixed(2);
         let totalFiles = 0;
@@ -356,14 +369,20 @@ export const useFileDeduplication = () => {
    * 清除失效死路径
    */
   const auditCleanDeadPaths = (validPaths: Set<string>) => {
+    let changed = false;
     fileIndexMap.value.forEach((paths, name) => {
       const active = paths.filter(p => validPaths.has(p));
       if (active.length === 0) {
         fileIndexMap.value.delete(name);
+        changed = true;
       } else if (active.length !== paths.length) {
         fileIndexMap.value.set(name, active);
+        changed = true;
       }
     });
+    if (changed) {
+      triggerRef(fileIndexMap);
+    }
   };
 
   return {

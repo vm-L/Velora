@@ -1,6 +1,7 @@
 <template>
   <label class="v-checkbox-wrapper" :class="{ 'disabled': disabled }">
     <input
+      ref="inputRef"
       type="checkbox"
       :checked="isChecked"
       :disabled="disabled"
@@ -14,7 +15,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
+
+const inputRef = ref<HTMLInputElement | null>(null);
 
 const props = defineProps({
   modelValue: {
@@ -25,6 +28,10 @@ const props = defineProps({
     type: Boolean,
     default: undefined,
   },
+  indeterminate: {
+    type: Boolean,
+    default: false,
+  },
   value: {
     type: [String, Number, Boolean],
     default: null,
@@ -33,6 +40,12 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+});
+
+watchEffect(() => {
+  if (inputRef.value) {
+    inputRef.value.indeterminate = !!props.indeterminate;
+  }
 });
 
 const emit = defineEmits(['update:modelValue', 'change']);
@@ -115,6 +128,19 @@ const onChange = (e: Event) => {
 .v-checkbox-input:checked {
   background: var(--bg-surface-hover);
   border-color: var(--color-accent);
+}
+
+.v-checkbox-input:indeterminate {
+  background: var(--bg-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.v-checkbox-input:indeterminate::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  background-color: var(--color-accent);
+  border-radius: 1px;
 }
 
 /* The checkmark icon inside the checkbox */

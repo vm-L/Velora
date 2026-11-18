@@ -2,7 +2,8 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, session, c
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
-import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive, searchDirectoryRecursive } from './utils/fileSystem'
+import crypto from 'crypto'
+import { scanDirectory, resolveAppIcoPath, resolveAppIconPath, retryFileOperation, copyDirRecursive, searchDirectoryRecursive, sanitizeFileName, resolveSafeChildPath } from './utils/fileSystem'
 
 // 启动渲染与图形硬件加速配置
 app.commandLine.appendSwitch('disable-http-cache', 'false');
@@ -32,11 +33,13 @@ const localDataPath = getLocalDataDir();
 app.setPath('userData', localDataPath);
 app.setPath('sessionData', path.join(localDataPath, 'session'));
 
-import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText } from './adblock'
-import { getHeadersForUrl } from './downloader'
+import { isAdUrl, updateCompiledRules, fetchRemoteRuleSource, parseRulesText, saveRuleCacheFile } from './adblock'
+import { getHeadersForUrl, fetchWithRedirectGuard } from './downloader'
 import { logger } from './logger'
 import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cancelVideoMerge, MergeVideosParams, cleanupAppTempDir } from './videoEditor'
 import { videoTaskManager } from './videoTaskManager'
+import { panService } from './pan/service'
+import { panAccountManager, PAN_CONFIGS } from './pan/accountManager'
 
 interface ActiveMediaStream {
   filePath: string;
@@ -76,15 +79,105 @@ export function releaseLocalMediaStreams(targetPath: string): number {
   return closedCount;
 }
 
+const mediaServerToken = crypto.randomBytes(24).toString('hex');
+const SENSITIVE_STREAM_EXTS = new Set(['.json', '.enc', '.log', '.env', '.db', '.sqlite', '.sqlite3', '.key', '.pem', '.crt', '.pfx']);
+
+function isSensitiveStreamPath(targetPath: string): boolean {
+  try {
+    const resolved = path.resolve(targetPath);
+    const resolvedLower = resolved.toLowerCase();
+    const dataDirResolved = path.resolve(localDataPath).toLowerCase();
+    // 禁止通过流服务访问应用配置、密钥与会话目录内文件
+    if (resolvedLower === dataDirResolved || resolvedLower.startsWith(dataDirResolved + path.sep)) {
+      return true;
+    }
+    const ext = path.extname(resolvedLower);
+    if (SENSITIVE_STREAM_EXTS.has(ext)) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+function resolveAllowedStreamOrigin(originHeader?: string): string | null {
+  if (!originHeader) return null;
+  if (
+    originHeader === 'null' ||
+    originHeader.startsWith('file://') ||
+    originHeader.startsWith('http://localhost:') ||
+    originHeader.startsWith('http://127.0.0.1:')
+  ) {
+    return originHeader;
+  }
+  return null;
+}
+
+interface PanPreviewEntry {
+  url: string;
+  headers: Record<string, string>;
+  filename: string;
+  createdAt: number;
+}
+
+const panPreviewRegistry = new Map<string, PanPreviewEntry>();
+
+function inferMediaContentType(filePathOrName: string): string {
+  const ext = (filePathOrName || '').split('.').pop()?.toLowerCase() || '';
+  if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
+  if (ext === 'm3u8') return 'application/x-mpegURL';
+  if (ext === 'ts') return 'video/MP2T';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'm4a' || ext === 'aac') return 'audio/mp4';
+  if (ext === 'flac') return 'audio/flac';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === 'mkv') return 'video/x-matroska';
+  if (ext === 'flv' || ext === 'f4v') return 'video/x-flv';
+  if (ext === 'mov' || ext === 'qt') return 'video/quicktime';
+  if (ext === 'avi') return 'video/x-msvideo';
+  if (ext === 'wmv') return 'video/x-ms-wmv';
+  if (ext === '3gp') return 'video/3gpp';
+  if (ext === 'ogg' || ext === 'ogv') return 'video/ogg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
 let streamServerPort = 0;
 const mediaServer = http.createServer(async (req, res) => {
   try {
-    const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
+    const allowedOrigin = resolveAllowedStreamOrigin(typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+    if (req.method === 'OPTIONS') {
+      if (allowedOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+        res.setHeader('Vary', 'Origin');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.writeHead(204);
+      return res.end();
+    }
+
+    const urlObj = new URL(req.url || '', `http://${req.headers.host || '127.0.0.1'}`);
     if (urlObj.pathname === '/stream') {
+      const reqToken = urlObj.searchParams.get('token');
+      if (!reqToken || reqToken !== mediaServerToken) {
+        res.writeHead(403);
+        return res.end('Forbidden');
+      }
+
       const filePath = urlObj.searchParams.get('path');
       if (!filePath) {
         res.writeHead(400);
         return res.end('Missing path');
+      }
+
+      if (isSensitiveStreamPath(filePath)) {
+        res.writeHead(403);
+        return res.end('Forbidden path');
       }
       
       const stat = await fs.promises.stat(filePath);
@@ -107,8 +200,6 @@ const mediaServer = http.createServer(async (req, res) => {
       else if (ext === 'png') contentType = 'image/png';
       else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
       else if (ext === 'webp') contentType = 'image/webp';
-      else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
-      else if (ext === 'webp') contentType = 'image/webp';
       else if (ext === 'gif') contentType = 'image/gif';
       
       const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
@@ -116,7 +207,10 @@ const mediaServer = http.createServer(async (req, res) => {
       const ifRange = req.headers['if-range'];
       const isIfRangeValid = !ifRange || ifRange === etag || ifRange === lastModified;
 
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (allowedOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+        res.setHeader('Vary', 'Origin');
+      }
       res.setHeader('Content-Type', contentType);
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'no-cache, private');
@@ -128,8 +222,7 @@ const mediaServer = http.createServer(async (req, res) => {
         const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
         if (!match) {
           res.writeHead(416, {
-            'Content-Range': `bytes */${stat.size}`,
-            'Access-Control-Allow-Origin': '*'
+            'Content-Range': `bytes */${stat.size}`
           });
           return res.end();
         }
@@ -140,8 +233,7 @@ const mediaServer = http.createServer(async (req, res) => {
         if (isNaN(start)) {
           if (isNaN(end)) {
             res.writeHead(416, {
-              'Content-Range': `bytes */${stat.size}`,
-              'Access-Control-Allow-Origin': '*'
+              'Content-Range': `bytes */${stat.size}`
             });
             return res.end();
           }
@@ -153,8 +245,7 @@ const mediaServer = http.createServer(async (req, res) => {
 
         if (start >= stat.size || start < 0 || end < start) {
           res.writeHead(416, {
-            'Content-Range': `bytes */${stat.size}`,
-            'Access-Control-Allow-Origin': '*'
+            'Content-Range': `bytes */${stat.size}`
           });
           return res.end();
         }
@@ -167,7 +258,6 @@ const mediaServer = http.createServer(async (req, res) => {
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Content-Length': chunksize,
           'Content-Type': contentType,
-          'Access-Control-Allow-Origin': '*',
           'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath, { start, end });
@@ -194,7 +284,6 @@ const mediaServer = http.createServer(async (req, res) => {
         res.writeHead(200, {
           'Content-Length': stat.size,
           'Content-Type': contentType,
-          'Access-Control-Allow-Origin': '*',
           'Accept-Ranges': 'bytes'
         });
         const fileStream = fs.createReadStream(filePath);
@@ -218,14 +307,95 @@ const mediaServer = http.createServer(async (req, res) => {
         fileStream.on('close', () => activeMediaStreams.delete(streamEntry));
         fileStream.pipe(res);
       }
+    } else if (urlObj.pathname === '/pan-stream') {
+      const reqToken = urlObj.searchParams.get('token');
+      if (!reqToken || reqToken !== mediaServerToken) {
+        res.writeHead(403);
+        return res.end('Forbidden');
+      }
+
+      const sid = urlObj.searchParams.get('sid') || '';
+      const entry = panPreviewRegistry.get(sid);
+      if (!entry) {
+        res.writeHead(404);
+        return res.end('Preview not found or expired');
+      }
+
+      const upstreamHeaders: Record<string, string> = { ...entry.headers };
+      if (typeof req.headers['range'] === 'string') {
+        upstreamHeaders['Range'] = req.headers['range'];
+      }
+      if (typeof req.headers['if-range'] === 'string') {
+        upstreamHeaders['If-Range'] = req.headers['if-range'];
+      }
+
+      const abortCtrl = new AbortController();
+      req.on('close', () => {
+        try { abortCtrl.abort(); } catch {}
+      });
+
+      const upstream = await fetchWithRedirectGuard(entry.url, {
+        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+        headers: upstreamHeaders,
+        signal: abortCtrl.signal as any
+      });
+
+      const respHeaders: Record<string, string> = {};
+      const passHeaders = ['content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control'];
+      for (const h of passHeaders) {
+        const val = upstream.headers?.get?.(h);
+        if (val) respHeaders[h] = val;
+      }
+      const rawCt = upstream.headers?.get?.('content-type') || '';
+      const ct = rawCt && !rawCt.toLowerCase().includes('octet-stream')
+        ? rawCt
+        : inferMediaContentType(entry.filename);
+      if (ct) respHeaders['Content-Type'] = ct;
+      if (!respHeaders['Accept-Ranges']) {
+        respHeaders['Accept-Ranges'] = 'bytes';
+      }
+      if (allowedOrigin) {
+        respHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
+        respHeaders['Vary'] = 'Origin';
+      }
+
+      res.writeHead(upstream.status || 200, respHeaders);
+      if (req.method === 'HEAD' || !upstream.body) {
+        return res.end();
+      }
+
+      const reader = upstream.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength > 0 && !res.destroyed) {
+            const canContinue = res.write(Buffer.from(value));
+            if (!canContinue) {
+              await new Promise<void>((r) => res.once('drain', r));
+            }
+          }
+        }
+      } catch (streamErr: any) {
+        if (!abortCtrl.signal.aborted) {
+          logger.warn('Protocol', `Pan stream pump error: ${streamErr?.message || streamErr}`);
+        }
+      } finally {
+        try { await reader.cancel(); } catch {}
+        if (!res.writableEnded) res.end();
+      }
     } else {
       res.writeHead(404);
       res.end('Not found');
     }
   } catch (err: any) {
     logger.error('Protocol', `Local media server error: ${err.message}`);
-    res.writeHead(404);
-    res.end('File not found');
+    if (!res.headersSent) {
+      res.writeHead(404);
+    }
+    if (!res.writableEnded) {
+      res.end('File not found');
+    }
   }
 });
 
@@ -278,50 +448,68 @@ export function broadcastFileSystemChange(event: FileSystemChangeEvent) {
   }
 }
 
-// 获取应用图标 Base64 Data URL (供 Splash 与 Tray 备用)
+// 获取应用图标 Base64 Data URL (优先使用 build/icon.ico，供 Splash 与 Tray 备用)
+let cachedIconBase64: string | null = null;
 const getIconDataUrl = (): string => {
-  const iconPath = resolveAppIconPath();
-  if (iconPath) {
+  if (cachedIconBase64) return cachedIconBase64;
+  const icoPath = resolveAppIcoPath();
+  if (icoPath) {
     try {
-      const buf = fs.readFileSync(iconPath);
-      return `data:image/png;base64,${buf.toString('base64')}`;
+      const buf = fs.readFileSync(icoPath);
+      if (buf && buf.length > 0) {
+        cachedIconBase64 = `data:image/x-icon;base64,${buf.toString('base64')}`;
+        return cachedIconBase64;
+      }
+    } catch {}
+  }
+  const pngPath = resolveAppIconPath();
+  if (pngPath) {
+    try {
+      const buf = fs.readFileSync(pngPath);
+      if (buf && buf.length > 0) {
+        cachedIconBase64 = `data:image/png;base64,${buf.toString('base64')}`;
+        return cachedIconBase64;
+      }
     } catch {}
   }
   return '';
 };
-
-const iconBase64 = getIconDataUrl();
 
 // 设置 Windows 任务栏应用唯一 AppUserModelId，确保任务栏图标与主程序图标统一关联
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.velora.app');
 }
 
+let cachedAppIcon: Electron.NativeImage | null = null;
 const getAppIcon = () => {
-  const icoCandidates = [
-    path.join(__dirname, '../public/icon.ico'),
-    path.join(__dirname, '../../public/icon.ico'),
-    path.join(process.resourcesPath || '', 'public/icon.ico'),
-    path.join(process.resourcesPath || '', 'app.asar/public/icon.ico'),
-    path.join(process.cwd(), 'build/icon.ico'),
-    path.join(process.cwd(), 'public/icon.ico')
-  ];
-  for (const p of icoCandidates) {
-    if (p && fs.existsSync(p)) {
-      const img = nativeImage.createFromPath(p);
-      if (!img.isEmpty()) return img;
+  if (cachedAppIcon && !cachedAppIcon.isEmpty()) return cachedAppIcon;
+  const icoPath = resolveAppIcoPath();
+  if (icoPath) {
+    const img = nativeImage.createFromPath(icoPath);
+    if (!img.isEmpty()) {
+      cachedAppIcon = img;
+      return cachedAppIcon;
     }
   }
   const pngPath = resolveAppIconPath();
   if (pngPath) {
     const img = nativeImage.createFromPath(pngPath);
-    if (!img.isEmpty()) return img;
+    if (!img.isEmpty()) {
+      cachedAppIcon = img;
+      return cachedAppIcon;
+    }
   }
-  return iconBase64 ? nativeImage.createFromDataURL(iconBase64) : nativeImage.createEmpty();
+  const fallbackUrl = getIconDataUrl();
+  const fallbackImg = fallbackUrl ? nativeImage.createFromDataURL(fallbackUrl) : nativeImage.createEmpty();
+  if (!fallbackImg.isEmpty()) {
+    cachedAppIcon = fallbackImg;
+  }
+  return fallbackImg;
 };
 
 function createSplashWindow(theme: string = 'light') {
   splashStartTime = Date.now();
+  const icoPath = resolveAppIcoPath();
   const appIcon = getAppIcon();
   splashWindow = new BrowserWindow({
     width: 380,
@@ -335,7 +523,7 @@ function createSplashWindow(theme: string = 'light') {
     show: false,
     hasShadow: true,
     backgroundColor: '#00000000',
-    icon: appIcon,
+    icon: (process.platform === 'win32' && icoPath) ? icoPath : appIcon,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false
@@ -394,17 +582,6 @@ function finishStartupAndShowMain() {
   }, remainingWait);
 }
 
-const clearPrivacyData = async () => {
-  try {
-    await session.defaultSession.clearCache()
-    await session.defaultSession.clearStorageData({
-      storages: ['cookies', 'localstorage', 'cachestorage', 'serviceworkers']
-    })
-    logger.info('Privacy', 'Browser cache and storage data cleared successfully.')
-  } catch (e: any) {
-    logger.error('Privacy', `Failed to clear privacy data: ${e.message}`)
-  }
-}
 const globalMediaPageMap = new Map<string, string>();
 const globalHostPageMap = new Map<string, string>();
 const webContentsUrlMap = new Map<number, string>();
@@ -459,21 +636,20 @@ class VeloraClientManager {
 
   registerClient(config: VeloraClientConfig) {
     if (!config.clientId) return;
-    let referer = config.referer || '';
+    const referer = (config.referer || '').trim();
     let origin = config.origin;
     try {
-      if (referer) {
+      if (referer && !origin) {
         const u = new URL(referer);
         if (u.origin && u.origin !== 'null') {
           origin = u.origin;
-          referer = u.origin;
         }
       }
     } catch {}
     this.clients.set(config.clientId, {
       clientId: config.clientId,
-      referer: referer,
-      origin: origin || referer
+      referer,
+      origin
     });
   }
 
@@ -509,13 +685,14 @@ function removeHeaderCaseInsensitive(headers: Record<string, any>, key: string) 
 }
 
 function createWindow() {
+  const icoPath = resolveAppIcoPath();
   const appIcon = getAppIcon();
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 850,
     resizable: true,
     title: "Velora",
-    icon: appIcon,
+    icon: (process.platform === 'win32' && icoPath) ? icoPath : appIcon,
     autoHideMenuBar: true,
     frame: false,
     hasShadow: false,
@@ -594,7 +771,14 @@ function setupIpcHandlers() {
   })
 
   ipcMain.on('open-external', (_, url) => {
-    shell.openExternal(url)
+    try {
+      const parsed = new URL(String(url || ''));
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(parsed.toString());
+      } else {
+        logger.warn('Security', `Blocked openExternal with disallowed protocol: ${parsed.protocol}`);
+      }
+    } catch {}
   })
 
   ipcMain.on('show-item-in-folder', (_, filePath: string) => {
@@ -621,6 +805,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('get-server-port', () => streamServerPort)
+  ipcMain.handle('get-server-info', () => ({ port: streamServerPort, token: mediaServerToken }))
 
   
   ipcMain.handle('open-file', async (_, filePath: string) => {
@@ -699,12 +884,13 @@ function setupIpcHandlers() {
         const response = await net.fetch(file.url, { headers: getHeadersForUrl(file.url) })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const buffer = await response.arrayBuffer()
-        const savePath = path.join(dirPath, file.name)
+        const safeName = sanitizeFileName(path.basename(String(file.name || '')), 'image')
+        const savePath = resolveSafeChildPath(dirPath, safeName, 'image')
         await fs.promises.writeFile(savePath, Buffer.from(buffer))
         results.push({ url: file.url, success: true, path: savePath })
         broadcastFileSystemChange({
           type: 'add',
-          name: file.name,
+          name: safeName,
           path: savePath
         })
       } catch (e: any) {
@@ -770,11 +956,16 @@ function setupIpcHandlers() {
     if (!filePath) return false;
     const targets = [
       filePath,
+      filePath + '.temp.mp4',
       filePath + '.temp.ts',
       filePath + '.temp',
       filePath + '.tmp',
       filePath + '.velora',
-      filePath + '.ts'
+      filePath + '.ts',
+      (() => {
+        const parsed = path.parse(filePath);
+        return path.join(parsed.dir, `${parsed.name}.compress_tmp.mp4`);
+      })()
     ];
     let anyDeleted = false;
     for (const targetPath of targets) {
@@ -805,16 +996,50 @@ function setupIpcHandlers() {
     return anyDeleted;
   })
 
-  ipcMain.handle('file-exists', async (_, filePath: string) => {
+  const pathExistsAsync = async (p: string): Promise<boolean> => {
+    try {
+      await fs.promises.access(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const checkTargetOrTempExists = async (filePath: string): Promise<boolean> => {
     if (!filePath) return false;
-    return (
-      fs.existsSync(filePath) ||
-      fs.existsSync(filePath + '.temp.ts') ||
-      fs.existsSync(filePath + '.temp') ||
-      fs.existsSync(filePath + '.tmp') ||
-      fs.existsSync(filePath + '.velora') ||
-      fs.existsSync(filePath + '.ts')
-    );
+    const parsed = path.parse(filePath);
+    const candidates = [
+      filePath,
+      filePath + '.temp.mp4',
+      filePath + '.temp.ts',
+      filePath + '.temp',
+      filePath + '.tmp',
+      filePath + '.velora',
+      filePath + '.ts',
+      path.join(parsed.dir, `${parsed.name}.compress_tmp.mp4`)
+    ];
+    const results = await Promise.all(candidates.map(pathExistsAsync));
+    return results.some(Boolean);
+  };
+
+  ipcMain.handle('file-exists', async (_, filePath: string) => {
+    return checkTargetOrTempExists(filePath);
+  })
+
+  ipcMain.handle('files-exist-batch', async (_, filePaths: string[]) => {
+    const resMap: Record<string, boolean> = {};
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return resMap;
+    const uniquePaths = Array.from(new Set(filePaths.filter((p) => typeof p === 'string' && p.length > 0)));
+    const BATCH_LIMIT = 24;
+    for (let i = 0; i < uniquePaths.length; i += BATCH_LIMIT) {
+      const slice = uniquePaths.slice(i, i + BATCH_LIMIT);
+      await Promise.all(
+        slice.map(async (p) => {
+          resMap[p] = await checkTargetOrTempExists(p);
+        })
+      );
+    }
+    return resMap;
   })
 
   ipcMain.handle('export-resources-json', async (_event, data: any) => {
@@ -869,6 +1094,11 @@ function setupNetworkInterceptors() {
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
     (details, callback) => {
+      const isBackgroundMainReq = !details.webContentsId || details.webContentsId <= 0;
+      if (isBackgroundMainReq) {
+        return callback({});
+      }
+
       if (details.resourceType === 'mainFrame') {
         return callback({});
       }
@@ -920,6 +1150,10 @@ function setupNetworkInterceptors() {
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ['*://*/*'] },
     (details, callback) => {
+      if (!details.webContentsId || details.webContentsId <= 0) {
+        return callback({});
+      }
+
       const responseHeaders = { ...details.responseHeaders };
       
       // Only inject wildcard CORS if the request comes from the main application window.
@@ -1036,6 +1270,11 @@ function setupNetworkInterceptors() {
 
       const explicitClientId = getHeaderValue(details.requestHeaders, 'X-Velora-Client-Id');
       const explicitRef = getHeaderValue(details.requestHeaders, 'X-Velora-Referer');
+      const isBackgroundMainReq = !details.webContentsId || details.webContentsId <= 0;
+      if (isBackgroundMainReq && !explicitClientId && !explicitRef) {
+        return callback({});
+      }
+
       const existingRef = getHeaderValue(details.requestHeaders, 'Referer');
 
       let clientConfig: VeloraClientConfig | undefined;
@@ -1052,7 +1291,21 @@ function setupNetworkInterceptors() {
 
       let webContentsRef = webContentsUrlMap.get(details.webContentsId);
 
-      let targetReferer = clientConfig?.referer || explicitRef || exactMappedRef || hostMappedRef || existingRef || details.referrer || webContentsRef;
+      const isMainWinReq =
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        details.webContentsId === mainWindow.webContents.id;
+
+      let targetReferer =
+        isMainWinReq || explicitClientId || explicitRef
+          ? clientConfig?.referer || explicitRef || exactMappedRef || hostMappedRef || existingRef || details.referrer || webContentsRef
+          : clientConfig?.referer ||
+            explicitRef ||
+            (existingRef && !isLocalUrl(existingRef) ? existingRef : undefined) ||
+            (details.referrer && !isLocalUrl(details.referrer) ? details.referrer : undefined) ||
+            exactMappedRef ||
+            hostMappedRef ||
+            webContentsRef;
 
       if (isLocalUrl(targetReferer)) {
         targetReferer = clientConfig?.referer || explicitRef || exactMappedRef || hostMappedRef || (isLocalUrl(webContentsRef) ? '' : webContentsRef) || '';
@@ -1060,12 +1313,29 @@ function setupNetworkInterceptors() {
 
       if (targetReferer) {
         try {
-          const targetOrigin = clientConfig?.origin || new URL(targetReferer).origin;
-          const cleanReferer = (new URL(targetReferer).origin !== 'null') ? new URL(targetReferer).origin : targetReferer;
+          const parsedTarget = new URL(targetReferer);
+          const targetOrigin = clientConfig?.origin || parsedTarget.origin;
+          // 保留调用方传入的完整 Referer（含末尾斜杠及子路径）；仅当无有效 scheme 时兜底处理
+          let cleanReferer = /^https?:\/\//i.test(targetReferer) ? targetReferer : targetOrigin;
+          // 夸克/UC/123网盘防盗链根路径 Referer 确保携带末尾斜杠
+          if (
+            (targetReferer.includes('quark.cn') || targetReferer.includes('uc.cn') || targetReferer.includes('123pan')) &&
+            cleanReferer === targetOrigin &&
+            !cleanReferer.endsWith('/')
+          ) {
+            cleanReferer = cleanReferer + '/';
+          }
+          const existingOrigin = getHeaderValue(details.requestHeaders, 'Origin');
           removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
-          removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
           details.requestHeaders['Referer'] = cleanReferer;
-          details.requestHeaders['Origin'] = targetOrigin;
+
+          // 仅在请求本身已携带 Origin 或需要替换本地域 Origin 时设置 Origin，避免普通 GET 触发 CDN 403
+          if (existingOrigin) {
+            removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
+            if (targetOrigin && targetOrigin !== 'null') {
+              details.requestHeaders['Origin'] = targetOrigin;
+            }
+          }
         } catch {
           removeHeaderCaseInsensitive(details.requestHeaders, 'Referer');
           removeHeaderCaseInsensitive(details.requestHeaders, 'Origin');
@@ -1232,7 +1502,8 @@ ipcMain.handle('show-save-dialog', async (event, options: { defaultPath?: string
 });
 
 app.whenReady().then(async () => {
-  // 0. 自动扫描并清理应用临时目录的历史孤儿文件，保持磁盘干净
+  // 0. 延迟加载已保存的网盘账号凭据（确保 safeStorage 密钥链已完全就绪），并清理临时目录历史孤儿文件
+  panAccountManager.ensureLoaded();
   cleanupAppTempDir();
 
   // 1. 【最高优先级】瞬间秒开 Splash 悬浮卡片（0ms 阻塞，依据系统明暗色偏好极速呈现）
@@ -1276,8 +1547,17 @@ app.whenReady().then(async () => {
     }
   }, 5000);
 
+  const icoPath = resolveAppIcoPath();
   const appIcon = getAppIcon();
-  const trayIcon = appIcon.isEmpty() ? nativeImage.createFromDataURL(iconBase64) : appIcon.resize({ width: 16, height: 16 });
+  let trayIcon: Electron.NativeImage | string;
+  if (process.platform === 'win32' && icoPath) {
+    trayIcon = icoPath;
+  } else if (!appIcon.isEmpty()) {
+    trayIcon = appIcon.resize({ width: 16, height: 16 });
+  } else {
+    const fallbackUrl = getIconDataUrl();
+    trayIcon = fallbackUrl ? nativeImage.createFromDataURL(fallbackUrl) : nativeImage.createEmpty();
+  }
   tray = new Tray(trayIcon);
   tray.setToolTip('Velora');
   tray.on('click', () => {
@@ -1369,9 +1649,13 @@ app.on('before-quit', (e) => {
   if (!isQuitting) {
     e.preventDefault()
     isQuitting = true
-    clearPrivacyData().finally(() => {
-      app.exit(0)
-    })
+    try {
+      storeManager.flushSync()
+    } catch {}
+    try {
+      logger.flushSync()
+    } catch {}
+    app.exit(0)
   }
 })
 
@@ -1413,10 +1697,14 @@ app.on('web-contents-created', (_, contents) => {
   }
 })
 
-ipcMain.handle('sync-adblock-source', async (_event, url: string) => {
+ipcMain.handle('sync-adblock-source', async (_event, url: string, sourceId?: string) => {
   try {
     const text = await fetchRemoteRuleSource(url);
     const { count } = parseRulesText(text);
+    if (sourceId) {
+      await saveRuleCacheFile(sourceId, text);
+      return { success: true, count };
+    }
     return { success: true, count, content: text };
   } catch (err: any) {
     logger.error('AdBlock', `Failed to sync source ${url}: ${err.message}`);
@@ -1424,8 +1712,8 @@ ipcMain.handle('sync-adblock-source', async (_event, url: string) => {
   }
 });
 
-ipcMain.handle('compile-adblock-rules', async (_event, sourcesData: Record<string, string>) => {
-  return updateCompiledRules(sourcesData);
+ipcMain.handle('compile-adblock-rules', async (_event, sourcesOrIds: Record<string, string> | string[]) => {
+  return await updateCompiledRules(sourcesOrIds);
 });
 
 ipcMain.handle('move-file', async (_event, oldPath: string, newPath: string, options?: { autoRename?: boolean }) => {
@@ -1678,6 +1966,139 @@ ipcMain.handle('search-local-files', async (_event, dirPath: string, query: stri
   return res;
 });
 
+ipcMain.handle('get-pan-accounts', async () => {
+  return panService.getPublicAccounts();
+});
+
+ipcMain.handle('login-pan-account', async (event, type: any) => {
+  try {
+    const parentWin = BrowserWindow.fromWebContents(event.sender) || mainWindow || undefined;
+    const account = await panService.login(type, parentWin);
+    return { success: !!account, account: account ? panService.toPublicAccount(account) : undefined };
+  } catch (err: any) {
+    return { success: false, error: err?.message || '登录异常' };
+  }
+});
+
+ipcMain.handle('logout-pan-account', async (_, type: any) => {
+  if (typeof type !== 'string' || !PAN_CONFIGS[type as keyof typeof PAN_CONFIGS]) {
+    return { success: false, error: '无效的网盘类型' };
+  }
+  panService.removeAccount(type as any);
+  try {
+    const partition = `persist:pan_auth_${type}`;
+    const authSession = session.fromPartition(partition);
+    await authSession.clearStorageData();
+    await authSession.clearCache();
+    await authSession.clearAuthCache();
+  } catch {}
+  return { success: true };
+});
+
+ipcMain.handle('resolve-pan-resource', async (_, { url, password }: { url: string; password?: string }) => {
+  try {
+    const res = await panService.parseUrl(url, password);
+    if (res.error && (!res.files || res.files.length === 0)) {
+      return { success: false, error: res.error, data: res };
+    }
+    return { success: true, data: res };
+  } catch (err: any) {
+    return { success: false, error: err?.message || '解析网盘失败' };
+  }
+});
+
+ipcMain.handle('pan-list-files', async (_, { type, pdirFid }: { type: any; pdirFid?: string }) => {
+  return panService.listDriveFiles(type, pdirFid);
+});
+
+ipcMain.handle('pan-get-download-urls', async (_, { type, fids }: { type: any; fids: string[] }) => {
+  return panService.getDriveDownloadUrls(type, fids);
+});
+
+ipcMain.handle('pan-delete-files', async (_, { type, fids }: { type: any; fids: string[] }) => {
+  return panService.deleteDriveFiles(type, fids);
+});
+
+ipcMain.handle('pan-get-share-download-urls', async (_, { type, items }: { type: any; items: any[] }) => {
+  return panService.getShareDownloadUrls(type, items);
+});
+
+ipcMain.handle('pan-refresh-quota', async (_, type: any) => {
+  return panService.refreshQuota(type);
+});
+
+ipcMain.handle('pan-create-folder', async (_, { type, parentFid, name }: { type: any; parentFid: string; name: string }) => {
+  return panService.createDriveFolder(type, parentFid, name);
+});
+
+ipcMain.handle('pan-rename-item', async (_, { type, fid, newName, isDirectory }: { type: any; fid: string; newName: string; isDirectory?: boolean }) => {
+  return panService.renameDriveItem(type, fid, newName, isDirectory);
+});
+
+ipcMain.handle('pan-move-items', async (_, { type, fids, targetDirFid }: { type: any; fids: string[]; targetDirFid: string }) => {
+  return panService.moveDriveItems(type, fids, targetDirFid);
+});
+
+ipcMain.handle('pan-create-share', async (_, { type, params }: { type: any; params: any }) => {
+  return panService.createDriveShare(type, params);
+});
+
+ipcMain.handle('pan-save-share', async (_, { type, items, targetDirFid }: { type: any; items: any[]; targetDirFid: string }) => {
+  return panService.saveShareToDrive(type, items, targetDirFid);
+});
+
+ipcMain.handle('pan-get-preview-url', async (_, { type, fid, filename }: { type: any; fid: string; filename?: string }) => {
+  try {
+    const res = await panService.getDriveDownloadUrls(type, [fid]);
+    if (!res.success) {
+      return { success: false, error: res.error || '无法获取媒体直链' };
+    }
+    const link = res.links?.[fid];
+    const url = link?.url || res.urls?.[fid];
+    if (!url) {
+      return { success: false, error: '无法获取媒体直链' };
+    }
+    const cachedHeaders = panService.getCachedHeadersForUrl(url) || {};
+    const baseHeaders = getHeadersForUrl(url, undefined, undefined, undefined, { allowPanCookies: true, panType: String(type) });
+    const mergedHeaders = { ...baseHeaders, ...cachedHeaders };
+
+    const sid = crypto.randomBytes(16).toString('hex');
+    const now = Date.now();
+    if (panPreviewRegistry.size >= 100) {
+      panPreviewRegistry.forEach((v, k) => {
+        if (now - v.createdAt > 6 * 60 * 60 * 1000) panPreviewRegistry.delete(k);
+      });
+      if (panPreviewRegistry.size >= 100) {
+        const oldestKey = panPreviewRegistry.keys().next().value;
+        if (oldestKey !== undefined) panPreviewRegistry.delete(oldestKey);
+      }
+    }
+    panPreviewRegistry.set(sid, {
+      url,
+      headers: mergedHeaders,
+      filename: String(link?.filename || filename || 'media.mp4'),
+      createdAt: now
+    });
+    const previewUrl = `http://127.0.0.1:${streamServerPort}/pan-stream?token=${encodeURIComponent(mediaServerToken)}&sid=${sid}`;
+    return { success: true, previewUrl };
+  } catch (err: any) {
+    return { success: false, error: err?.message || '获取预览流失败' };
+  }
+});
+
+ipcMain.handle('pan-cleanup-temp-dir', async (_, { type, cleanupDirFid }: { type: any; cleanupDirFid: string }) => {
+  try {
+    if (!type || !cleanupDirFid) return { success: true };
+    if (downloader.hasUnfinishedTempDirRef(String(type), String(cleanupDirFid))) {
+      return { success: true };
+    }
+    await panService.cleanupTempDir(type, cleanupDirFid);
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
 ipcMain.handle('create-local-folder', async (_event, folderPath: string) => {
   try {
     if (!folderPath) return { success: false, error: '路径不能为空' };
@@ -1776,6 +2197,15 @@ ipcMain.handle('silent-parse-html', async (_event, targetUrl: string, scripts?: 
   try {
     if (!targetUrl) {
       return { success: false, error: '目标链接不能为空' };
+    }
+    let parsedTarget: URL;
+    try {
+      parsedTarget = new URL(String(targetUrl));
+    } catch {
+      return { success: false, error: '目标链接格式无效' };
+    }
+    if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+      return { success: false, error: `不支持的协议: ${parsedTarget.protocol}` };
     }
 
     const win = new BrowserWindow({

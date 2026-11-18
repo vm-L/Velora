@@ -29,6 +29,24 @@
           />
         </div>
 
+        <!-- 配置与资源 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info" style="min-width: 0; flex: 1;">
+            <h3>配置与资源</h3>
+            <p>导出或导入系统设置、解析规则、用户脚本与资源配置</p>
+          </div>
+          <div class="action-buttons" style="display: flex; gap: 8px;">
+            <v-button variant="secondary" @click="handleImportResources">
+              <v-icon name="import" :size="14" />
+              <span>导入</span>
+            </v-button>
+            <v-button variant="secondary" @click="handleExportResources">
+              <v-icon name="export" :size="14" />
+              <span>导出</span>
+            </v-button>
+          </div>
+        </div>
+
         <!-- 广告过滤规则 -->
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
@@ -41,6 +59,19 @@
             </v-button>
             <v-button variant="secondary" @click="showAdBlockModal = true">
               编辑
+            </v-button>
+          </div>
+        </div>
+
+        <!-- 网盘账号管理 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>网盘账号</h3>
+            <p>{{ loggedInPanCountText }}</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-button variant="secondary" @click="showPanAccountsModal = true">
+              管理
             </v-button>
           </div>
         </div>
@@ -432,26 +463,6 @@
         </div>
       </div>
 
-      <!-- Resource Backup & Migration -->
-      <div class="settings-section-title">资源备份与迁移</div>
-      <div class="settings-card">
-        <div class="settings-row">
-          <div class="settings-info" style="min-width: 0; flex: 1;">
-            <h3>配置与资源备份 (.json)</h3>
-            <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">支持选择导出与导入设置项、网页列表、域名解析规则、脚本与 CMS 资源配置</p>
-          </div>
-          <div class="action-buttons" style="display: flex; gap: 8px;">
-            <v-button variant="secondary" @click="handleImportResources">
-              <v-icon name="import" :size="14" />
-              <span>导入</span>
-            </v-button>
-            <v-button variant="secondary" @click="handleExportResources">
-              <v-icon name="export" :size="14" />
-              <span>导出</span>
-            </v-button>
-          </div>
-        </div>
-      </div>
 
     </div>
 
@@ -665,6 +676,60 @@
         </div>
       </div>
     </div>
+
+    <!-- Cloud Drive Management Modal -->
+    <div v-if="showPanAccountsModal" class="modal-overlay" v-overlay-close="() => showPanAccountsModal = false">
+      <div class="modal-content" style="max-width: 640px; width: 90vw;">
+        <div class="modal-header">
+          <h3>网盘账号管理</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="showPanAccountsModal = false">
+            <VIcon name="close" :size="20" />
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px; max-height: 65vh; overflow-y: auto;">
+          <div
+            v-for="(pan, idx) in panList"
+            :key="pan.type"
+            class="pan-modal-item"
+            :style="idx > 0 ? 'border-top: 1px solid var(--border-light);' : ''"
+          >
+            <div class="pan-item-info">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h4 style="margin: 0; font-size: 14px; font-weight: 600;">{{ pan.name }}</h4>
+              </div>
+              <p v-if="getPanAccount(pan.type)" style="margin: 4px 0 0; font-size: 12px; color: var(--text-secondary);">
+                {{ formatAccountDisplay(getPanAccount(pan.type)) }}
+              </p>
+              <p v-else style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">
+                未登录
+              </p>
+            </div>
+            <div class="action-buttons" style="display: flex; align-items: center; gap: 8px;">
+              <v-button
+                v-if="getPanAccount(pan.type)"
+                variant="danger-soft"
+                size="small"
+                @click="handleLogoutPan(pan.type)"
+              >
+                退出登录
+              </v-button>
+              <v-button
+                v-else
+                variant="secondary"
+                size="small"
+                :disabled="!!isLoggingInPan"
+                @click="handleLoginPan(pan.type)"
+              >
+                {{ isLoggingInPan === pan.type ? '登录中' : '登录' }}
+              </v-button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light);">
+          <v-button variant="primary" size="small" @click="showPanAccountsModal = false">完成</v-button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -784,7 +849,84 @@ const refreshLanStatus = async () => {
 
 onMounted(async () => {
   await refreshLanStatus();
+  await loadPanAccounts();
 });
+
+interface PanMeta {
+  type: string;
+  name: string;
+}
+
+const panList: PanMeta[] = [
+  { type: 'quark', name: '夸克网盘' },
+  { type: 'uc', name: 'UC网盘' },
+  { type: 'baidu', name: '百度网盘' },
+  { type: '123pan', name: '123云盘' },
+  { type: 'xunlei', name: '迅雷云盘' },
+  { type: '115', name: '115网盘' },
+  { type: 'lanzou', name: '蓝奏云' },
+  { type: '139', name: '中国移动云盘' },
+  { type: 'guangya', name: '光鸭云盘' },
+  { type: 'ilanzou', name: '蓝奏云优享版' },
+];
+
+import { usePanAccounts } from '@/composables/usePanAccounts';
+
+const { panAccounts, loadAccounts: loadPanAccounts } = usePanAccounts();
+const isLoggingInPan = ref<string | null>(null);
+const showPanAccountsModal = ref(false);
+
+const loggedInPanCountText = computed(() => {
+  const count = panAccounts.value.length;
+  if (count === 0) return '暂无已登录网盘账号';
+  return `已登录 ${count} 个网盘账号`;
+});
+
+const getPanAccount = (type: string) => {
+  return panAccounts.value.find(a => a.type === type);
+};
+
+const formatAccountDisplay = (account: any) => {
+  if (!account) return '';
+  const rawName = typeof account.name === 'string' ? account.name : '';
+  const name = rawName.replace(/\d+([KMGT]?B)?\/\d+([KMGT]?B)?.*$/i, '').replace(/查看.*$/, '').trim() || '已登录';
+  if (account.quotaText) {
+    return `${name} · 容量：${account.quotaText}`;
+  }
+  return name;
+};
+
+const handleLoginPan = async (type: string) => {
+  if (!window.electronAPI?.loginPanAccount) return;
+  if (isLoggingInPan.value) return;
+  isLoggingInPan.value = type;
+  try {
+    const res = await window.electronAPI.loginPanAccount(type);
+    if (res && res.success) {
+      await loadPanAccounts();
+      showMessage('网盘账号登录成功，凭据已保存', 'success');
+    } else if (res?.error) {
+      showMessage(`登录失败: ${res.error}`, 'error');
+    }
+  } catch (err: any) {
+    showMessage(`登录发生异常: ${err.message}`, 'error');
+  } finally {
+    isLoggingInPan.value = null;
+  }
+};
+
+const handleLogoutPan = async (type: string) => {
+  if (!window.electronAPI?.logoutPanAccount) return;
+  try {
+    await window.electronAPI.logoutPanAccount(type);
+    await loadPanAccounts();
+    showMessage('已成功注销网盘账号凭据', 'info');
+  } catch (err: any) {
+    showMessage(`注销失败: ${err.message}`, 'error');
+  }
+};
+
+
 
 const lanQrCodeSvg = computed(() => {
   return generateQrCodeSvg(lanShareStatus.value.url, 200);
@@ -2015,5 +2157,18 @@ const deleteDomainStyle = async (domain: string) => {
   border-color: var(--color-accent);
   background: var(--bg-surface-active);
   box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.pan-modal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  gap: 16px;
+
+  .pan-item-info {
+    flex: 1;
+    min-width: 0;
+  }
 }
 </style>

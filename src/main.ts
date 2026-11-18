@@ -26,8 +26,13 @@ app.directive('click-outside', {
 app.use(router)
 app.mount('#app')
 
-// Fetch local media streaming server port asynchronously
-if (window.electronAPI?.getServerPort) {
+// Fetch local media streaming server port and access token asynchronously
+if (window.electronAPI?.getServerInfo) {
+  window.electronAPI.getServerInfo().then((info) => {
+    window.__SERVER_PORT__ = info?.port;
+    window.__SERVER_TOKEN__ = info?.token;
+  }).catch(() => {});
+} else if (window.electronAPI?.getServerPort) {
   window.electronAPI.getServerPort().then((port) => {
     window.__SERVER_PORT__ = port;
   }).catch(() => {});

@@ -25,20 +25,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useSettings } from '@/composables/useSettings';
 import VIcon from '@/components/base/VIcon.vue';
 
 const isMaximized = ref(false);
 const { state, setTheme } = useSettings();
+let offMax: (() => void) | undefined;
+let offUnmax: (() => void) | undefined;
 
 onMounted(() => {
-  window.electronAPI.onWindowMaximized(() => {
+  offMax = window.electronAPI.onWindowMaximized(() => {
     isMaximized.value = true;
   });
-  window.electronAPI.onWindowUnmaximized(() => {
+  offUnmax = window.electronAPI.onWindowUnmaximized(() => {
     isMaximized.value = false;
   });
+});
+
+onUnmounted(() => {
+  offMax?.();
+  offUnmax?.();
 });
 
 const minimize = () => {

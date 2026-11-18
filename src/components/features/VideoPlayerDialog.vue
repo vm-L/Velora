@@ -234,13 +234,7 @@ const emit = defineEmits<{
 const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
 
 const effectiveReferer = computed(() => {
-  if (!props.pageUrl) return '';
-  try {
-    const u = new URL(props.pageUrl);
-    return (u.origin && u.origin !== 'null') ? u.origin : props.pageUrl;
-  } catch {
-    return props.pageUrl;
-  }
+  return (props.pageUrl || '').trim();
 });
 
 watch(() => [props.url, effectiveReferer.value], ([u, p]) => {
@@ -676,11 +670,19 @@ const formatMediaSrc = (rawUrl: string): string => {
   }
   
   const port = window.__SERVER_PORT__ || 0;
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&_v=${playerSessionKey.value}`;
+  const token = window.__SERVER_TOKEN__ || '';
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&_v=${playerSessionKey.value}&token=${encodeURIComponent(token)}`;
 };
 
 const loadVideo = async () => {
   if (!videoRef.value || !props.url) return;
+  if ((!window.__SERVER_PORT__ || !window.__SERVER_TOKEN__) && window.electronAPI?.getServerInfo && !/^(http:\/\/|https:\/\/|blob:|data:)/i.test(props.url.trim())) {
+    try {
+      const info = await window.electronAPI.getServerInfo();
+      if (info?.port) window.__SERVER_PORT__ = info.port;
+      if (info?.token) window.__SERVER_TOKEN__ = info.token;
+    } catch {}
+  }
   const video = videoRef.value;
   const playUrl = formatMediaSrc(props.url);
 

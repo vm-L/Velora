@@ -1,14 +1,28 @@
-import { net } from 'electron'
+import http from 'http'
+import https from 'https'
+import zlib from 'zlib'
 import fs from 'fs'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
 
 import path from 'path'
-import { Readable } from 'stream'
 import { storeManager } from './store'
 import { logger } from './logger'
-import { clientManager } from './main'
+import { ensureSafeTargetSavePath } from './utils/fileSystem'
 import { getAvailableEncoders, getEncoderArgs, VideoEncoder, isGpuEncoder } from './gpuAccelerator'
+import { panService } from './pan/service'
+import { panAccountManager } from './pan/accountManager'
+
+export interface PanDownloadContext {
+  panType: string
+  mode: 'drive' | 'share'
+  fid: string
+  fidToken?: string
+  pwdId?: string
+  stoken?: string
+  cleanupDirFid?: string
+  extra?: Record<string, any>
+}
 
 export interface DownloadCommand {
   id: string
@@ -19,9 +33,536 @@ export interface DownloadCommand {
   totalSegments?: number
   referer?: string
   origin?: string
+  headers?: Record<string, string>
+  totalBytes?: number
+  panContext?: PanDownloadContext
+  enqueuedAt?: number
 }
 
-export function getHeadersForUrl(_urlStr: string, customReferer?: string, _customOrigin?: string, clientId?: string): Record<string, string> {
+// 对齐 YunX-Desktop HttpClients.kt：纯 HTTP/1.1 连接池，解除 Chromium 单域名 6 Socket 上限与 HTTP/2 单连接限速合并
+const downloadHttpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15000,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  scheduling: 'lifo'
+})
+
+const downloadHttpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15000,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  scheduling: 'lifo',
+  ALPNProtocols: ['http/1.1']
+})
+
+export function computeOptimalChunkSize(totalBytes: number, concurrency = 16): number {
+  if (totalBytes <= 0) return 2 * 1024 * 1024
+  const minChunk = 512 * 1024 // 512KB
+  const idealByConcurrency = Math.floor(totalBytes / Math.max(concurrency * 4, 32))
+  const minForMaxChunks = Math.ceil(totalBytes / 512)
+  const rawSize = Math.max(minChunk, minForMaxChunks, Math.min(idealByConcurrency, 2 * 1024 * 1024))
+  const step = 256 * 1024
+  return Math.ceil(rawSize / step) * step
+}
+
+export function computeOptimalConcurrency(urlStr: string, referer?: string): number {
+  const lowerUrl = (urlStr || '').toLowerCase()
+  const lowerRef = (referer || '').toLowerCase()
+  if (
+    lowerRef.includes('quark') ||
+    lowerUrl.includes('quark') ||
+    lowerUrl.includes('clouddrive') ||
+    lowerUrl.includes('file.alyp') ||
+    lowerUrl.includes('alyp.cn') ||
+    lowerRef.includes('uc.cn') ||
+    lowerUrl.includes('uc.cn')
+  ) {
+    return 32
+  }
+  if (lowerRef.includes('baidu') || lowerUrl.includes('baidu') || lowerUrl.includes('baidupcs')) {
+    return 24
+  }
+  if (
+    lowerRef.includes('xunlei') ||
+    lowerUrl.includes('xunlei') ||
+    lowerUrl.includes('sandai.net')
+  ) {
+    return 8
+  }
+  return 16
+}
+
+const LANZOU_HOST_RE = /^([a-z0-9-]+\.)*(lanzou[a-z]?\.com|woozooo\.com|baidupan\.com)$/i
+
+function parseUrlHost(rawUrl?: string): string {
+  if (!rawUrl) return ''
+  try {
+    return new URL(rawUrl).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function hostMatches(host: string, suffixes: string[]): boolean {
+  if (!host) return false
+  return suffixes.some((s) => host === s || host.endsWith('.' + s))
+}
+
+function isLanzouHost(host: string): boolean {
+  return Boolean(host && LANZOU_HOST_RE.test(host))
+}
+
+function getRegistrableRoot(host: string): string {
+  if (!host) return ''
+  const clean = host.toLowerCase().replace(/\.+$/, '')
+  const parts = clean.split('.').filter(Boolean)
+  if (parts.length <= 2) return clean
+  const lastTwo = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`
+  if (['com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'co.uk', 'com.hk'].includes(lastTwo) && parts.length >= 3) {
+    return `${parts[parts.length - 3]}.${lastTwo}`
+  }
+  return lastTwo
+}
+
+function isTrustedCrossDomainRedirect(prevHost: string, nextHost: string): boolean {
+  if (!prevHost || !nextHost) return false
+  const prevRoot = getRegistrableRoot(prevHost)
+  const nextRoot = getRegistrableRoot(nextHost)
+  if (prevRoot === nextRoot) return true
+  const quarkUcSet = new Set(['quark.cn', 'uc.cn', 'alyp.cn', 'aliyuncs.com', 'alicdn.com', 'sm.cn'])
+  if (quarkUcSet.has(prevRoot) && quarkUcSet.has(nextRoot)) return true
+  const baiduSet = new Set(['baidu.com', 'baidupcs.com', 'bdimg.com', 'bcebos.com'])
+  if (baiduSet.has(prevRoot) && baiduSet.has(nextRoot)) return true
+  const p115Set = new Set(['115.com', '115cdn.com', '115cdn.net', '115rc.com', 'anxia.com'])
+  if (p115Set.has(prevRoot) && p115Set.has(nextRoot)) return true
+  if (isLanzouHost(prevHost) && isLanzouHost(nextHost)) return true
+  return false
+}
+
+function sanitizeHeaderValue(value: string): string {
+  if (!value) return value
+  let allAscii = true
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 0x20 || code > 0x7e) {
+      allAscii = false
+      break
+    }
+  }
+  if (allAscii) return value
+  let out = ''
+  for (const ch of value) {
+    const cp = ch.codePointAt(0)!
+    if (cp >= 0x20 && cp <= 0x7e) {
+      out += ch
+    } else {
+      const bytes = Buffer.from(ch, 'utf8')
+      for (let i = 0; i < bytes.length; i++) {
+        out += '%' + bytes[i].toString(16).toUpperCase().padStart(2, '0')
+      }
+    }
+  }
+  return out
+}
+
+function sanitizeOutboundHeaders(headers: Record<string, string> | undefined, stripCredentials: boolean): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!headers) return out
+  for (const [k, v] of Object.entries(headers)) {
+    if (v === undefined || v === null || v === '') continue
+    if (/[\r\n\x00-\x1f\x7f]/.test(k)) continue
+    const lower = k.toLowerCase()
+    if (lower === 'x-velora-client-id' || lower === 'x-velora-referer') continue
+    if (stripCredentials && (lower === 'cookie' || lower === 'authorization' || lower === 'host' || lower === 'content-length')) continue
+    out[k] = sanitizeHeaderValue(String(v))
+  }
+  return out
+}
+
+function hasHeaderCaseInsensitive(headers: Record<string, string>, name: string): boolean {
+  const target = name.toLowerCase()
+  return Object.keys(headers).some((k) => k.toLowerCase() === target && Boolean(headers[k]))
+}
+
+function createNodeFetchResponse(
+  req: http.ClientRequest,
+  rawRes: http.IncomingMessage,
+  signal?: AbortSignal
+): any {
+  const status = rawRes.statusCode || 0
+  const statusText = rawRes.statusMessage || ''
+  const encoding = String(rawRes.headers['content-encoding'] || '').toLowerCase().trim()
+
+  let sourceStream: NodeJS.ReadableStream = rawRes
+  if (encoding === 'gzip' || encoding === 'x-gzip') {
+    const gunzip = zlib.createGunzip()
+    rawRes.pipe(gunzip)
+    rawRes.on('error', (err) => gunzip.destroy(err))
+    sourceStream = gunzip
+  } else if (encoding === 'deflate') {
+    const inflate = zlib.createInflate()
+    rawRes.pipe(inflate)
+    rawRes.on('error', (err) => inflate.destroy(err))
+    sourceStream = inflate
+  } else if (encoding === 'br') {
+    const brotli = zlib.createBrotliDecompress()
+    rawRes.pipe(brotli)
+    rawRes.on('error', (err) => brotli.destroy(err))
+    sourceStream = brotli
+  }
+
+  const chunkQueue: Buffer[] = []
+  let queuedBytes = 0
+  const HIGH_WATER_BYTES = 512 * 1024
+  let ended = false
+  let cancelled = false
+  let streamError: Error | null = null
+  let pendingRead: {
+    resolve: (res: { done: boolean; value?: Uint8Array }) => void
+    reject: (err: any) => void
+  } | null = null
+
+  const detachAbort = () => {
+    if (signal) {
+      signal.removeEventListener('abort', onAbort)
+    }
+  }
+
+  const failStream = (err: Error) => {
+    if (ended || cancelled || streamError) return
+    streamError = err
+    detachAbort()
+    if (pendingRead) {
+      const p = pendingRead
+      pendingRead = null
+      p.reject(err)
+    }
+  }
+
+  const onAbort = () => {
+    const reason = signal?.reason
+    const abortErr = reason instanceof Error ? reason : new DOMException('User aborted download', 'AbortError')
+    failStream(abortErr)
+    try { req.destroy(abortErr) } catch {}
+  }
+
+  if (signal) {
+    if (signal.aborted) {
+      onAbort()
+    } else {
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+  }
+
+  if (typeof (sourceStream as any).pause === 'function') {
+    try { (sourceStream as any).pause() } catch {}
+  }
+
+  sourceStream.on('data', (raw: Buffer | string) => {
+    if (cancelled || streamError) return
+    const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+    if (buf.length === 0) return
+
+    if (pendingRead) {
+      const p = pendingRead
+      pendingRead = null
+      p.resolve({
+        done: false,
+        value: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+      })
+      return
+    }
+
+    chunkQueue.push(buf)
+    queuedBytes += buf.length
+    if (queuedBytes >= HIGH_WATER_BYTES && typeof (sourceStream as any).pause === 'function') {
+      try { (sourceStream as any).pause() } catch {}
+    }
+  })
+
+  sourceStream.on('end', () => {
+    if (cancelled) return
+    ended = true
+    detachAbort()
+    if (pendingRead) {
+      const p = pendingRead
+      pendingRead = null
+      p.resolve({ done: true, value: undefined })
+    }
+  })
+
+  sourceStream.on('error', (err: any) => {
+    failStream(err instanceof Error ? err : new Error(String(err)))
+  })
+
+  rawRes.on('aborted', () => {
+    failStream(new Error('premature close'))
+  })
+
+  rawRes.on('close', () => {
+    if (!rawRes.complete) {
+      failStream(new Error('premature close'))
+    }
+  })
+
+  req.on('error', (err: any) => {
+    failStream(err instanceof Error ? err : new Error(String(err)))
+  })
+
+  const cancelBody = async () => {
+    if (cancelled) return
+    cancelled = true
+    detachAbort()
+    chunkQueue.length = 0
+    queuedBytes = 0
+    if (pendingRead) {
+      const p = pendingRead
+      pendingRead = null
+      p.resolve({ done: true, value: undefined })
+    }
+    if (!ended) {
+      try { (sourceStream as any).destroy?.() } catch {}
+      if (rawRes !== sourceStream) {
+        try { rawRes.destroy() } catch {}
+      }
+      try { req.destroy() } catch {}
+    }
+  }
+
+  const bodyObj = {
+    cancel: cancelBody,
+    getReader: () => ({
+      read: (): Promise<{ done: boolean; value?: Uint8Array }> => {
+        if (chunkQueue.length > 0) {
+          const buf = chunkQueue.shift()!
+          queuedBytes = Math.max(0, queuedBytes - buf.length)
+          if (queuedBytes < HIGH_WATER_BYTES && !ended && !cancelled && !streamError) {
+            if (typeof (sourceStream as any).resume === 'function') {
+              try { (sourceStream as any).resume() } catch {}
+            }
+          }
+          return Promise.resolve({
+            done: false,
+            value: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+          })
+        }
+        if (streamError) {
+          return Promise.reject(streamError)
+        }
+        if (ended || cancelled) {
+          return Promise.resolve({ done: true, value: undefined })
+        }
+        return new Promise<{ done: boolean; value?: Uint8Array }>((resolve, reject) => {
+          pendingRead = { resolve, reject }
+          if (typeof (sourceStream as any).resume === 'function') {
+            try { (sourceStream as any).resume() } catch {}
+          }
+        })
+      },
+      cancel: cancelBody
+    })
+  }
+
+  const readAllBuffer = async (): Promise<ArrayBuffer> => {
+    const reader = bodyObj.getReader()
+    const parts: Uint8Array[] = []
+    let total = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.byteLength > 0) {
+        parts.push(value)
+        total += value.byteLength
+      }
+    }
+    const out = new Uint8Array(total)
+    let offset = 0
+    for (const p of parts) {
+      out.set(p, offset)
+      offset += p.byteLength
+    }
+    return out.buffer
+  }
+
+  const headersObj = {
+    get: (name: string): string | null => {
+      const val = rawRes.headers[name.toLowerCase()]
+      if (val === undefined) return null
+      return Array.isArray(val) ? val.join(', ') : String(val)
+    }
+  }
+
+  return {
+    status,
+    statusText,
+    ok: status >= 200 && status < 300,
+    headers: headersObj,
+    body: bodyObj,
+    arrayBuffer: readAllBuffer,
+    text: async () => {
+      const ab = await readAllBuffer()
+      return Buffer.from(ab).toString('utf8')
+    }
+  }
+}
+
+async function executeNodeHttpHop(
+  urlStr: string,
+  options: { method?: string; headers?: Record<string, string>; body?: any; signal?: AbortSignal }
+): Promise<any> {
+  const signal = options.signal
+  if (signal?.aborted) {
+    const reason = signal.reason
+    throw reason instanceof Error ? reason : new DOMException('User aborted download', 'AbortError')
+  }
+
+  const parsed = new URL(urlStr)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`不支持的请求协议: ${parsed.protocol}`)
+  }
+
+  const method = (options.method || 'GET').toUpperCase()
+  const reqHeaders: Record<string, string> = { ...(options.headers || {}) }
+  if (!hasHeaderCaseInsensitive(reqHeaders, 'accept-encoding')) {
+    reqHeaders['Accept-Encoding'] = hasHeaderCaseInsensitive(reqHeaders, 'range')
+      ? 'identity'
+      : 'gzip, deflate, br'
+  }
+
+  let bodyBuf: Buffer | undefined
+  if (options.body !== undefined && options.body !== null) {
+    if (Buffer.isBuffer(options.body)) {
+      bodyBuf = options.body
+    } else if (options.body instanceof Uint8Array) {
+      bodyBuf = Buffer.from(options.body.buffer, options.body.byteOffset, options.body.byteLength)
+    } else {
+      bodyBuf = Buffer.from(String(options.body), 'utf8')
+    }
+    if (!hasHeaderCaseInsensitive(reqHeaders, 'content-length')) {
+      reqHeaders['Content-Length'] = String(bodyBuf.length)
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    let responded = false
+    const isHttps = parsed.protocol === 'https:'
+    const transport = isHttps ? https : http
+
+    const onPreAbort = () => {
+      if (responded) return
+      const reason = signal?.reason
+      const abortErr = reason instanceof Error ? reason : new DOMException('User aborted download', 'AbortError')
+      responded = true
+      try { req.destroy(abortErr) } catch {}
+      reject(abortErr)
+    }
+
+    const req = transport.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname.replace(/^\[|\]$/g, ''),
+        port: parsed.port || undefined,
+        path: `${parsed.pathname}${parsed.search}`,
+        method,
+        headers: reqHeaders,
+        agent: isHttps ? downloadHttpsAgent : downloadHttpAgent
+      },
+      (res) => {
+        if (responded) {
+          res.resume()
+          return
+        }
+        responded = true
+        if (signal) {
+          signal.removeEventListener('abort', onPreAbort)
+        }
+        resolve(createNodeFetchResponse(req, res, signal))
+      }
+    )
+
+    if (signal) {
+      signal.addEventListener('abort', onPreAbort, { once: true })
+    }
+
+    req.on('error', (err) => {
+      if (responded) return
+      responded = true
+      if (signal) {
+        signal.removeEventListener('abort', onPreAbort)
+      }
+      reject(err)
+    })
+
+    if (bodyBuf !== undefined) {
+      req.write(bodyBuf)
+    }
+    req.end()
+  })
+}
+
+/**
+ * 基于 Node HTTP/1.1 Keep-Alive 连接池执行支持手动重定向守卫的网络请求：
+ * - 始终剥离 X-Velora-Client-Id / X-Velora-Referer 内部头
+ * - 手动追踪重定向，跨非信任域跳转自动剥离 Cookie / Authorization 凭据
+ */
+export async function fetchWithRedirectGuard(
+  fetchUrl: string,
+  fetchOptions: any,
+  _targetSession?: any,
+  maxHops = 6
+): Promise<any> {
+  let currentUrl = fetchUrl
+  let currentHeaders = sanitizeOutboundHeaders(fetchOptions?.headers, false)
+  let currentMethod = (fetchOptions?.method || 'GET').toUpperCase()
+  let currentBody = fetchOptions?.body
+  const signal = fetchOptions?.signal
+
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const res = await executeNodeHttpHop(currentUrl, {
+      method: currentMethod,
+      headers: currentHeaders,
+      body: currentBody,
+      signal
+    })
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location')
+      if (!loc) return res
+      try { await res.body?.cancel?.() } catch {}
+      const resolved = new URL(loc, currentUrl)
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        throw new Error(`不支持的重定向协议: ${resolved.protocol}`)
+      }
+      const prevHost = parseUrlHost(currentUrl)
+      const nextHost = resolved.hostname.toLowerCase()
+      const trusted = isTrustedCrossDomainRedirect(prevHost, nextHost)
+      if (!trusted) {
+        currentHeaders = sanitizeOutboundHeaders(currentHeaders, true)
+      }
+      if ([301, 302, 303].includes(res.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
+        currentMethod = 'GET'
+        currentBody = undefined
+        delete currentHeaders['Content-Length']
+        delete currentHeaders['content-length']
+      }
+      currentUrl = resolved.toString()
+      continue
+    }
+    return res
+  }
+
+  throw new Error('下载直链重定向次数过多')
+}
+
+export function getHeadersForUrl(
+  _urlStr: string,
+  customReferer?: string,
+  _customOrigin?: string,
+  clientId?: string,
+  options?: { allowPanCookies?: boolean; panType?: string }
+): Record<string, string> {
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   }
@@ -31,6 +572,106 @@ export function getHeadersForUrl(_urlStr: string, customReferer?: string, _custo
   }
   if (customReferer) {
     headers['X-Velora-Referer'] = customReferer
+    headers['Referer'] = customReferer
+  }
+
+  const host = parseUrlHost(_urlStr)
+  const refHost = parseUrlHost(customReferer)
+  const allowPanCookies = Boolean(options?.allowPanCookies)
+  const pType = options?.panType
+
+  // 针对网盘直链优先匹配明确 panType，其次按解析后的主机名后缀匹配，禁止仅凭 URL query 子串注入账号 Cookie
+  if (pType === 'quark' || (!pType && hostMatches(host, ['quark.cn', 'clouddrive.quark.cn', 'alyp.cn']))) {
+    headers['User-Agent'] =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch'
+    headers['Referer'] = 'https://pan.quark.cn/'
+    headers['X-Velora-Referer'] = 'https://pan.quark.cn/'
+    if (
+      (allowPanCookies && (pType === 'quark' || hostMatches(host, ['quark.cn']))) ||
+      (hostMatches(host, ['pds.quark.cn', 'clouddrive.quark.cn']) && hostMatches(refHost, ['pan.quark.cn']))
+    ) {
+      try {
+        const cookieHeader = panAccountManager.getCookieHeader('quark')
+        if (cookieHeader) {
+          headers['Cookie'] = cookieHeader
+        }
+      } catch {}
+    }
+  } else if (pType === 'uc' || (!pType && hostMatches(host, ['uc.cn']))) {
+    headers['User-Agent'] =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) uc-cloud-drive/1.6.1 Chrome/100.0.4896.160 Electron/18.3.5.16-b62cf9c50d Safari/537.36 Channel/ucpan_other_ch'
+    headers['Referer'] = 'https://drive.uc.cn/'
+    headers['Origin'] = 'https://drive.uc.cn'
+    headers['X-Velora-Referer'] = 'https://drive.uc.cn/'
+    if (
+      allowPanCookies ||
+      (hostMatches(host, ['pds.uc.cn', 'uc.cn']) && hostMatches(refHost, ['drive.uc.cn']))
+    ) {
+      try {
+        const cookieHeader = panAccountManager.getCookieHeader('uc')
+        if (cookieHeader) {
+          headers['Cookie'] = cookieHeader
+        }
+      } catch {}
+    }
+  } else if (pType === 'baidu' || (!pType && hostMatches(host, ['baidu.com', 'baidupcs.com']))) {
+    headers['User-Agent'] =
+      'netdisk;12.24.6;piano;android-android;16;JSbridge4.4.0;jointBridge;1.1.0'
+    if (allowPanCookies) {
+      try {
+        const cookieHeader = panAccountManager.getCookieHeader('baidu')
+        if (cookieHeader) {
+          headers['Cookie'] = cookieHeader
+        }
+      } catch {}
+    }
+  } else if (
+    pType === '123pan' ||
+    (!pType &&
+      (hostMatches(host, ['123pan.com', '123pan.cn', '123684.com', '123865.com', '123912.com']) ||
+        hostMatches(refHost, ['123pan.cn', '123pan.com'])))
+  ) {
+    headers['Referer'] = 'https://yun.123pan.cn/'
+    headers['X-Velora-Referer'] = 'https://yun.123pan.cn/'
+  } else if (pType === 'lanzou' || (!pType && (isLanzouHost(host) || isLanzouHost(refHost)))) {
+    headers['Cookie'] = 'down_ip=1'
+    headers['Accept-Language'] = 'zh-CN,zh;q=0.9'
+  } else if (
+    pType === 'xunlei' ||
+    (!pType && (hostMatches(host, ['xunlei.com', 'sandai.net']) || hostMatches(refHost, ['pan.xunlei.com'])))
+  ) {
+    headers['User-Agent'] =
+      'ANDROID-com.xunlei.downloadprovider/8.31.0.9726 netWorkType/5G appid/40 deviceName/Xiaomi_M2004j7ac deviceModel/M2004J7AC OSVersion/12 protocolVersion/301 platformVersion/10 sdkVersion/512000 Oauth2Client/0.9 (Linux 4_14_186-perf-gddfs8vbb238b) (JAVA 0)'
+  } else if (
+    pType === '115' ||
+    (!pType &&
+      (hostMatches(host, ['115.com', '115cdn.com', '115cdn.net', 'anxia.com', '115rc.com']) ||
+        hostMatches(refHost, ['115.com'])))
+  ) {
+    headers['Referer'] = 'https://115.com/'
+    headers['X-Velora-Referer'] = 'https://115.com/'
+    headers['User-Agent'] =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 115disk/30.1.0'
+  } else if (
+    pType === '139' ||
+    (!pType && (hostMatches(host, ['139.com', 'mcloud.139.com']) || hostMatches(refHost, ['yun.139.com', '139.com'])))
+  ) {
+    headers['Referer'] = 'https://yun.139.com/'
+    headers['X-Velora-Referer'] = 'https://yun.139.com/'
+  } else if (
+    pType === 'guangya' ||
+    (!pType && (hostMatches(host, ['guangyapan.com']) || hostMatches(refHost, ['guangyapan.com'])))
+  ) {
+    headers['Referer'] = 'https://www.guangyapan.com/'
+    headers['X-Velora-Referer'] = 'https://www.guangyapan.com/'
+  } else if (
+    pType === 'ilanzou' ||
+    (!pType &&
+      (hostMatches(host, ['ilanzou.com', 'ilanzou.cn', 'ilanzou.net']) ||
+        hostMatches(refHost, ['ilanzou.com', 'ilanzou.cn'])))
+  ) {
+    headers['Referer'] = 'https://www.ilanzou.com/'
+    headers['X-Velora-Referer'] = 'https://www.ilanzou.com/'
   }
 
   return headers
@@ -94,6 +735,10 @@ export function isTransientNetworkError(err: any): boolean {
     'fetch failed',
     'socket hang up',
     'premature close',
+    'incomplete chunk',
+    '数据不完整',
+    '流读取超时',
+    '请求超时',
     'network error',
     'timeout',
     'http 429',
@@ -152,50 +797,148 @@ export function getTransientRetryDelay(attempts: number, err?: any): number {
   }
 }
 
+interface ManagedFetchHandle {
+  response: any
+  signal: AbortSignal
+  isTimedOut: () => boolean
+  resetIdleTimeout: (ms?: number) => void
+  cleanup: () => void
+}
+
 /**
- * 带有超时控制的 fetch 封装（防止请求挂起导致 worker 永久卡死）
+ * 带连接超时、流读取空闲超时与父级 AbortSignal 全程联动的无缓存网络请求封装
  */
-async function fetchWithTimeout(fetchUrl: string, fetchOptions: any, timeoutMs: number = 20000): Promise<any> {
+async function fetchWithManagedTimeout(
+  fetchUrl: string,
+  fetchOptions: any,
+  connectTimeoutMs: number = 20000
+): Promise<ManagedFetchHandle> {
   const timeoutCtrl = new AbortController()
-  const timer = setTimeout(() => {
-    timeoutCtrl.abort(new Error(`请求超时 (${timeoutMs}ms 未响应)`))
-  }, timeoutMs)
+  let timedOut = false
+  let timer: NodeJS.Timeout | null = setTimeout(() => {
+    timedOut = true
+    timeoutCtrl.abort(new Error(`连接超时 (${connectTimeoutMs}ms 未响应)`))
+  }, connectTimeoutMs)
 
   const parentSignal: AbortSignal | undefined = fetchOptions?.signal
   const onParentAbort = () => {
-    timeoutCtrl.abort(parentSignal?.reason)
+    timeoutCtrl.abort(parentSignal?.reason || new DOMException('User aborted download', 'AbortError'))
   }
   if (parentSignal) {
     if (parentSignal.aborted) {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       throw new DOMException('User aborted download', 'AbortError')
     }
     parentSignal.addEventListener('abort', onParentAbort, { once: true })
   }
 
-  try {
-    const res = await net.fetch(fetchUrl, {
-      ...fetchOptions,
-      signal: timeoutCtrl.signal as any
-    })
-    return res
-  } finally {
-    clearTimeout(timer)
+  const cleanup = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
     if (parentSignal) {
       parentSignal.removeEventListener('abort', onParentAbort)
     }
   }
+
+  const resetIdleTimeout = (idleMs: number = 25000) => {
+    if (timer) clearTimeout(timer)
+    if (timeoutCtrl.signal.aborted) return
+    timer = setTimeout(() => {
+      timedOut = true
+      timeoutCtrl.abort(new Error(`流读取超时 (${idleMs}ms 无数据响应)`))
+    }, idleMs)
+  }
+
+  try {
+    const res = await fetchWithRedirectGuard(
+      fetchUrl,
+      {
+        ...fetchOptions,
+        signal: timeoutCtrl.signal as any
+      }
+    )
+    // 收到响应头后暂清连接超时器，但保持 parentSignal 监听与 resetIdleTimeout 能力直至流消费完毕
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    return {
+      response: res,
+      signal: timeoutCtrl.signal,
+      isTimedOut: () => timedOut,
+      resetIdleTimeout,
+      cleanup
+    }
+  } catch (err: any) {
+    cleanup()
+    if (timedOut && (!parentSignal || !parentSignal.aborted)) {
+      throw new Error(`连接超时 (${connectTimeoutMs}ms 未响应)`)
+    }
+    throw err
+  }
+}
+
+/**
+ * 带有超时控制的 fetch 封装（用于 M3U8 列表/小切片/密钥拉取）
+ */
+async function fetchWithTimeout(fetchUrl: string, fetchOptions: any, timeoutMs: number = 20000): Promise<any> {
+  const handle = await fetchWithManagedTimeout(fetchUrl, fetchOptions, timeoutMs)
+  const originalArrayBuffer = handle.response.arrayBuffer?.bind(handle.response)
+  const originalText = handle.response.text?.bind(handle.response)
+  handle.resetIdleTimeout(Math.max(timeoutMs, 25000))
+  const wrappedResponse = new Proxy(handle.response, {
+    get(target, prop) {
+      if (prop === 'arrayBuffer' && originalArrayBuffer) {
+        return async () => {
+          try {
+            return await originalArrayBuffer()
+          } catch (err: any) {
+            if (handle.isTimedOut() && !fetchOptions?.signal?.aborted) {
+              throw new Error(`流读取超时 (${timeoutMs}ms 未完成)`)
+            }
+            throw err
+          } finally {
+            handle.cleanup()
+          }
+        }
+      }
+      if (prop === 'text' && originalText) {
+        return async () => {
+          try {
+            return await originalText()
+          } catch (err: any) {
+            if (handle.isTimedOut() && !fetchOptions?.signal?.aborted) {
+              throw new Error(`流读取超时 (${timeoutMs}ms 未完成)`)
+            }
+            throw err
+          } finally {
+            handle.cleanup()
+          }
+        }
+      }
+      const val = Reflect.get(target, prop)
+      return typeof val === 'function' ? val.bind(target) : val
+    }
+  })
+  return { response: wrappedResponse, cleanup: handle.cleanup }
 }
 
 /**
  * 智能解析 M3U8 Playlist (自动处理 Master Playlist 与相对路径，识别 fMP4/m4s 切片)
  */
-async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8ParseResult> {
-  const response = await net.fetch(playlistUrl, { headers: originHeaders })
-  if (!response.ok) {
-    throw new Error(`无法获取 M3U8 播放列表: HTTP ${response.status}`)
+async function parseM3U8(playlistUrl: string, originHeaders: any, signal?: AbortSignal): Promise<M3U8ParseResult> {
+  const { response, cleanup } = await fetchWithTimeout(playlistUrl, { headers: originHeaders, signal }, 20000)
+  let text = ''
+  try {
+    if (!response.ok) {
+      throw new Error(`无法获取 M3U8 播放列表: HTTP ${response.status}`)
+    }
+    text = await response.text()
+  } finally {
+    cleanup()
   }
-  const text = await response.text()
   
   if (!text.includes('#EXTM3U')) {
     throw new Error('无效的 M3U8 播放列表文本文件')
@@ -227,7 +970,7 @@ async function parseM3U8(playlistUrl: string, originHeaders: any): Promise<M3U8P
     }
     if (bestSubPlaylistUrl) {
       logger.info('Downloader', `[M3U8Parser] 发现 Master Playlist，已自动选择最高清晰度 (Bandwidth: ${highestBandwidth}) 转向二级子列表: ${bestSubPlaylistUrl}`)
-      return parseM3U8(bestSubPlaylistUrl, originHeaders)
+      return parseM3U8(bestSubPlaylistUrl, originHeaders, signal)
     }
   }
 
@@ -437,6 +1180,25 @@ interface CompressQueueItem {
   reject?: (err: any) => void
 }
 
+async function writeBufferFully(
+  handle: fs.promises.FileHandle,
+  buf: Buffer,
+  position: number | null = null
+): Promise<void> {
+  let offset = 0
+  let currentPos = position
+  while (offset < buf.length) {
+    const { bytesWritten } = await handle.write(buf, offset, buf.length - offset, currentPos)
+    if (bytesWritten <= 0) {
+      throw new Error('磁盘写入失败 (0 字节写入)')
+    }
+    offset += bytesWritten
+    if (currentPos !== null) {
+      currentPos += bytesWritten
+    }
+  }
+}
+
 export interface TaskStats {
   downloadingCount: number;
   queuedCount: number;
@@ -454,8 +1216,26 @@ export function formatSpeed(bytesPerSec: number): string {
 }
 
 class Downloader {
-  private activeDownloads: Map<string, { abortController: AbortController, tempPaths?: string[] }> = new Map()
+  private activeDownloads: Map<string, { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[] }> = new Map()
+  private startingIds: Set<string> = new Set()
   private pendingQueue: DownloadCommand[] = []
+
+  hasUnfinishedTempDirRef(panType: string, cleanupDirFid: string, excludeTaskId?: string): boolean {
+    if (!panType || !cleanupDirFid) return false
+    let found = false
+    this.activeDownloads.forEach((entry, id) => {
+      if (id === excludeTaskId || entry.abortController.signal.aborted) return
+      const ctx = entry.cmd?.panContext
+      if (ctx && ctx.panType === panType && ctx.cleanupDirFid === cleanupDirFid) {
+        found = true
+      }
+    })
+    if (found) return true
+    return this.pendingQueue.some((c) => {
+      if (c.id === excludeTaskId) return false
+      return c.panContext?.panType === panType && c.panContext?.cleanupDirFid === cleanupDirFid
+    })
+  }
   private isCompressingActive = false
   private compressQueue: CompressQueueItem[] = []
   private activeCompressTaskId: string | null = null
@@ -530,18 +1310,11 @@ class Downloader {
   }
 
   async startDownload(cmd: DownloadCommand) {
+    cmd.savePath = ensureSafeTargetSavePath(cmd.savePath)
     logger.info('Downloader', `[Downloader] startDownload ID: ${cmd.id}, URL: ${cmd.url}, savePath: ${cmd.savePath}, startBytes: ${cmd.startBytes}`)
 
-    if (cmd.url && cmd.referer) {
-      clientManager.registerClient({
-        clientId: cmd.id,
-        referer: cmd.referer,
-        origin: cmd.origin
-      })
-    }
-
-    if (this.activeDownloads.has(cmd.id) || this.pendingQueue.some(c => c.id === cmd.id)) {
-      logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
+    if (this.startingIds.has(cmd.id)) {
+      logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 正在调度中，跳过重复添加。`)
       return
     }
 
@@ -550,25 +1323,132 @@ class Downloader {
       return
     }
 
-    let maxConcurrent = 3
+    // 同步原子占位，防止微任务期间重入触发重复调度
+    this.startingIds.add(cmd.id)
     try {
-      maxConcurrent = (await storeManager.getSetting('maxConcurrentDownloads')) || 3
-    } catch {
-      maxConcurrent = 3
-    }
+      const existingActive = this.activeDownloads.get(cmd.id)
+      if (existingActive) {
+        if (existingActive.abortController.signal.aborted && existingActive.donePromise) {
+          logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 正在释放文件句柄，等待就绪后继续...`)
+          await existingActive.donePromise.catch(() => {})
+        } else {
+          logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在下载中，跳过重复添加。`)
+          return
+        }
+      }
 
-    if (this.activeDownloads.size < maxConcurrent) {
-      this.runTask(cmd)
-    } else {
-      this.pendingQueue.push(cmd)
-      this.sendProgress({
-        id: cmd.id,
-        totalBytes: 0,
-        receivedBytes: cmd.startBytes || 0,
-        status: 'waiting',
-        speed: 0
-      })
+      if (
+        this.activeDownloads.has(cmd.id) ||
+        this.pendingQueue.some(c => c.id === cmd.id)
+      ) {
+        logger.info('Downloader', `[Downloader] 任务 ID ${cmd.id} 已在队列或下载中，跳过重复添加。`)
+        return
+      }
+
+      if (!cmd.enqueuedAt) {
+        cmd.enqueuedAt = Date.now()
+      }
+
+      let maxConcurrent = 3
+      try {
+        maxConcurrent = (await storeManager.getSetting('maxConcurrentDownloads')) || 3
+      } catch {
+        maxConcurrent = 3
+      }
+
+      if (this.activeDownloads.size < maxConcurrent) {
+        this.runTask(cmd)
+      } else {
+        this.pendingQueue.push(cmd)
+        this.sendProgress({
+          id: cmd.id,
+          totalBytes: cmd.totalBytes || 0,
+          receivedBytes: cmd.startBytes || 0,
+          status: 'waiting',
+          speed: 0
+        })
+      }
+    } finally {
+      this.startingIds.delete(cmd.id)
     }
+  }
+
+  private buildTaskHeaders(cmd: DownloadCommand, targetUrl?: string): Record<string, string> {
+    const resolvedUrl = targetUrl || cmd.url
+    const baseHeaders = getHeadersForUrl(resolvedUrl, cmd.referer, cmd.origin, undefined, {
+      allowPanCookies: Boolean(cmd.panContext),
+      panType: cmd.panContext?.panType
+    })
+    const cachedPanHeaders = resolvedUrl ? panService.getCachedHeadersForUrl(resolvedUrl) : undefined
+    const merged: Record<string, string> = {}
+    const assignNonEmpty = (src?: Record<string, string>) => {
+      if (!src) return
+      for (const [k, v] of Object.entries(src)) {
+        if (v !== undefined && v !== null && v !== '') {
+          merged[k] = v
+        }
+      }
+    }
+    assignNonEmpty(baseHeaders)
+    assignNonEmpty(cmd.headers)
+    assignNonEmpty(cachedPanHeaders)
+    return merged
+  }
+
+  private async refreshCommandPanLink(cmd: DownloadCommand, forceSession = false): Promise<boolean> {
+    if (!cmd.panContext) return false
+    const ctx = cmd.panContext
+    try {
+      if (forceSession) {
+        panService.invalidatePanSession(ctx.panType as any)
+      }
+      if (ctx.mode === 'share') {
+        const res = await panService.getShareDownloadUrls(ctx.panType as any, [
+          {
+            fid: ctx.fid,
+            fidToken: ctx.fidToken,
+            pwdId: ctx.pwdId,
+            stoken: ctx.stoken,
+            extra: ctx.extra
+          }
+        ])
+        const link = res.links?.[ctx.fid]
+        const nextUrl = link?.url || res.urls?.[ctx.fid]
+        if (nextUrl) {
+          if (link?.cleanupDirFid && link.cleanupDirFid !== ctx.cleanupDirFid) {
+            const oldDirFid = ctx.cleanupDirFid
+            ctx.cleanupDirFid = link.cleanupDirFid
+            this.sendProgress({ id: cmd.id, cleanupDirFid: link.cleanupDirFid })
+            if (oldDirFid && !this.hasUnfinishedTempDirRef(ctx.panType, oldDirFid, cmd.id)) {
+              panService.cleanupTempDir(ctx.panType as any, oldDirFid).catch(() => {})
+            }
+          }
+          cmd.url = nextUrl
+          if (link?.headers) {
+            cmd.headers = { ...(cmd.headers || {}), ...link.headers }
+          }
+          cmd.enqueuedAt = Date.now()
+          logger.info('Downloader', `[PanRefresh] 任务 ${cmd.id} 分享直链自动刷新成功`)
+          return true
+        }
+      } else {
+        const res = await panService.getDriveDownloadUrls(ctx.panType as any, [ctx.fid])
+        const link = res.links?.[ctx.fid]
+        const nextUrl = link?.url || res.urls?.[ctx.fid]
+        if (nextUrl) {
+          cmd.url = nextUrl
+          if (link?.headers) {
+            cmd.headers = { ...(cmd.headers || {}), ...link.headers }
+          }
+          cmd.enqueuedAt = Date.now()
+          logger.info('Downloader', `[PanRefresh] 任务 ${cmd.id} 个人盘直链自动刷新成功`)
+          return true
+        }
+      }
+    } catch (err: any) {
+      logger.warn('Downloader', `[PanRefresh] 任务 ${cmd.id} 自动重取直链失败: ${err.message}`)
+    }
+    return false
   }
 
   private sendProgress(payload: any) {
@@ -585,31 +1465,92 @@ class Downloader {
     }
   }
 
-  private async isM3U8UrlOrContent(url: string, headers: any, signal: AbortSignal): Promise<boolean> {
+  private async isM3U8UrlOrContent(url: string, headers: any, signal: AbortSignal, savePath?: string): Promise<boolean> {
     const lower = url.toLowerCase()
     if (lower.includes('.m3u8')) return true
+    if (savePath) {
+      const ext = path.extname(savePath).toLowerCase()
+      const nonM3u8Exts = [
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.iso', '.exe', '.dmg', '.pkg', '.apk',
+        '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm',
+        '.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a',
+        '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt'
+      ]
+      if (nonM3u8Exts.includes(ext)) {
+        return false
+      }
+    }
+    if (
+      lower.includes('quark') ||
+      lower.includes('clouddrive') ||
+      lower.includes('file.alyp') ||
+      lower.includes('uc.cn') ||
+      lower.includes('baidupcs.com') ||
+      lower.includes('123pan') ||
+      lower.includes('123865') ||
+      lower.includes('123684') ||
+      lower.includes('123912') ||
+      lower.includes('lanzou') ||
+      lower.includes('115.com') ||
+      lower.includes('115cdn') ||
+      lower.includes('xunlei.com')
+    ) {
+      return false
+    }
+
+    let handle: ManagedFetchHandle | null = null
     try {
-      const res = await net.fetch(url, {
-        headers: { ...headers, 'Range': 'bytes=0-512' },
-        signal: signal as any
-      })
-      const text = await res.text()
+      handle = await fetchWithManagedTimeout(
+        url,
+        { headers: { ...headers, Range: 'bytes=0-512' }, signal },
+        15000
+      )
+      const reader = handle.response?.body?.getReader?.()
+      if (!reader) return false
+      handle.resetIdleTimeout(10000)
+      const { value } = await reader.read()
+      try { await reader.cancel() } catch {}
+      if (!value) return false
+      const slice = value.byteLength > 1024 ? value.subarray(0, 1024) : value
+      const text = new TextDecoder().decode(slice)
       return text.includes('#EXTM3U')
     } catch {
       return false
+    } finally {
+      handle?.cleanup()
     }
   }
 
-  private async runTask(cmd: DownloadCommand) {
+  private runTask(cmd: DownloadCommand) {
     const abortController = new AbortController()
-    this.activeDownloads.set(cmd.id, { abortController })
+    const entry: { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[] } = {
+      abortController,
+      cmd
+    }
+    this.activeDownloads.set(cmd.id, entry)
+    const execPromise = this.executeTaskInternal(cmd, abortController)
+    entry.donePromise = execPromise
+    return execPromise
+  }
+
+  private async executeTaskInternal(cmd: DownloadCommand, abortController: AbortController) {
     this.sendProgress({ id: cmd.id, status: 'resolving', speed: 0 })
 
     let downloadResult: { filePath: string; fileSize: number; totalSegments?: number } | null = null
 
     try {
-      const headers = getHeadersForUrl(cmd.url, cmd.referer, cmd.origin, cmd.id)
-      const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal)
+      // 若排队超 25 分钟，或重启恢复任务/当前进程缺少网盘鉴权头缓存时，先自动重取新鲜直链与最新凭据头
+      if (cmd.panContext) {
+        const hasCachedHeaders = panService.getCachedHeadersForUrl(cmd.url) !== undefined
+        const queueExpired = Boolean(cmd.enqueuedAt && Date.now() - cmd.enqueuedAt > 25 * 60 * 1000)
+        if (queueExpired || !hasCachedHeaders) {
+          await this.refreshCommandPanLink(cmd, false)
+        }
+      }
+
+      const headers = this.buildTaskHeaders(cmd)
+      const isM3U8 = await this.isM3U8UrlOrContent(cmd.url, headers, abortController.signal, cmd.savePath)
       if (isM3U8) {
         downloadResult = await this.downloadM3U8Task(cmd, abortController)
       } else {
@@ -617,14 +1558,20 @@ class Downloader {
       }
     } catch (err: any) {
       logger.error('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
-      if (err.name === 'AbortError') {
-        this.sendProgress({ id: cmd.id, status: 'paused' })
+      if (err?.name === 'AbortError' || abortController.signal.aborted) {
+        const pausedPayload: any = { id: cmd.id, status: 'paused', speed: 0 }
+        if (typeof err?.savedBytes === 'number') {
+          pausedPayload.receivedBytes = err.savedBytes
+        }
+        if (typeof err?.downloadedSegments === 'number') {
+          pausedPayload.downloadedSegments = err.downloadedSegments
+        }
+        this.sendProgress(pausedPayload)
       } else {
-        this.sendProgress({ id: cmd.id, status: 'error', errorMsg: err.message })
+        this.sendProgress({ id: cmd.id, status: 'error', errorMsg: err.message, speed: 0 })
       }
       return
     } finally {
-      clientManager.unregisterClient(cmd.id)
       this.activeDownloads.delete(cmd.id)
       this.checkQueue()
     }
@@ -688,20 +1635,27 @@ class Downloader {
     }
     const maxMemoryBytes = maxMemoryMB * 1024 * 1024
 
-    const headers = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
+    const headers = this.buildTaskHeaders(cmd, url)
 
     let parseResult: M3U8ParseResult | null = null
     let parseAttempts = 0
+    const maxParseTransientAttempts = 15
     while (!parseResult) {
       if (abortController.signal.aborted) {
         throw new DOMException('User aborted download', 'AbortError')
       }
       try {
-        parseResult = await parseM3U8(url, headers)
+        parseResult = await parseM3U8(url, headers, abortController.signal)
       } catch (err: any) {
-        if (abortController.signal.aborted || err.name === 'AbortError') throw err
-        if (isTransientNetworkError(err)) {
+        if (abortController.signal.aborted && err?.name === 'AbortError') throw err
+        if (abortController.signal.aborted) {
+          throw new DOMException('User aborted download', 'AbortError')
+        }
+        if (isTransientNetworkError(err) || err?.name === 'AbortError') {
           parseAttempts++
+          if (parseAttempts >= maxParseTransientAttempts) {
+            throw new Error(`解析 M3U8 列表连续重试 ${maxParseTransientAttempts} 次仍失败: ${err.message}`)
+          }
           const friendlyMsg = formatTransientErrorMessage(err)
           logger.warn('Downloader', `[M3U8Downloader] 解析 M3U8 列表遭遇网络波动，正在后台自动重试 (第 ${parseAttempts} 次): ${err.message}`)
           this.sendProgress({
@@ -755,18 +1709,14 @@ class Downloader {
           }
         }
       } catch (e: any) {
-        if (e.name === 'AbortError') {
+        if (e?.name === 'AbortError' || abortController.signal.aborted) {
           const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
-          this.sendProgress({
-            id,
-            totalBytes: 0,
-            receivedBytes: savedBytes,
-            downloadedSegments: cmd.downloadedSegments,
-            totalSegments: cmd.totalSegments || cmd.downloadedSegments,
-            speed: 0,
-            status: 'paused'
+          const pauseErr: any = Object.assign(new Error('User aborted download'), {
+            name: 'AbortError',
+            savedBytes,
+            downloadedSegments: cmd.downloadedSegments
           })
-          throw e
+          throw pauseErr
         }
         logger.warn('Downloader', `[M3U8Downloader] 检查临时文件转换就绪异常: ${e.message}，回退至正常解析流程`)
       }
@@ -805,31 +1755,84 @@ class Downloader {
       }
     }
 
-    const fd = fs.openSync(workSavePath, fileFlags)
+    const fileHandle = await fs.promises.open(workSavePath, fileFlags)
     const keyCache = new Map<string, Buffer>()
+    const keyPromiseCache = new Map<string, Promise<Buffer>>()
     const bufferMap = new Map<number, Buffer>()
     let currentBufferedBytes = 0
     let nextFlushIndex = skipSegments
+    let flushedSegmentsCount = skipSegments
     let totalReceivedBytes = existingBytes
+    let diskWriteError: Error | null = null
+    let writeChain: Promise<void> = Promise.resolve()
 
     let lastReportTime = Date.now()
     let lastReportBytes = totalReceivedBytes
 
-    const flushMemoryToDisk = (forceAll: boolean = false) => {
+    const enqueueSequentialFlush = (forceLog: boolean = false) => {
+      const batchBuffers: Buffer[] = []
+      let batchBytes = 0
       while (bufferMap.has(nextFlushIndex)) {
         const chunkBuf = bufferMap.get(nextFlushIndex)!
-        fs.writeSync(fd, chunkBuf)
-        currentBufferedBytes -= chunkBuf.length
+        batchBuffers.push(chunkBuf)
+        batchBytes += chunkBuf.length
         bufferMap.delete(nextFlushIndex)
         nextFlushIndex++
       }
 
-      if (forceAll || currentBufferedBytes >= maxMemoryBytes) {
-        logger.info('Downloader', `[MemoryBuffer] M3U8 内存缓冲达到限制/完成 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)，执行批量写盘清内存。`)
+      if (batchBuffers.length === 0) return
+      const batchCount = batchBuffers.length
+      if (forceLog || currentBufferedBytes >= maxMemoryBytes) {
+        logger.info('Downloader', `[MemoryBuffer] M3U8 内存缓冲异步顺序落盘 (${batchCount} 分片, ${(batchBytes / 1024 / 1024).toFixed(2)} MB)`)
       }
+
+      writeChain = writeChain.then(async () => {
+        if (diskWriteError) {
+          currentBufferedBytes = Math.max(0, currentBufferedBytes - batchBytes)
+          return
+        }
+        try {
+          const combined = batchBuffers.length === 1 ? batchBuffers[0] : Buffer.concat(batchBuffers)
+          await writeBufferFully(fileHandle, combined)
+          flushedSegmentsCount += batchCount
+        } catch (writeErr: any) {
+          diskWriteError = writeErr
+          abortController.abort(writeErr)
+        } finally {
+          currentBufferedBytes = Math.max(0, currentBufferedBytes - batchBytes)
+        }
+      })
     }
 
-    const concurrency = 5
+    const getAesKey = async (keyUrl: string): Promise<Buffer> => {
+      const cached = keyCache.get(keyUrl)
+      if (cached) return cached
+      let pending = keyPromiseCache.get(keyUrl)
+      if (!pending) {
+        pending = (async () => {
+          const { response: keyRes, cleanup: keyCleanup } = await fetchWithTimeout(
+            keyUrl,
+            { headers, signal: abortController.signal as any },
+            15000
+          )
+          try {
+            if (!keyRes.ok) throw new Error(`Key fetch failed: ${keyUrl} (HTTP ${keyRes.status})`)
+            const buf = Buffer.from(await keyRes.arrayBuffer())
+            keyCache.set(keyUrl, buf)
+            return buf
+          } finally {
+            keyCleanup()
+          }
+        })().finally(() => {
+          keyPromiseCache.delete(keyUrl)
+        })
+        keyPromiseCache.set(keyUrl, pending)
+      }
+      return pending
+    }
+
+    const remainingSegments = Math.max(1, segments.length - skipSegments)
+    const concurrency = Math.min(16, remainingSegments)
     let segQueueIndex = skipSegments
 
     const fetchNextSegment = async (): Promise<void> => {
@@ -838,12 +1841,12 @@ class Downloader {
           throw new DOMException('User aborted download', 'AbortError')
         }
 
-        // 背压控制：当滞留内存超过上限两倍时稍作等待，防止某分片较慢时后续分片大量积压在内存中
+        // 背压控制：当缓冲及异步待写盘数据超过上限两倍时让出事件循环，防止慢分片导致内存激增
         while (currentBufferedBytes >= maxMemoryBytes * 2) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
-          await new Promise(r => setTimeout(r, 100))
+          await new Promise(r => setTimeout(r, 50))
         }
 
         const seg = segments[segQueueIndex++]
@@ -857,18 +1860,21 @@ class Downloader {
             throw new DOMException('User aborted download', 'AbortError')
           }
           try {
-            const res = await fetchWithTimeout(seg.url, { headers, signal: abortController.signal as any }, 20000)
-            if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            let buf = Buffer.from(await res.arrayBuffer())
+            const { response: res, cleanup: segCleanup } = await fetchWithTimeout(
+              seg.url,
+              { headers, signal: abortController.signal as any },
+              20000
+            )
+            let buf: Buffer
+            try {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              buf = Buffer.from(await res.arrayBuffer())
+            } finally {
+              segCleanup()
+            }
 
             if (seg.key && seg.key.method === 'AES-128') {
-              let keyBuf = keyCache.get(seg.key.url)
-              if (!keyBuf) {
-                const keyRes = await fetchWithTimeout(seg.key.url, { headers, signal: abortController.signal as any }, 15000)
-                if (!keyRes.ok) throw new Error(`Key fetch failed: ${seg.key.url}`)
-                keyBuf = Buffer.from(await keyRes.arrayBuffer())
-                keyCache.set(seg.key.url, keyBuf)
-              }
+              const keyBuf = await getAesKey(seg.key.url)
               let ivBuf: Buffer
               if (seg.key.iv) {
                 let hex = seg.key.iv.startsWith('0x') || seg.key.iv.startsWith('0X') ? seg.key.iv.slice(2) : seg.key.iv
@@ -882,7 +1888,7 @@ class Downloader {
                 const decipher = crypto.createDecipheriv('aes-128-cbc', keyBuf, ivBuf)
                 decipher.setAutoPadding(true)
                 buf = Buffer.concat([decipher.update(buf), decipher.final()])
-              } catch (err) {
+              } catch {
                 const decipher = crypto.createDecipheriv('aes-128-cbc', keyBuf, ivBuf)
                 decipher.setAutoPadding(false)
                 buf = Buffer.concat([decipher.update(buf), decipher.final()])
@@ -893,18 +1899,21 @@ class Downloader {
             currentBufferedBytes += buf.length
             totalReceivedBytes += buf.length
 
-            if (currentBufferedBytes >= maxMemoryBytes) {
-              flushMemoryToDisk(false)
+            if (bufferMap.has(nextFlushIndex) && currentBufferedBytes >= maxMemoryBytes) {
+              enqueueSequentialFlush(false)
+            } else if (nextFlushIndex === seg.index && bufferMap.size >= 8) {
+              enqueueSequentialFlush(false)
             }
 
             const now = Date.now()
             if (now - lastReportTime > 400 || nextFlushIndex === segments.length) {
-              const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+              const dt = Math.max(1, now - lastReportTime)
+              const speed = ((totalReceivedBytes - lastReportBytes) / dt) * 1000
               this.sendProgress({
                 id,
                 totalBytes: 0,
                 receivedBytes: totalReceivedBytes,
-                downloadedSegments: nextFlushIndex,
+                downloadedSegments: Math.max(flushedSegmentsCount, nextFlushIndex),
                 totalSegments: segments.length,
                 speed,
                 status: 'downloading',
@@ -916,12 +1925,13 @@ class Downloader {
 
             success = true
           } catch (e: any) {
-            if (e.name === 'AbortError' || abortController.signal.aborted) throw e
+            if (abortController.signal.aborted) {
+              throw e?.name === 'AbortError' ? e : new DOMException('User aborted download', 'AbortError')
+            }
             attempts++
-            if (isTransientNetworkError(e)) {
+            if (isTransientNetworkError(e) || e?.name === 'AbortError') {
               if (attempts >= maxTransientAttempts) {
                 logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxTransientAttempts} 次网络错误均无法恢复，终止任务: ${e.message}`)
-                abortController.abort()
                 throw new Error(`分片 ${seg.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${e.message})`)
               }
               const friendlyMsg = formatTransientErrorMessage(e)
@@ -930,7 +1940,7 @@ class Downloader {
                 id,
                 totalBytes: 0,
                 receivedBytes: totalReceivedBytes,
-                downloadedSegments: nextFlushIndex,
+                downloadedSegments: flushedSegmentsCount,
                 totalSegments: segments.length,
                 speed: 0,
                 status: 'downloading',
@@ -940,7 +1950,6 @@ class Downloader {
             } else {
               if (attempts >= maxAttempts) {
                 logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxAttempts} 次均失败: ${e.message}`)
-                abortController.abort()
                 throw new Error(`分片 ${seg.index} 下载失败 (${e.message})`)
               }
               await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, e)))
@@ -957,11 +1966,15 @@ class Downloader {
 
     try {
       await Promise.all(workers)
-      flushMemoryToDisk(true)
-      fs.closeSync(fd)
+      enqueueSequentialFlush(true)
+      await writeChain
+      await fileHandle.close()
 
-      if (nextFlushIndex < segments.length) {
-        throw new Error(`M3U8 分片未全部完成落盘: 仅写入 ${nextFlushIndex}/${segments.length} 分片`)
+      if (diskWriteError) {
+        throw diskWriteError
+      }
+      if (flushedSegmentsCount < segments.length) {
+        throw new Error(`M3U8 分片未全部完成落盘: 仅写入 ${flushedSegmentsCount}/${segments.length} 分片`)
       }
 
       if (isTargetMp4) {
@@ -979,20 +1992,21 @@ class Downloader {
       }
     } catch (err: any) {
       try {
-        flushMemoryToDisk(false)
-        fs.closeSync(fd)
+        enqueueSequentialFlush(false)
+        await writeChain.catch(() => {})
+        await fileHandle.close()
       } catch {}
-      if (err.name === 'AbortError' || abortController.signal.aborted) {
+      if (diskWriteError) {
+        throw diskWriteError
+      }
+      if (err?.name === 'AbortError' || abortController.signal.aborted) {
         const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : totalReceivedBytes
-        this.sendProgress({
-          id,
-          totalBytes: 0,
-          receivedBytes: savedBytes,
-          downloadedSegments: nextFlushIndex,
-          totalSegments: segments.length,
-          speed: 0,
-          status: 'paused'
+        const pauseErr: any = Object.assign(new Error('User aborted download'), {
+          name: 'AbortError',
+          savedBytes,
+          downloadedSegments: flushedSegmentsCount
         })
+        throw pauseErr
       }
       throw err
     }
@@ -1100,17 +2114,17 @@ class Downloader {
    * 通用视频 (MP4 / AVI 等) 的断点续传、HTTP Range 分块多线程加速与内存缓冲
    */
   private async downloadDirectFileTask(cmd: DownloadCommand, abortController: AbortController): Promise<{ filePath: string; fileSize: number }> {
-    const { id, url, savePath, startBytes = 0 } = cmd
-
-    const chunkSize = 4 * 1024 * 1024 // 4MB
+    const { id, savePath, startBytes = 0 } = cmd
     const progressPath = savePath + '.velora'
-    
-    let completedChunks: number[] = []
+
+    let savedChunkSize = 0
+    let savedCompletedChunks: number[] = []
     if (fs.existsSync(progressPath)) {
       try {
         const progData = JSON.parse(fs.readFileSync(progressPath, 'utf8'))
-        if (progData.chunkSize === chunkSize) {
-          completedChunks = progData.completed || []
+        if (typeof progData.chunkSize === 'number' && progData.chunkSize > 0 && Array.isArray(progData.completed)) {
+          savedChunkSize = progData.chunkSize
+          savedCompletedChunks = progData.completed
         }
       } catch {}
     }
@@ -1128,164 +2142,322 @@ class Downloader {
       fs.mkdirSync(dir, { recursive: true })
     }
 
-    const headers: any = getHeadersForUrl(url, cmd.referer, cmd.origin, cmd.id)
+    let activeUrl = cmd.url
+    const buildHeaders = (targetUrl: string): Record<string, string> => this.buildTaskHeaders(cmd, targetUrl)
+    let activeHeaders = buildHeaders(activeUrl)
+
+    let panRefreshPromise: Promise<boolean> | null = null
+    const ensurePanLinkRefreshed = async (forceSession = true): Promise<boolean> => {
+      if (!cmd.panContext) return false
+      if (!panRefreshPromise) {
+        panRefreshPromise = this.refreshCommandPanLink(cmd, forceSession)
+          .then((ok) => {
+            if (ok) {
+              activeUrl = cmd.url
+              activeHeaders = buildHeaders(activeUrl)
+            }
+            return ok
+          })
+          .finally(() => {
+            panRefreshPromise = null
+          })
+      }
+      return panRefreshPromise
+    }
 
     let isRangeSupported = false
-    let totalBytes = 0
+    let totalBytes = cmd.totalBytes && cmd.totalBytes > 0 ? cmd.totalBytes : 0
+    let initialFullResponseHandle: ManagedFetchHandle | null = null
 
-    try {
-      const checkRes = await net.fetch(url, {
-        headers: { ...headers, 'Range': `bytes=0-1` },
-        signal: abortController.signal as any
-      })
-      if (checkRes.status === 206) {
-        isRangeSupported = true
-        const cr = checkRes.headers.get('content-range')
-        if (cr) {
-          const match = cr.match(/\/(\d+)/)
-          if (match) {
-            totalBytes = parseInt(match[1], 10)
+    for (let probeAttempt = 0; probeAttempt < 2; probeAttempt++) {
+      let probeHandle: ManagedFetchHandle | null = null
+      let transferToStream = false
+      try {
+        probeHandle = await fetchWithManagedTimeout(
+          activeUrl,
+          { headers: { ...activeHeaders, Range: 'bytes=0-0' }, signal: abortController.signal as any },
+          15000
+        )
+        const checkRes = probeHandle.response
+        if (checkRes.status === 206) {
+          isRangeSupported = true
+          const cr = checkRes.headers.get('content-range')
+          if (cr) {
+            const match = cr.match(/\/(\d+)/)
+            if (match && (!totalBytes || totalBytes === 0)) {
+              totalBytes = parseInt(match[1], 10)
+            }
           }
+          try { await checkRes.body?.cancel?.() } catch {}
+          break
+        } else if (checkRes.status === 200) {
+          isRangeSupported = false
+          const cl = checkRes.headers.get('content-length')
+          if (cl && totalBytes === 0) {
+            totalBytes = parseInt(cl, 10)
+          }
+          initialFullResponseHandle = probeHandle
+          transferToStream = true
+          break
+        } else if ((checkRes.status === 401 || checkRes.status === 403 || checkRes.status === 412) && cmd.panContext && probeAttempt === 0) {
+          try { await checkRes.body?.cancel?.() } catch {}
+          probeHandle.cleanup()
+          probeHandle = null
+          logger.warn('Downloader', `[DirectDownloader] 直链预检返回 HTTP ${checkRes.status} (host=${parseUrlHost(activeUrl)}, headers=${JSON.stringify(Object.keys(activeHeaders))})，尝试刷新会话并重取网盘直链...`)
+          const refreshed = await ensurePanLinkRefreshed(true)
+          if (refreshed) continue
+          logger.error('Downloader', `[DirectDownloader] 直链预检失败: status=${checkRes.status}, host=${parseUrlHost(activeUrl)}, headers=${JSON.stringify(Object.keys(activeHeaders))}`)
+          break
+        } else {
+          try { await checkRes.body?.cancel?.() } catch {}
+          if (checkRes.status === 401 || checkRes.status === 403 || checkRes.status === 412) {
+            logger.error('Downloader', `[DirectDownloader] 直链预检失败: status=${checkRes.status}, host=${parseUrlHost(activeUrl)}, headers=${JSON.stringify(Object.keys(activeHeaders))}`)
+          }
+          break
+        }
+      } catch (e: any) {
+        if (abortController.signal.aborted) {
+          throw e?.name === 'AbortError' ? e : new DOMException('User aborted download', 'AbortError')
+        }
+        logger.info('Downloader', `[DirectDownloader] Range 探测未响应: ${e.message}`)
+        if (
+          totalBytes > 0 &&
+          (activeUrl.includes('quark') || activeUrl.includes('uc.cn') || (cmd.referer && (cmd.referer.includes('quark') || cmd.referer.includes('uc.cn'))))
+        ) {
+          isRangeSupported = true
+        }
+        break
+      } finally {
+        if (probeHandle && !transferToStream) {
+          probeHandle.cleanup()
         }
       }
-    } catch (e: any) {
-      logger.info('Downloader', `[DirectDownloader] Range 探测未响应: ${e.message}`)
+    }
+
+    const cleanupInitialHandle = async () => {
+      if (initialFullResponseHandle) {
+        try { await initialFullResponseHandle.response?.body?.cancel?.() } catch {}
+        initialFullResponseHandle.cleanup()
+        initialFullResponseHandle = null
+      }
     }
 
     if (fs.existsSync(savePath) && !fs.existsSync(progressPath) && totalBytes > 0) {
       try {
         const stat = fs.statSync(savePath)
         if (stat.size >= totalBytes) {
+          await cleanupInitialHandle()
           logger.info('Downloader', `[DirectDownloader] 目标文件已完整存在 (${stat.size} >= ${totalBytes})，直接跳过下载`)
           return { filePath: savePath, fileSize: stat.size }
         }
       } catch {}
     }
 
-    const totalChunksCount = Math.ceil(totalBytes / chunkSize)
-    const validCompletedChunks = completedChunks.filter(i => i < totalChunksCount)
-    let totalReceivedBytes = validCompletedChunks.length * chunkSize
+    const targetConcurrency = computeOptimalConcurrency(activeUrl, cmd.referer)
+    const chunkSize =
+      savedChunkSize > 0 && savedCompletedChunks.length > 0
+        ? savedChunkSize
+        : computeOptimalChunkSize(totalBytes, targetConcurrency)
+    const completedChunks = savedChunkSize > 0 && savedChunkSize === chunkSize ? savedCompletedChunks : []
+    const totalChunksCount = totalBytes > 0 ? Math.ceil(totalBytes / chunkSize) : 0
+    const validCompletedChunks = Array.from(new Set(completedChunks.filter(i => i >= 0 && i < totalChunksCount)))
+    const completedChunkSet = new Set<number>(validCompletedChunks)
 
-    if (isRangeSupported && totalBytes > 2 * 1024 * 1024) {
-      logger.info('Downloader', `[DirectDownloader] 支持 Range 断点续传。已完成 ${validCompletedChunks.length}/${totalChunksCount} 分块，开启 8 线程加速下载`)
-      
+    const getChunkByteLength = (chunkIdx: number) => {
+      const start = chunkIdx * chunkSize
+      return Math.max(0, Math.min(chunkSize, totalBytes - start))
+    }
+    let totalReceivedBytes = validCompletedChunks.reduce((sum, idx) => sum + getChunkByteLength(idx), 0)
+
+    if (isRangeSupported && totalBytes > 512 * 1024) {
+      await cleanupInitialHandle()
+
       const chunks: Array<{ index: number; start: number; end: number }> = []
-      
       for (let i = 0; i < totalChunksCount; i++) {
-        if (validCompletedChunks.includes(i)) continue
+        if (completedChunkSet.has(i)) continue
         const start = i * chunkSize
         const end = Math.min(totalBytes - 1, start + chunkSize - 1)
         chunks.push({ index: i, start, end })
       }
-      
-      const fileFlags = fs.existsSync(savePath) ? 'r+' : 'w'
-      if (fileFlags === 'r+') {
+
+      if (chunks.length === 0) {
+        if (fs.existsSync(progressPath)) {
+          try { await fs.promises.unlink(progressPath) } catch {}
+        }
+        const finalFileSize = fs.existsSync(savePath) ? fs.statSync(savePath).size : totalBytes
+        return { filePath: savePath, fileSize: finalFileSize }
+      }
+
+      const concurrency = Math.min(targetConcurrency, chunks.length)
+      logger.info(
+        'Downloader',
+        `[DirectDownloader] 支持 Range 断点续传 (${(chunkSize / 1024 / 1024).toFixed(2)}MB/块, 已完成 ${validCompletedChunks.length}/${totalChunksCount})，开启 ${concurrency} 并发加速下载`
+      )
+
+      const fileExists = fs.existsSync(savePath)
+      if (fileExists) {
         try {
           const stats = fs.statSync(savePath)
           if (stats.size > totalBytes) {
-             logger.info('Downloader', `[DirectDownloader] 续传旧文件过大，截断为 ${totalBytes}`)
-             fs.truncateSync(savePath, totalBytes)
+            logger.info('Downloader', `[DirectDownloader] 续传旧文件过大，截断为 ${totalBytes}`)
+            await fs.promises.truncate(savePath, totalBytes)
           }
         } catch {}
       }
-      
-      let fd: number
+
+      let fileHandle: fs.promises.FileHandle
       try {
-        fd = fs.openSync(savePath, fileFlags)
+        fileHandle = await fs.promises.open(savePath, fileExists ? 'r+' : 'w')
       } catch (err: any) {
-        if (err.code === 'ENOENT' && fileFlags === 'r+') {
-           fd = fs.openSync(savePath, 'w')
+        if (err.code === 'ENOENT') {
+          fileHandle = await fs.promises.open(savePath, 'w')
         } else {
-           throw err
+          throw err
         }
       }
 
-      interface WriteFragment {
-        buffer: Buffer;
-        position: number;
-      }
-      let writeFragments: WriteFragment[] = []
-      let currentBufferedBytes = 0
+      let pendingDiskWriteBytes = 0
+      let workerInFlightBytes = 0
       let downloadedChunksCount = validCompletedChunks.length
-      
-      let completedChunksToSave: number[] = []
-
       let lastReportTime = Date.now()
       let lastReportBytes = totalReceivedBytes
+      let lastProgressSaveTime = Date.now()
+      let progressDirty = false
+      let progressWritePromise: Promise<void> | null = null
+      let diskWriteError: Error | null = null
+      const activeWritePromises = new Set<Promise<void>>()
 
-      const flushMemoryToDisk = (forceAll = false) => {
-        if (writeFragments.length === 0 && completedChunksToSave.length === 0) return
-        if (!forceAll && currentBufferedBytes < maxMemoryBytes) return
-
-        for (const frag of writeFragments) {
-          fs.writeSync(fd, frag.buffer, 0, frag.buffer.length, frag.position)
+      const saveProgressFile = async (force = false): Promise<void> => {
+        if (!progressDirty && !force) return
+        const now = Date.now()
+        if (!force && now - lastProgressSaveTime < 1000) return
+        if (progressWritePromise && !force) return
+        if (progressWritePromise && force) {
+          await progressWritePromise.catch(() => {})
         }
-        
-        if (completedChunksToSave.length > 0) {
-          validCompletedChunks.push(...completedChunksToSave)
-          completedChunksToSave = []
-          fs.writeFileSync(progressPath, JSON.stringify({ chunkSize, completed: validCompletedChunks }))
-        }
-
-        if (forceAll || currentBufferedBytes >= maxMemoryBytes) {
-          logger.info('Downloader', `[MemoryBuffer] 单文件缓冲批量写盘并更新进度 (${(currentBufferedBytes / 1024 / 1024).toFixed(2)} MB)`)
-        }
-
-        writeFragments = []
-        currentBufferedBytes = 0
+        lastProgressSaveTime = now
+        progressDirty = false
+        const snapshot = JSON.stringify({ chunkSize, completed: Array.from(completedChunkSet) })
+        const p = fs.promises.writeFile(progressPath, snapshot).catch(() => {}).finally(() => {
+          if (progressWritePromise === p) progressWritePromise = null
+        })
+        progressWritePromise = p
+        if (force) await p
       }
 
       let chunkQueueIndex = 0
-      const concurrency = 5
 
       const fetchNextChunk = async (): Promise<void> => {
         while (chunkQueueIndex < chunks.length) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
+
+          // 异步写盘背压：待落盘+在途内存超过上限 1.5x 时稍作让步
+          while (pendingDiskWriteBytes + workerInFlightBytes >= maxMemoryBytes * 1.5 && activeWritePromises.size > 0) {
+            if (abortController.signal.aborted) {
+              throw new DOMException('User aborted download', 'AbortError')
+            }
+            await new Promise(r => setTimeout(r, 40))
+          }
+
           const chunkItem = chunks[chunkQueueIndex++]
+          const expectedLen = chunkItem.end - chunkItem.start + 1
+          const chunkBuf = Buffer.allocUnsafe(expectedLen)
+          let writeOffset = 0
           let attempts = 0
+          let panRefreshCount = 0
+          let preemptCount = 0
           let success = false
           const maxAttempts = 5
           const maxTransientAttempts = 30
 
+          const releaseBufferedBytes = () => {
+            if (writeOffset > 0) {
+              workerInFlightBytes = Math.max(0, workerInFlightBytes - writeOffset)
+              totalReceivedBytes = Math.max(0, totalReceivedBytes - writeOffset)
+              writeOffset = 0
+            }
+          }
+
           while (!success) {
             if (abortController.signal.aborted) {
+              releaseBufferedBytes()
               throw new DOMException('User aborted download', 'AbortError')
             }
+            let handle: ManagedFetchHandle | null = null
+            const reqStart = chunkItem.start + writeOffset
+            const remainingExpected = expectedLen - writeOffset
+            let slowPreempted = false
             try {
-              const chunkRes = await fetchWithTimeout(url, {
-                headers: { ...headers, 'Range': `bytes=${chunkItem.start}-${chunkItem.end}` },
-                signal: abortController.signal as any
-              }, 20000)
-              if (!chunkRes.ok && chunkRes.status !== 206) throw new Error(`HTTP ${chunkRes.status}`)
-              
-              if (!chunkRes.body) throw new Error("No response body")
-              
+              handle = await fetchWithManagedTimeout(
+                activeUrl,
+                {
+                  headers: { ...activeHeaders, Range: `bytes=${reqStart}-${chunkItem.end}` },
+                  signal: abortController.signal as any
+                },
+                20000
+              )
+              const chunkRes = handle.response
+
+              if ((chunkRes.status === 401 || chunkRes.status === 403 || chunkRes.status === 412) && cmd.panContext && panRefreshCount < 2) {
+                try { await chunkRes.body?.cancel?.() } catch {}
+                panRefreshCount++
+                const refreshed = await ensurePanLinkRefreshed()
+                if (refreshed) continue
+              }
+
+              // 严格要求 206 部分内容响应（除非总文件只有这 1 个完整分块且从 0 开始服务器返回 200）
+              const isValidRangeRes =
+                chunkRes.status === 206 ||
+                (chunkRes.status === 200 && reqStart === 0 && totalBytes === expectedLen)
+              if (!isValidRangeRes) {
+                try { await chunkRes.body?.cancel?.() } catch {}
+                throw new Error(`HTTP ${chunkRes.status}`)
+              }
+
+              if (chunkRes.status === 206) {
+                const cr = chunkRes.headers?.get?.('content-range')
+                const crMatch = cr ? cr.match(/bytes\s+(\d+)-(\d+)/i) : null
+                if (crMatch && Number(crMatch[1]) !== reqStart) {
+                  try { await chunkRes.body?.cancel?.() } catch {}
+                  throw new Error(`分块 ${chunkItem.index} Range 起始偏移不匹配 (${crMatch[1]} != ${reqStart})`)
+                }
+              }
+
+              if (!chunkRes.body) throw new Error('No response body')
+
               const reader = chunkRes.body.getReader()
-              let currentPosition = chunkItem.start
+              handle.resetIdleTimeout(25000)
+              const connStartTime = Date.now()
+              let windowStartTime = connStartTime
+              let windowBytes = 0
 
               while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
+                handle.resetIdleTimeout(25000)
                 if (abortController.signal.aborted) {
-                  reader.cancel()
+                  try { await reader.cancel() } catch {}
                   throw new DOMException('User aborted download', 'AbortError')
                 }
+                if (!value || value.byteLength === 0) continue
 
-                const buf = Buffer.from(value)
-                writeFragments.push({ buffer: buf, position: currentPosition })
-                currentPosition += buf.length
-                currentBufferedBytes += buf.length
-                totalReceivedBytes += buf.length
-
-                if (currentBufferedBytes >= maxMemoryBytes) {
-                  flushMemoryToDisk(false)
+                if (writeOffset + value.byteLength > expectedLen) {
+                  try { await reader.cancel() } catch {}
+                  throw new Error(`分块 ${chunkItem.index} 返回字节数超出预期 (${writeOffset + value.byteLength} > ${expectedLen})`)
                 }
+
+                Buffer.from(value.buffer, value.byteOffset, value.byteLength).copy(chunkBuf, writeOffset)
+                writeOffset += value.byteLength
+                windowBytes += value.byteLength
+                workerInFlightBytes += value.byteLength
+                totalReceivedBytes += value.byteLength
 
                 const now = Date.now()
                 if (now - lastReportTime > 400) {
-                  const speed = ((totalReceivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
+                  const dt = Math.max(1, now - lastReportTime)
+                  const speed = ((totalReceivedBytes - lastReportBytes) / dt) * 1000
                   this.sendProgress({
                     id,
                     totalBytes,
@@ -1297,39 +2469,100 @@ class Downloader {
                   lastReportTime = now
                   lastReportBytes = totalReceivedBytes
                 }
+
+                // 慢连接抢占（对齐 YunX-Desktop DownloadTuning）：持续 >= 15s 且低于阈值时保留已收字节立即重连
+                if (now - windowStartTime >= 5000) {
+                  const winDt = Math.max(1, now - windowStartTime)
+                  const windowBps = (windowBytes * 1000) / winDt
+                  windowStartTime = now
+                  windowBytes = 0
+
+                  if (
+                    now - connStartTime >= 15000 &&
+                    expectedLen - writeOffset > 128 * 1024 &&
+                    preemptCount < 6
+                  ) {
+                    const taskBps = this.taskSpeedMap.get(id)?.speed || 0
+                    const avgPerConn = taskBps > 0 ? taskBps / Math.max(1, concurrency) : 0
+                    const floorBps = Math.max(12 * 1024, avgPerConn * 0.45)
+                    if (windowBps < floorBps) {
+                      preemptCount++
+                      slowPreempted = true
+                      try { await reader.cancel() } catch {}
+                      break
+                    }
+                  }
+                }
               }
 
-              completedChunksToSave.push(chunkItem.index)
-              downloadedChunksCount++
-              
-              if (currentBufferedBytes >= maxMemoryBytes || downloadedChunksCount === totalChunksCount) {
-                flushMemoryToDisk(downloadedChunksCount === totalChunksCount)
+              if (slowPreempted) {
+                continue
               }
 
-              if (downloadedChunksCount === totalChunksCount) {
-                const speed = ((totalReceivedBytes - lastReportBytes) / (Date.now() - lastReportTime)) * 1000
+              if (handle.isTimedOut() && !abortController.signal.aborted) {
+                throw new Error(`分块 ${chunkItem.index} 流读取超时`)
+              }
+              if (writeOffset !== expectedLen) {
+                throw new Error(`分块 ${chunkItem.index} 数据不完整 (${writeOffset}/${expectedLen} 字节, 剩余 ${remainingExpected})`)
+              }
+
+              // 网络收包完毕，转入异步并发落盘（不阻塞本 worker 拉取下一分块）
+              workerInFlightBytes = Math.max(0, workerInFlightBytes - writeOffset)
+              writeOffset = 0
+              pendingDiskWriteBytes += chunkBuf.length
+
+              const wp = writeBufferFully(fileHandle, chunkBuf, chunkItem.start)
+                .then(() => {
+                  completedChunkSet.add(chunkItem.index)
+                  downloadedChunksCount++
+                  progressDirty = true
+                  saveProgressFile(false)
+                })
+                .catch((writeErr: any) => {
+                  diskWriteError = writeErr
+                  abortController.abort(writeErr)
+                })
+                .finally(() => {
+                  pendingDiskWriteBytes = Math.max(0, pendingDiskWriteBytes - chunkBuf.length)
+                  activeWritePromises.delete(wp)
+                })
+              activeWritePromises.add(wp)
+
+              if (downloadedChunksCount >= totalChunksCount - 1) {
+                const now = Date.now()
+                const dt = Math.max(1, now - lastReportTime)
+                const speed = ((totalReceivedBytes - lastReportBytes) / dt) * 1000
                 this.sendProgress({
                   id,
                   totalBytes,
-                  receivedBytes: totalReceivedBytes,
+                  receivedBytes: Math.min(totalBytes, totalReceivedBytes),
                   speed: isNaN(speed) ? 0 : speed,
                   status: 'downloading',
                   errorMsg: ''
                 })
+                lastReportTime = now
+                lastReportBytes = totalReceivedBytes
               }
 
               success = true
             } catch (err: any) {
-              if (err.name === 'AbortError' || abortController.signal.aborted) throw err
+              if (abortController.signal.aborted) {
+                releaseBufferedBytes()
+                throw err?.name === 'AbortError' ? err : new DOMException('User aborted download', 'AbortError')
+              }
+              const retryableErr =
+                err?.name === 'AbortError' || handle?.isTimedOut()
+                  ? new Error(err?.message || `分块 ${chunkItem.index} 请求中断，准备重试`)
+                  : err
               attempts++
-              if (isTransientNetworkError(err)) {
+              if (isTransientNetworkError(retryableErr) || err?.name === 'AbortError') {
                 if (attempts >= maxTransientAttempts) {
-                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 ${maxTransientAttempts} 次均失败: ${err.message}`)
-                  abortController.abort()
-                  throw new Error(`分块 ${chunkItem.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${err.message})`)
+                  releaseBufferedBytes()
+                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 ${maxTransientAttempts} 次均失败: ${retryableErr.message}`)
+                  throw new Error(`分块 ${chunkItem.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${retryableErr.message})`)
                 }
-                const friendlyMsg = formatTransientErrorMessage(err)
-                logger.warn('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${err.message}`)
+                const friendlyMsg = formatTransientErrorMessage(retryableErr)
+                logger.warn('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 遭遇网络波动 (保留已收 ${writeOffset}/${expectedLen} 字节)，正在自动续传重试 (第 ${attempts} 次): ${retryableErr.message}`)
                 this.sendProgress({
                   id,
                   totalBytes,
@@ -1338,15 +2571,17 @@ class Downloader {
                   status: 'downloading',
                   errorMsg: `正在重试: ${friendlyMsg}`
                 })
-                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, err)))
+                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, retryableErr)))
               } else {
-                if (attempts >= 5) {
-                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 5 次均失败: ${err.message}`)
-                  abortController.abort()
-                  throw new Error(`分块 ${chunkItem.index} 下载失败 (${err.message})`)
+                if (attempts >= maxAttempts) {
+                  releaseBufferedBytes()
+                  logger.error('Downloader', `[DirectDownloader] 分块 ${chunkItem.index} 连续重试 ${maxAttempts} 次均失败: ${retryableErr.message}`)
+                  throw new Error(`分块 ${chunkItem.index} 下载失败 (${retryableErr.message})`)
                 }
-                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, err)))
+                await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, retryableErr)))
               }
+            } finally {
+              handle?.cleanup()
             }
           }
         }
@@ -1359,63 +2594,107 @@ class Downloader {
 
       try {
         await Promise.all(workers)
-        flushMemoryToDisk(true)
-        fs.closeSync(fd)
-        
+        await Promise.allSettled(Array.from(activeWritePromises))
+        await saveProgressFile(true)
+        await fileHandle.close()
+
+        if (diskWriteError) {
+          throw diskWriteError
+        }
+        if (completedChunkSet.size < totalChunksCount) {
+          throw new Error(`分块未全部完成写入: ${completedChunkSet.size}/${totalChunksCount}`)
+        }
+
         if (fs.existsSync(progressPath)) {
-          fs.unlinkSync(progressPath)
+          try { await fs.promises.unlink(progressPath) } catch {}
         }
 
         const finalFileSize = fs.existsSync(savePath) ? fs.statSync(savePath).size : totalBytes
-
         logger.info('Downloader', `[DirectDownloader] 单文件 Range 断点续传/下载完成: ${savePath}，大小: ${finalFileSize}`)
         return {
           filePath: savePath,
           fileSize: finalFileSize
         }
-      } catch (err) {
-        try { fs.closeSync(fd) } catch {}
+      } catch (err: any) {
+        await Promise.allSettled(Array.from(activeWritePromises))
+        await saveProgressFile(true)
+        try { await fileHandle.close() } catch {}
+        if (diskWriteError) {
+          throw diskWriteError
+        }
+        if (err?.name === 'AbortError' || abortController.signal.aborted) {
+          const savedBytes = Array.from(completedChunkSet).reduce((sum, idx) => sum + getChunkByteLength(idx), 0)
+          const pauseErr: any = Object.assign(new Error('User aborted download'), {
+            name: 'AbortError',
+            savedBytes
+          })
+          throw pauseErr
+        }
         throw err
       }
     }
 
-    // 3. 不支持 Range 时的退化降级：单线程流式下载（带瞬态网络异常自动续传重试）
+    // 3. 不支持 Range 或小文件：单线程流式下载（优先复用 200 OK 预检流，异步 write 落盘）
     let singleStreamAttempts = 0
+    const maxSingleStreamAttempts = 30
+    let panRefreshCount = 0
     let receivedBytes = startBytes
-    let finalTotalBytes = 0
+    let finalTotalBytes = totalBytes
 
     while (true) {
       if (abortController.signal.aborted) {
+        await cleanupInitialHandle()
         throw new DOMException('User aborted download', 'AbortError')
       }
 
+      let handle: ManagedFetchHandle | null = null
+      let fileHandle: fs.promises.FileHandle | null = null
       try {
-        const streamHeaders = { ...headers }
-        if (receivedBytes > 0) {
-          streamHeaders['Range'] = `bytes=${receivedBytes}-`
+        if (initialFullResponseHandle && receivedBytes === 0) {
+          handle = initialFullResponseHandle
+          initialFullResponseHandle = null
+        } else {
+          await cleanupInitialHandle()
+          const streamHeaders = { ...activeHeaders }
+          if (receivedBytes > 0) {
+            streamHeaders['Range'] = `bytes=${receivedBytes}-`
+          }
+          handle = await fetchWithManagedTimeout(
+            activeUrl,
+            { headers: streamHeaders, signal: abortController.signal as any },
+            20000
+          )
         }
 
-        const response = await net.fetch(url, { headers: streamHeaders, signal: abortController.signal as any })
+        const response = handle.response
+        if ((response.status === 401 || response.status === 403 || response.status === 412) && cmd.panContext && panRefreshCount < 2) {
+          try { await response.body?.cancel?.() } catch {}
+          handle.cleanup()
+          handle = null
+          panRefreshCount++
+          const refreshed = await ensurePanLinkRefreshed()
+          if (refreshed) continue
+        }
+
         if (!response.ok && response.status !== 206) {
+          try { await response.body?.cancel?.() } catch {}
           throw new Error(`HTTP ${response.status} ${response.statusText}`)
-        }
-
-        const contentLength = response.headers.get('content-length')
-        if (contentLength && finalTotalBytes === 0) {
-          finalTotalBytes = parseInt(contentLength, 10) + receivedBytes
         }
 
         let flags = 'a'
         if (receivedBytes === 0) {
           flags = 'w'
         } else if (response.status === 200 && receivedBytes > 0) {
-          // 服务器不支持 Range 续传，只能重新从头开始写入
           flags = 'w'
           receivedBytes = 0
         }
 
-        const fileStream = fs.createWriteStream(savePath, { flags })
+        const contentLength = response.headers.get('content-length')
+        if (contentLength && finalTotalBytes === 0) {
+          finalTotalBytes = parseInt(contentLength, 10) + (response.status === 206 ? receivedBytes : 0)
+        }
 
+        fileHandle = await fs.promises.open(savePath, flags)
         this.sendProgress({
           id,
           totalBytes: finalTotalBytes,
@@ -1426,76 +2705,95 @@ class Downloader {
         })
 
         if (!response.body) throw new Error('No response body')
+        const reader = response.body.getReader()
+        handle.resetIdleTimeout(30000)
 
-        const nodeStream = Readable.fromWeb(response.body as any)
         let lastReportTime = Date.now()
         let lastReportBytes = receivedBytes
-
         let memoryChunks: Buffer[] = []
         let memoryChunkBytes = 0
+        const flushLimit = Math.min(maxMemoryBytes, 8 * 1024 * 1024)
 
-        const flushStreamBuffer = () => {
-          if (memoryChunks.length > 0) {
-            const combined = Buffer.concat(memoryChunks)
-            fileStream.write(combined)
+        const flushStreamBuffer = async () => {
+          if (memoryChunks.length > 0 && fileHandle) {
+            const combined = memoryChunks.length === 1 ? memoryChunks[0] : Buffer.concat(memoryChunks)
             memoryChunks = []
             memoryChunkBytes = 0
+            await writeBufferFully(fileHandle, combined)
           }
         }
 
-        await new Promise<void>((resolve, reject) => {
-          nodeStream.on('data', (chunk: Buffer) => {
-            receivedBytes += chunk.length
-            memoryChunks.push(chunk)
-            memoryChunkBytes += chunk.length
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          handle.resetIdleTimeout(30000)
+          if (abortController.signal.aborted) {
+            try { await reader.cancel() } catch {}
+            await flushStreamBuffer()
+            throw new DOMException('User aborted download', 'AbortError')
+          }
+          if (!value || value.byteLength === 0) continue
 
-            if (memoryChunkBytes >= maxMemoryBytes) {
-              flushStreamBuffer()
-            }
+          const buf = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+          receivedBytes += buf.length
+          memoryChunks.push(buf)
+          memoryChunkBytes += buf.length
 
-            const now = Date.now()
-            if (now - lastReportTime > 500) {
-              const speed = ((receivedBytes - lastReportBytes) / (now - lastReportTime)) * 1000
-              this.sendProgress({
-                id,
-                receivedBytes,
-                totalBytes: finalTotalBytes,
-                speed,
-                status: 'downloading',
-                errorMsg: ''
-              })
-              lastReportTime = now
-              lastReportBytes = receivedBytes
-            }
-          })
+          if (memoryChunkBytes >= flushLimit) {
+            await flushStreamBuffer()
+          }
 
-          nodeStream.on('end', () => {
-            flushStreamBuffer()
-            fileStream.end()
-            resolve()
-          })
-          nodeStream.on('error', (err) => {
-            flushStreamBuffer()
-            fileStream.end()
-            reject(err)
-          })
-          fileStream.on('error', (err) => {
-            reject(err)
-          })
-          abortController.signal.addEventListener('abort', () => {
-            fileStream.end()
-            reject(new DOMException('The user aborted a request.', 'AbortError'))
-          })
-        })
+          const now = Date.now()
+          if (now - lastReportTime > 400) {
+            const dt = Math.max(1, now - lastReportTime)
+            const speed = ((receivedBytes - lastReportBytes) / dt) * 1000
+            this.sendProgress({
+              id,
+              receivedBytes,
+              totalBytes: finalTotalBytes,
+              speed,
+              status: 'downloading',
+              errorMsg: ''
+            })
+            lastReportTime = now
+            lastReportBytes = receivedBytes
+          }
+        }
 
-        // 下载正常完成，跳出重试循环
+        if (handle.isTimedOut() && !abortController.signal.aborted) {
+          await flushStreamBuffer()
+          throw new Error('单流读取空闲超时')
+        }
+
+        await flushStreamBuffer()
+        await fileHandle.close()
+        fileHandle = null
         break
       } catch (err: any) {
-        if (err.name === 'AbortError' || abortController.signal.aborted) throw err
+        if (fileHandle) {
+          try { await fileHandle.close() } catch {}
+          fileHandle = null
+        }
+        if (abortController.signal.aborted) {
+          const savedBytes = fs.existsSync(savePath) ? fs.statSync(savePath).size : receivedBytes
+          const pauseErr: any = Object.assign(new Error('User aborted download'), {
+            name: 'AbortError',
+            savedBytes
+          })
+          throw pauseErr
+        }
+        const retryableErr =
+          err?.name === 'AbortError' || handle?.isTimedOut()
+            ? new Error(err?.message || '单流连接意外中断，准备重试')
+            : err
         singleStreamAttempts++
-        if (isTransientNetworkError(err)) {
-          const friendlyMsg = formatTransientErrorMessage(err)
-          logger.warn('Downloader', `[DirectDownloader] 单流下载遭遇网络波动，正在后台自动重试 (第 ${singleStreamAttempts} 次): ${err.message}`)
+        if (isTransientNetworkError(retryableErr) || err?.name === 'AbortError') {
+          if (singleStreamAttempts >= maxSingleStreamAttempts) {
+            logger.error('Downloader', `[DirectDownloader] 单流下载连续重试 ${maxSingleStreamAttempts} 次均失败: ${retryableErr.message}`)
+            throw new Error(`单流下载失败 (已重试 ${maxSingleStreamAttempts} 次: ${retryableErr.message})`)
+          }
+          const friendlyMsg = formatTransientErrorMessage(retryableErr)
+          logger.warn('Downloader', `[DirectDownloader] 单流下载遭遇网络波动，正在后台自动重试 (第 ${singleStreamAttempts} 次): ${retryableErr.message}`)
           this.sendProgress({
             id,
             totalBytes: finalTotalBytes,
@@ -1504,11 +2802,13 @@ class Downloader {
             status: 'downloading',
             errorMsg: `正在重试: ${friendlyMsg}`
           })
-          await new Promise(r => setTimeout(r, getTransientRetryDelay(singleStreamAttempts, err)))
+          await new Promise(r => setTimeout(r, getTransientRetryDelay(singleStreamAttempts, retryableErr)))
         } else {
-          logger.error('Downloader', `[DirectDownloader] 单流下载遇到非瞬态错误: ${err.message}`)
-          throw err
+          logger.error('Downloader', `[DirectDownloader] 单流下载遇到非瞬态错误: ${retryableErr.message}`)
+          throw retryableErr
         }
+      } finally {
+        handle?.cleanup()
       }
     }
 
@@ -1571,24 +2871,10 @@ class Downloader {
       return
     }
 
-    // 4. 如果当前正在下载中
+    // 4. 如果当前正在下载中（仅发出中止信号，由 runTask/executeTaskInternal 的 finally 在文件句柄关闭后统一释放 activeDownloads 并调度队列）
     if (this.activeDownloads.has(id)) {
       const entry = this.activeDownloads.get(id)!
       entry.abortController.abort()
-      if (entry.tempPaths) {
-        for (const p of entry.tempPaths) {
-          try {
-            if (fs.existsSync(p)) {
-              fs.unlinkSync(p)
-              logger.info('Downloader', `[Cleanup] 暂停/取消已清理临时文件: ${p}`)
-            }
-          } catch (e: any) {
-            logger.warn('Downloader', `[Cleanup] 清理临时文件失败: ${e.message}`)
-          }
-        }
-      }
-      this.activeDownloads.delete(id)
-      this.checkQueue()
     }
   }
 
@@ -1698,6 +2984,7 @@ class Downloader {
       logger.info('Downloader', `[Downloader] 任务 ${taskId} 无需压缩，直接标记完成。最终大小: ${fileSize}`)
       this.sendProgress({
         id: taskId,
+        savePath: filePath,
         totalBytes: fileSize,
         receivedBytes: fileSize,
         downloadedSegments: totalSegments,
@@ -1849,6 +3136,7 @@ class Downloader {
         if (replaced) {
           this.sendProgress({
             id: taskId,
+            savePath: filePath,
             status: 'completed',
             progress: 100,
             receivedBytes: compressedSize,
@@ -1863,6 +3151,7 @@ class Downloader {
           logger.error('Downloader', `[CompressTask] 任务 ${taskId} 文件安全替换失败，已完整保留原文件`)
           this.sendProgress({
             id: taskId,
+            savePath: filePath,
             status: 'completed',
             progress: 100,
             receivedBytes: currentSize,
@@ -1879,6 +3168,7 @@ class Downloader {
         
         this.sendProgress({
           id: taskId,
+          savePath: filePath,
           status: 'completed',
           progress: 100,
           receivedBytes: currentSize,
@@ -1937,6 +3227,39 @@ class Downloader {
   }
 
   private async getVideoDurationAndBitrate(filePath: string): Promise<{ duration: number; bitrate: number }> {
+    const ffprobeResult = await new Promise<{ duration: number; bitrate: number }>((resolve) => {
+      const child = spawn('ffprobe', [
+        '-v', 'error',
+        '-show_entries', 'format=duration,bit_rate',
+        '-of', 'json',
+        filePath
+      ])
+      let stdout = ''
+      child.stdout.on('data', (data) => {
+        stdout += data.toString()
+      })
+      child.on('close', (code) => {
+        if (code === 0 && stdout.trim()) {
+          try {
+            const parsed = JSON.parse(stdout)
+            const duration = parseFloat(parsed?.format?.duration || '0') || 0
+            const bitrate = parseInt(parsed?.format?.bit_rate || '0', 10) || 0
+            if (duration > 0) {
+              resolve({ duration, bitrate })
+              return
+            }
+          } catch {}
+        }
+        resolve({ duration: 0, bitrate: 0 })
+      })
+      child.on('error', () => {
+        resolve({ duration: 0, bitrate: 0 })
+      })
+    })
+    if (ffprobeResult.duration > 0) {
+      return ffprobeResult
+    }
+
     return new Promise((resolve) => {
       const child = spawn('ffmpeg', ['-i', filePath])
       let stderr = ''

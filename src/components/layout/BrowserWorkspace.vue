@@ -288,14 +288,14 @@ import VIcon from '@/components/base/VIcon.vue';
 const InspectorDialog = defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'));
 const ScriptInjectorDialog = defineAsyncComponent(() => import('@/components/features/ScriptInjectorDialog.vue'));
 const DuplicateMarkDialog = defineAsyncComponent(() => import('@/components/features/DuplicateMarkDialog.vue'));
-import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
-import ParseRuleSelectDialog from '@/components/features/ParseRuleSelectDialog.vue';
+const ParseRuleDialog = defineAsyncComponent(() => import('@/components/features/ParseRuleDialog.vue'));
+const ParseRuleSelectDialog = defineAsyncComponent(() => import('@/components/features/ParseRuleSelectDialog.vue'));
 import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
 import WaterfallDropdown from '@/components/features/WaterfallDropdown.vue';
-import WaterfallWizardModal from '@/components/features/WaterfallWizardModal.vue';
-import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
-import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
-import VideoPlayerDialog from '@/components/features/VideoPlayerDialog.vue';
+const WaterfallWizardModal = defineAsyncComponent(() => import('@/components/features/WaterfallWizardModal.vue'));
+const ImagePreviewDialog = defineAsyncComponent(() => import('@/components/features/ImagePreviewDialog.vue'));
+const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
+const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
 import { APP_PREFIX } from '@/constants';
 import { getPickerScript, getPickerCancelScript } from '@/utils/elementPicker';
 import {
@@ -930,11 +930,14 @@ const init = () => {
   }
 };
 
+let offWebviewNewWindowFn: (() => void) | undefined;
+let offMediaSniffedFn: (() => void) | undefined;
+
 onMounted(() => {
   init();
   document.addEventListener('click', hideAllContextMenus);
   if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
-    window.electronAPI.onWebviewNewWindow((data: { url: string, webContentsId: number } | string) => {
+    offWebviewNewWindowFn = window.electronAPI.onWebviewNewWindow((data: { url: string, webContentsId: number } | string) => {
       const url = typeof data === 'string' ? data : data.url;
       const webContentsId = typeof data === 'string' ? -1 : data.webContentsId;
       
@@ -963,7 +966,7 @@ onMounted(() => {
   }
 
   if (window.electronAPI && window.electronAPI.onMediaSniffed) {
-    window.electronAPI.onMediaSniffed((data: any) => {
+    offMediaSniffedFn = window.electronAPI.onMediaSniffed((data: any) => {
       // data: { webContentsId: number, url: string, type: 'image'|'video', timestamp: number }
       if (!workspace.value) return;
 
@@ -989,9 +992,17 @@ onMounted(() => {
          const win = window as any;
          if (!win._sniffedBuffer) win._sniffedBuffer = new Map();
          if (!win._sniffedBuffer.has(data.webContentsId)) {
+           if (win._sniffedBuffer.size >= 20) {
+             const oldestKey = win._sniffedBuffer.keys().next().value;
+             if (oldestKey !== undefined) win._sniffedBuffer.delete(oldestKey);
+           }
            win._sniffedBuffer.set(data.webContentsId, []);
          }
-         win._sniffedBuffer.get(data.webContentsId).push(data);
+         const buf = win._sniffedBuffer.get(data.webContentsId);
+         buf.push(data);
+         if (buf.length > 50) {
+           buf.shift();
+         }
          return;
       }
 
@@ -1021,6 +1032,10 @@ onUnmounted(() => {
   document.removeEventListener('click', hideAllContextMenus);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
+  offWebviewNewWindowFn?.();
+  offMediaSniffedFn?.();
+  offWebviewNewWindowFn = undefined;
+  offMediaSniffedFn = undefined;
   endElementPickingSession();
   activeWaterfallSessions.value.forEach((_, tabId) => {
     destroyWaterfallSession(tabId);

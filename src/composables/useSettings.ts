@@ -329,30 +329,19 @@ export const useSettings = () => {
   }
 
   const recompileRules = async () => {
-    const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
-    const activeData: Record<string, string> = {};
-    for (const s of state.adBlockSources) {
-      if (s.enabled && cachedData[s.id]) {
-        activeData[s.id] = cachedData[s.id];
-      }
-    }
-    await window.electronAPI.compileAdBlockRules(activeData);
+    const enabledIds = state.adBlockSources.filter(s => s.enabled).map(s => s.id);
+    await window.electronAPI.compileAdBlockRules(enabledIds);
   }
 
   const syncAdBlockSourceItem = async (sourceId: string) => {
     const s = state.adBlockSources.find(item => item.id === sourceId);
     if (!s) return { success: false, count: 0, error: '规则源不存在' };
 
-    const res = await window.electronAPI.syncAdBlockSource(s.url);
+    const res = await window.electronAPI.syncAdBlockSource(s.url, s.id);
     if (res.success) {
       s.ruleCount = res.count;
       s.lastUpdated = Date.now();
       await saveAdBlockSources([...state.adBlockSources]);
-
-      const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
-      cachedData[s.id] = res.content || '';
-      await window.electronAPI.setSetting('adBlockCache', cachedData);
-
       await recompileRules();
     }
     return res;
@@ -360,21 +349,28 @@ export const useSettings = () => {
 
   const syncAllAdBlockSources = async () => {
     const enabledSources = state.adBlockSources.filter(item => item.enabled);
-    const cachedData = (await window.electronAPI.getSetting('adBlockCache')) || {};
-    let totalSynced = 0;
-
-    for (const s of enabledSources) {
-      const res = await window.electronAPI.syncAdBlockSource(s.url);
-      if (res.success) {
-        s.ruleCount = res.count;
-        s.lastUpdated = Date.now();
-        cachedData[s.id] = res.content || '';
-        totalSynced++;
-      }
+    if (enabledSources.length === 0) {
+      await recompileRules();
+      return 0;
     }
 
-    await saveAdBlockSources([...state.adBlockSources]);
-    await window.electronAPI.setSetting('adBlockCache', cachedData);
+    let totalSynced = 0;
+    await Promise.all(
+      enabledSources.map(async (s) => {
+        try {
+          const res = await window.electronAPI.syncAdBlockSource(s.url, s.id);
+          if (res.success) {
+            s.ruleCount = res.count;
+            s.lastUpdated = Date.now();
+            totalSynced++;
+          }
+        } catch {}
+      })
+    );
+
+    if (totalSynced > 0) {
+      await saveAdBlockSources([...state.adBlockSources]);
+    }
     await recompileRules();
     return totalSynced;
   }

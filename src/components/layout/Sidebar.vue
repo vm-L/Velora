@@ -41,6 +41,29 @@
       </div>
 
       <div class="menu-group">
+        <div class="group-title" :title="isCollapsed ? '网盘资源' : ''">
+          <v-animated-text text="网盘资源" :isCollapsed="isCollapsed" />
+          <div class="collapsed-divider"></div>
+        </div>
+        <div v-if="panAccounts.length === 0" class="empty-item">
+          <span class="menu-text">暂无登录网盘</span>
+        </div>
+        <router-link
+          v-for="account in panAccounts"
+          :key="account.type"
+          :to="`/resource/pan/${account.type}`"
+          class="menu-item sub-item"
+          active-class="active"
+          :title="isCollapsed ? getPanName(account.type) : ''"
+        >
+          <div class="menu-icon-wrap">
+            <VIcon name="cloud" :size="16" />
+          </div>
+          <span class="menu-text">{{ getPanName(account.type) }}</span>
+        </router-link>
+      </div>
+
+      <div class="menu-group">
         <div class="group-title" :title="isCollapsed ? 'CMS 资源' : ''">
           <v-animated-text text="CMS 资源" :isCollapsed="isCollapsed" />
           <div class="collapsed-divider"></div>
@@ -91,10 +114,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettings } from '@/composables/useSettings';
 import { useOpenedCMS } from '@/composables/useOpenedCMS';
+import { usePanAccounts } from '@/composables/usePanAccounts';
 import VAnimatedText from '@/components/base/VAnimatedText.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import { APP_NAME } from '@/constants';
@@ -103,6 +127,11 @@ const route = useRoute();
 const isCollapsed = ref(false);
 const { state } = useSettings();
 const { getLastRoute } = useOpenedCMS();
+const { panAccounts, loadAccounts, getPanName } = usePanAccounts();
+
+onMounted(async () => {
+  await loadAccounts();
+});
 
 const isCmsActive = (itemId: string) => {
   const currentType = (route.params.type as string) || (route.path.includes('/cms/') ? 'cms' : '')
@@ -257,7 +286,7 @@ const toggleSidebar = () => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-right: 14px;
+  margin-right: 8px;
   transition: margin 0.3s ease;
 }
 

@@ -93,6 +93,8 @@ export type IconName =
   | 'help'
   | 'waterfall'
   | 'duplicate-mark'
+  | 'cloud'
+  | 'cloud-download'
   | 'folder-enter'
   | 'folder-move';
 
@@ -103,6 +105,18 @@ const iconStyle = computed(() => {
 });
 
 const iconsMap: Record<string, string> = {
+  // 云 / 网盘
+  'cloud': `
+    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+  `,
+
+  // 云下载 / 网盘解析
+  'cloud-download': `
+    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+    <path d="M12 12v8"></path>
+    <polyline points="8 16 12 20 16 16"></polyline>
+  `,
+
   // 标记重复 / 标签查重
   'duplicate-mark': `
     <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>

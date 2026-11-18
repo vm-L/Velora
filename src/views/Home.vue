@@ -55,16 +55,26 @@
           </div>
         </div>
 
-        <div class="global-stats">
-          <div class="stat-item">
-            <span class="stat-label">全局速度</span>
-            <span class="stat-value mono">{{ formatBytes(globalSpeed) }}/s</span>
+        <div class="right-actions-group">
+          <div class="global-stats">
+            <div class="stat-item">
+              <span class="stat-label">全局速度</span>
+              <span class="stat-value mono">{{ formatBytes(globalSpeed) }}/s</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-label">磁盘空间</span>
+              <span class="stat-value mono">{{ formatBytes(globalReceivedBytes) }}</span>
+            </div>
           </div>
-          <div class="stat-divider"></div>
-          <div class="stat-item">
-            <span class="stat-label">磁盘空间</span>
-            <span class="stat-value mono">{{ formatBytes(globalReceivedBytes) }}</span>
-          </div>
+          <VButton variant="primary" class="new-task-btn" @click="showPanParseModal = true">
+            <VIcon name="cloud-download" :size="14" />
+            网盘解析
+          </VButton>
+          <VButton variant="primary" class="new-task-btn" @click="showNewDownloadModal = true">
+            <VIcon name="plus" :size="14" />
+            新建下载
+          </VButton>
         </div>
       </div>
     </div>
@@ -200,6 +210,12 @@
       :tasks="selectedCompressibleTasks"
       @confirm="handleConfirmBatchCompress"
     />
+    <NewDownloadDialog
+      v-model:visible="showNewDownloadModal"
+    />
+    <PanParseDialog
+      v-model:visible="showPanParseModal"
+    />
   </div>
 </template>
 
@@ -211,6 +227,8 @@ import { useConfirm } from '@/composables/useConfirm';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
+const NewDownloadDialog = defineAsyncComponent(() => import('@/components/features/NewDownloadDialog.vue'));
+const PanParseDialog = defineAsyncComponent(() => import('@/components/features/PanParseDialog.vue'));
 const ImagePreviewDialog = defineAsyncComponent(() => import('@/components/features/ImagePreviewDialog.vue'));
 const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
 const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
@@ -230,6 +248,8 @@ const { confirm } = useConfirm();
 const { state: settingsState } = useSettings();
 const { openSaveMediaDialog } = useSaveMediaDialog();
 
+const showNewDownloadModal = ref(false);
+const showPanParseModal = ref(false);
 const activeImagePreviewUrl = ref<string | null>(null);
 const activeAudioPreviewUrl = ref<string | null>(null);
 const activeVideoPreviewUrl = ref<string | null>(null);
@@ -775,6 +795,24 @@ const confirmDeleteTask = async (task: any) => {
   background: var(--bg-surface-hover);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+}
+
+.right-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+
+  .new-task-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
 }
 
 .metrics-grid {

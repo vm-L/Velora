@@ -50,7 +50,17 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 
+const serverReadyTick = ref(0);
+if ((!window.__SERVER_PORT__ || !window.__SERVER_TOKEN__) && window.electronAPI?.getServerInfo) {
+  window.electronAPI.getServerInfo().then((info) => {
+    if (info?.port) window.__SERVER_PORT__ = info.port;
+    if (info?.token) window.__SERVER_TOKEN__ = info.token;
+    serverReadyTick.value++;
+  }).catch(() => {});
+}
+
 const formatMediaSrc = (rawUrl: string): string => {
+  void serverReadyTick.value;
   if (!rawUrl) return '';
   let cleanPath = rawUrl.trim().replace(/\\/g, '/');
   
@@ -63,7 +73,9 @@ const formatMediaSrc = (rawUrl: string): string => {
   }
   
   const port = window.__SERVER_PORT__ || 0;
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}`;
+  const token = window.__SERVER_TOKEN__ || '';
+  if (!port || !token) return '';
+  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&token=${encodeURIComponent(token)}`;
 };
 
 const props = defineProps<{
@@ -80,13 +92,7 @@ const emit = defineEmits<{
 const previewClientId = 'preview_audio_' + Math.random().toString(36).slice(2);
 
 const effectiveReferer = computed(() => {
-  if (!props.pageUrl) return '';
-  try {
-    const u = new URL(props.pageUrl);
-    return (u.origin && u.origin !== 'null') ? u.origin : props.pageUrl;
-  } catch {
-    return props.pageUrl;
-  }
+  return (props.pageUrl || '').trim();
 });
 
 watch(() => [props.url, effectiveReferer.value], ([u, p]) => {
