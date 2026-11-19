@@ -37,7 +37,7 @@ export const BACKUP_SECTIONS: ConfigBackupSectionMeta[] = [
     key: 'videoCompress',
     title: '视频自动压缩',
     category: '转码压缩',
-    description: '自动转码开关、压缩触发体积阈值与保底码率',
+    description: '自动压缩开关、目标体积、最小码率与速度限制',
     icon: 'compress'
   },
   {

@@ -9,7 +9,16 @@ import path from 'path'
 import { storeManager } from './store'
 import { logger } from './logger'
 import { ensureSafeTargetSavePath } from './utils/fileSystem'
-import { getAvailableEncoders, getEncoderArgs, VideoEncoder, isGpuEncoder } from './gpuAccelerator'
+import {
+  getAvailableEncoders,
+  getEncoderArgs,
+  VideoEncoder,
+  isGpuEncoder,
+  getFfmpegThrottleConfig,
+  applyFfmpegProcessPriority,
+  FfmpegThrottleConfig,
+  VideoThrottleScope
+} from './gpuAccelerator'
 import { panService } from './pan/service'
 import { panAccountManager } from './pan/accountManager'
 
@@ -1175,6 +1184,7 @@ interface CompressQueueItem {
   taskId: string
   filePath: string
   targetBitrateKbps: number
+  scope: VideoThrottleScope
   totalSegments?: number
   resolve?: (res: { success: boolean; newSize?: number; error?: string; skipped?: boolean }) => void
   reject?: (err: any) => void
@@ -3001,6 +3011,7 @@ class Downloader {
       taskId,
       filePath,
       targetBitrateKbps,
+      scope: 'autoCompress',
       totalSegments
     })
   }
@@ -3054,6 +3065,7 @@ class Downloader {
         taskId,
         filePath,
         targetBitrateKbps,
+        scope: 'manualCompress',
         resolve,
         reject
       })
@@ -3089,6 +3101,10 @@ class Downloader {
       })
 
       const encoders = await getAvailableEncoders()
+      const throttle = await getFfmpegThrottleConfig(item.scope)
+      const throttleDesc = throttle.enabled
+        ? (throttle.readrate ? `限速 ${throttle.readrate}x` : '低进程优先级')
+        : '全速'
       let compressSuccess = false
       let usedEncoder = ''
       let lastCompressError = ''
@@ -3096,7 +3112,7 @@ class Downloader {
       for (const encoder of encoders) {
         if (this.activeCompressController.signal.aborted) break
         const isGpu = isGpuEncoder(encoder)
-        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}) 压缩 (${targetBitrateKbps} kbps)`)
+        logger.info('Downloader', `[CompressTask] 任务 ${taskId} 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}, ${throttleDesc}) 压缩 (${targetBitrateKbps} kbps)`)
         const result = await this.executeFfmpegCompress(
           filePath,
           tempCompressedPath,
@@ -3105,7 +3121,8 @@ class Downloader {
           info.duration,
           currentSize,
           taskId,
-          this.activeCompressController
+          this.activeCompressController,
+          throttle
         )
         if (result.success && fs.existsSync(tempCompressedPath)) {
           const compSize = fs.statSync(tempCompressedPath).size
@@ -3296,13 +3313,15 @@ class Downloader {
     totalDuration: number,
     currentSize: number,
     taskId: string,
-    abortController: AbortController
+    abortController: AbortController,
+    throttle?: FfmpegThrottleConfig
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       const encArgs = getEncoderArgs(encoder as VideoEncoder, { mode: 'bitrate', bitrateKbps: targetBitrateKbps })
       const args = [
         '-y',
         '-progress', 'pipe:1',
+        ...(throttle?.inputArgs || []),
         '-i', inputPath,
         ...encArgs,
         '-c:a', 'aac',
@@ -3312,6 +3331,7 @@ class Downloader {
       ]
 
       const proc = spawn('ffmpeg', args)
+      applyFfmpegProcessPriority(proc, throttle)
       const startTime = Date.now()
       let lastProgressTime = 0
       let stdoutBuffer = ''

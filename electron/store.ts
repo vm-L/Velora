@@ -32,7 +32,9 @@ class StoreManager {
         lanSharePort: 8899,
         lanSharePassword: '',
         lanShareAllowEdit: false,
-        customDuplicateRules: {}
+        customDuplicateRules: {},
+        videoCompressSpeedPreset: 'unlimited',
+        videoThrottleScopes: ['autoCompress']
       }
     })
 

@@ -3,7 +3,14 @@ import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
 import { logger } from './logger'
-import { getAvailableEncoders, getEncoderArgs, isGpuEncoder } from './gpuAccelerator'
+import {
+  getAvailableEncoders,
+  getEncoderArgs,
+  isGpuEncoder,
+  getFfmpegThrottleConfig,
+  applyFfmpegProcessPriority,
+  FfmpegThrottleConfig
+} from './gpuAccelerator'
 
 export interface VideoSegment {
   start: number
@@ -190,10 +197,12 @@ export async function getVideoDuration(filePath: string): Promise<number> {
 function runFfmpegCommand(
   taskId: string,
   args: string[],
-  onProgress?: (progressSec: number) => void
+  onProgress?: (progressSec: number) => void,
+  throttle?: FfmpegThrottleConfig
 ): Promise<{ success: boolean; stderr: string; error?: string }> {
   return new Promise((resolve) => {
     const proc = spawn('ffmpeg', args)
+    applyFfmpegProcessPriority(proc, throttle)
     activeEditingProcesses.set(taskId, proc)
 
     let stderrBuffer = ''
@@ -1050,6 +1059,10 @@ export async function compressVideo(
     }
 
     const encoders = await getAvailableEncoders()
+    const throttle = await getFfmpegThrottleConfig('manualCompress')
+    const throttleDesc = throttle.enabled
+      ? (throttle.readrate ? `限速 ${throttle.readrate}x` : '低进程优先级')
+      : '全速'
     let compressSuccess = false
     let lastError = ''
 
@@ -1065,6 +1078,7 @@ export async function compressVideo(
       const args = [
         '-y',
         '-progress', 'pipe:1',
+        ...throttle.inputArgs,
         '-i', filePath,
         ...encArgs,
         '-c:a', 'aac',
@@ -1074,12 +1088,12 @@ export async function compressVideo(
       ]
 
       const isGpu = isGpuEncoder(encoder)
-      logger.info('VideoEditor', `压缩视频任务 [${taskId}] 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}) [目标码率: ${targetBitrateKbps}kbps]`)
+      logger.info('VideoEditor', `压缩视频任务 [${taskId}] 尝试使用编码器 [${encoder}] (${isGpu ? 'GPU硬件加速' : 'CPU'}, ${throttleDesc}) [目标码率: ${targetBitrateKbps}kbps]`)
 
       const result = await runFfmpegCommand(taskId, args, (sec) => {
         const pct = Math.min(95, Math.max(5, Math.round(5 + (sec / duration) * 90)))
         onProgress?.(pct, `正在压缩视频 (${isGpu ? 'GPU加速' : 'CPU'})`)
-      })
+      }, throttle)
 
       if (result.success && fs.existsSync(tempOutputFile) && fs.statSync(tempOutputFile).size > 0) {
         compressSuccess = true

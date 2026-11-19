@@ -1,7 +1,25 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
+import os from 'os'
 import { logger } from './logger'
+import { storeManager } from './store'
 
 export type VideoEncoder = 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox' | 'libx264'
+export type VideoCompressSpeedPreset = 'low' | 'balanced' | 'fast' | 'unlimited'
+export type VideoThrottleScope = 'autoCompress' | 'manualCompress'
+
+export const DEFAULT_VIDEO_COMPRESS_SPEED_PRESET: VideoCompressSpeedPreset = 'unlimited'
+export const DEFAULT_VIDEO_THROTTLE_SCOPES: VideoThrottleScope[] = ['autoCompress']
+
+const VALID_SPEED_PRESETS = new Set<VideoCompressSpeedPreset>(['low', 'balanced', 'fast', 'unlimited'])
+const VALID_THROTTLE_SCOPES = new Set<VideoThrottleScope>(['autoCompress', 'manualCompress'])
+
+export interface FfmpegThrottleConfig {
+  enabled: boolean
+  preset: VideoCompressSpeedPreset
+  readrate: number | null
+  inputArgs: string[]
+  osPriority: number | null
+}
 
 const CANDIDATE_ENCODERS: VideoEncoder[] = [
   'h264_nvenc',
@@ -162,4 +180,135 @@ export function getEncoderArgs(encoder: VideoEncoder, options: EncoderArgsOption
  */
 export function isGpuEncoder(encoder: string): boolean {
   return encoder === 'h264_nvenc' || encoder === 'h264_qsv' || encoder === 'h264_amf' || encoder === 'h264_videotoolbox'
+}
+
+let cachedReadrateSupported: boolean | null = null
+let readrateDetectingPromise: Promise<boolean> | null = null
+
+/**
+ * 探测当前 FFmpeg 是否支持 -readrate 参数（带 5 秒超时保护）
+ */
+function testReadrateSupport(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    let child: ChildProcess | null = null
+    const finish = (supported: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(supported)
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        child?.kill('SIGKILL')
+      } catch {}
+      finish(false)
+    }, 5000)
+
+    try {
+      child = spawn('ffmpeg', [
+        '-v', 'error',
+        '-readrate', '4',
+        '-f', 'lavfi',
+        '-i', 'testsrc=duration=0.1:size=64x64:rate=30',
+        '-f', 'null',
+        '-'
+      ])
+      child.on('close', (code) => {
+        finish(code === 0)
+      })
+      child.on('error', () => {
+        finish(false)
+      })
+    } catch {
+      finish(false)
+    }
+  })
+}
+
+/**
+ * 获取当前 FFmpeg 是否支持 -readrate（结果单次缓存）
+ */
+export async function isReadrateSupported(): Promise<boolean> {
+  if (cachedReadrateSupported !== null) {
+    return cachedReadrateSupported
+  }
+  if (readrateDetectingPromise) {
+    return readrateDetectingPromise
+  }
+
+  readrateDetectingPromise = (async () => {
+    const supported = await testReadrateSupport()
+    cachedReadrateSupported = supported
+    if (supported) {
+      logger.info('GPUAccelerator', 'FFmpeg 支持 -readrate 输入限速参数')
+    } else {
+      logger.warn('GPUAccelerator', '当前 FFmpeg 不支持 -readrate 参数，将自动降级为仅降低进程优先级')
+    }
+    return supported
+  })()
+
+  return readrateDetectingPromise
+}
+
+/**
+ * 根据生效范围与系统设置解析 FFmpeg 限速及进程优先级配置
+ */
+export async function getFfmpegThrottleConfig(scope: VideoThrottleScope): Promise<FfmpegThrottleConfig> {
+  const rawPreset = await storeManager.getSetting('videoCompressSpeedPreset')
+  const preset: VideoCompressSpeedPreset = VALID_SPEED_PRESETS.has(rawPreset)
+    ? rawPreset
+    : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
+
+  const rawScopes = await storeManager.getSetting('videoThrottleScopes')
+  const scopes: VideoThrottleScope[] = Array.isArray(rawScopes)
+    ? rawScopes.filter((s): s is VideoThrottleScope => VALID_THROTTLE_SCOPES.has(s))
+    : DEFAULT_VIDEO_THROTTLE_SCOPES
+
+  if (preset === 'unlimited' || !scopes.includes(scope)) {
+    return {
+      enabled: false,
+      preset,
+      readrate: null,
+      inputArgs: [],
+      osPriority: null
+    }
+  }
+
+  let readrate: number
+  let osPriority: number
+  if (preset === 'low') {
+    readrate = 2
+    osPriority = os.constants.priority.PRIORITY_LOW
+  } else if (preset === 'fast') {
+    readrate = 8
+    osPriority = os.constants.priority.PRIORITY_BELOW_NORMAL
+  } else {
+    readrate = 4
+    osPriority = os.constants.priority.PRIORITY_BELOW_NORMAL
+  }
+
+  const readrateSupported = await isReadrateSupported()
+  return {
+    enabled: true,
+    preset,
+    readrate,
+    inputArgs: readrateSupported ? ['-readrate', String(readrate)] : [],
+    osPriority
+  }
+}
+
+/**
+ * 为已启动的 FFmpeg 子进程应用限速对应的操作系统调度优先级
+ */
+export function applyFfmpegProcessPriority(proc: ChildProcess, throttle?: FfmpegThrottleConfig | null): void {
+  if (!throttle?.enabled || throttle.osPriority === null || !proc.pid) {
+    return
+  }
+  try {
+    os.setPriority(proc.pid, throttle.osPriority)
+  } catch (err: any) {
+    logger.warn('GPUAccelerator', `设置 FFmpeg 进程优先级失败 (pid=${proc.pid}): ${err?.message || err}`)
+  }
 }

@@ -273,6 +273,33 @@
             />
           </div>
         </div>
+
+        <!-- 速度限制 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>速度限制</h3>
+            <p>限制视频转码处理倍速以降低资源占用</p>
+          </div>
+          <v-switch
+            class="speed-preset-switch"
+            :model-value="state.videoCompressSpeedPreset"
+            :options="speedPresetOptions"
+            @change="handleSpeedPresetChange"
+          />
+        </div>
+
+        <!-- 限速生效范围 -->
+        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+          <div class="settings-info">
+            <h3>限速生效范围</h3>
+            <p>限制压缩速度的生效场景</p>
+          </div>
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <v-button variant="secondary" @click="showThrottleScopeModal = true">
+              管理
+            </v-button>
+          </div>
+        </div>
       </div>
 
       <!-- Local Resources Section (Merged) -->
@@ -730,13 +757,51 @@
         </div>
       </div>
     </div>
+
+    <!-- Throttle Scope Management Modal -->
+    <div v-if="showThrottleScopeModal" class="modal-overlay" v-overlay-close="() => showThrottleScopeModal = false">
+      <div class="modal-content" style="max-width: 440px; width: 90vw;">
+        <div class="modal-header">
+          <h3>限速生效范围</h3>
+          <v-button variant="icon" class="modal-close-btn" @click="showThrottleScopeModal = false">
+            <VIcon name="close" :size="20" />
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px;">
+          <div class="throttle-scope-modal-list">
+            <v-checkbox
+              v-for="opt in throttleScopeOptions"
+              :key="opt.value"
+              class="throttle-scope-modal-item"
+              :model-value="state.videoThrottleScopes"
+              :value="opt.value"
+              @change="handleThrottleScopesChange"
+            >
+              <div class="scope-item-content">
+                <span class="scope-item-title">{{ opt.label }}</span>
+                <span class="scope-item-desc">{{ opt.desc }}</span>
+              </div>
+            </v-checkbox>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light);">
+          <v-button variant="primary" size="small" @click="showThrottleScopeModal = false">完成</v-button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { CustomScript, ParseRule, useSettings } from '@/composables/useSettings';
+import {
+  CustomScript,
+  ParseRule,
+  useSettings,
+  type VideoCompressSpeedPreset,
+  type VideoThrottleScope
+} from '@/composables/useSettings';
 import { useConfirm } from '@/composables/useConfirm';
 import { useMessage } from '@/composables/useMessage';
 import { useOpenedResources } from '@/composables/useOpenedResources';
@@ -752,6 +817,7 @@ import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
 import AdBlockDialog from '@/components/features/AdBlockDialog.vue';
 import VInput from '@/components/base/VInput.vue';
 import VSwitch, { type VSwitchOption } from '@/components/base/VSwitch.vue';
+import VCheckbox from '@/components/base/VCheckbox.vue';
 import ConfigBackupDialog from '@/components/features/ConfigBackupDialog.vue';
 import type { ConfigBackupSectionKey } from '@/types/backup';
 
@@ -783,6 +849,8 @@ const {
   saveEnableVideoCompress,
   saveVideoCompressTargetGB,
   saveVideoCompressMinBitrateKbps,
+  saveVideoCompressSpeedPreset,
+  saveVideoThrottleScopes,
   saveLocalResources,
   saveCmsResources, 
   saveExternalSites, 
@@ -807,6 +875,30 @@ const handleAutoMatchSubdirToggle = (val: boolean) => {
 const handleCompressToggle = (val: boolean) => {
   saveEnableVideoCompress(val);
   showMessage(val ? '已开启下载后智能视频压缩' : '已关闭下载后视频压缩', 'info');
+};
+
+const speedPresetOptions: VSwitchOption[] = [
+  { label: '低速 2x', value: 'low' },
+  { label: '均衡 4x', value: 'balanced' },
+  { label: '加速 8x', value: 'fast' },
+  { label: '全速', value: 'unlimited' }
+];
+
+const showThrottleScopeModal = ref(false);
+
+const throttleScopeOptions: Array<{ label: string; desc: string; value: VideoThrottleScope }> = [
+  { label: '自动压缩', desc: '下载完成后自动压缩视频时生效', value: 'autoCompress' },
+  { label: '手动压缩', desc: '手动发起单个或批量视频压缩时生效', value: 'manualCompress' }
+];
+
+const handleSpeedPresetChange = async (val: VideoCompressSpeedPreset) => {
+  await saveVideoCompressSpeedPreset(val);
+  const matched = speedPresetOptions.find(opt => opt.value === val);
+  showMessage(`已切换速度限制档位为：${matched?.label || val}`, 'info');
+};
+
+const handleThrottleScopesChange = async (val: VideoThrottleScope[]) => {
+  await saveVideoThrottleScopes(val);
 };
 
 // Local Resource Mount Modal State
@@ -2170,5 +2262,63 @@ const deleteDomainStyle = async (domain: string) => {
     flex: 1;
     min-width: 0;
   }
+}
+
+.speed-preset-switch {
+  flex-shrink: 0;
+
+  :deep(.v-switch-item) {
+    flex: 1;
+    min-width: 76px;
+    padding: 6px 12px;
+    white-space: nowrap;
+  }
+}
+
+.throttle-scope-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.throttle-scope-modal-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--color-accent);
+  }
+
+  :deep(.v-checkbox-label) {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+  }
+}
+
+.scope-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.scope-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scope-item-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 </style>

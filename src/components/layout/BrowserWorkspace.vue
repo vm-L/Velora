@@ -3330,16 +3330,10 @@ watch([() => currentResourceDuplicateRules.value, isDupIndexReady, () => setting
 }
 
 .blank-icon-wrap {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: var(--bg-app);
-  border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 14px;
-  box-shadow: var(--shadow-sm);
 
   .blank-resource-icon {
     width: 40px;

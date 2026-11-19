@@ -1,6 +1,6 @@
 {
   "name": "velora",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "this is a electron init",
   "author": "JY",
   "main": "dist-electron/main.js",

@@ -99,6 +99,20 @@ export interface DuplicateMarkRule {
   regexPattern?: string;
 }
 
+export type VideoCompressSpeedPreset = 'low' | 'balanced' | 'fast' | 'unlimited'
+export type VideoThrottleScope = 'autoCompress' | 'manualCompress'
+
+const DEFAULT_VIDEO_COMPRESS_SPEED_PRESET: VideoCompressSpeedPreset = 'unlimited'
+const DEFAULT_VIDEO_THROTTLE_SCOPES: VideoThrottleScope[] = ['autoCompress']
+const VALID_SPEED_PRESETS = new Set<VideoCompressSpeedPreset>(['low', 'balanced', 'fast', 'unlimited'])
+const VALID_THROTTLE_SCOPES = new Set<VideoThrottleScope>(['autoCompress', 'manualCompress'])
+
+const isValidVideoCompressSpeedPreset = (val: any): val is VideoCompressSpeedPreset =>
+  VALID_SPEED_PRESETS.has(val)
+
+const isValidVideoThrottleScope = (val: any): val is VideoThrottleScope =>
+  VALID_THROTTLE_SCOPES.has(val)
+
 export interface SettingsState {
   closeBehavior: string
   theme: string
@@ -112,6 +126,8 @@ export interface SettingsState {
   enableVideoCompress: boolean
   videoCompressTargetGB: number
   videoCompressMinBitrateKbps: number
+  videoCompressSpeedPreset: VideoCompressSpeedPreset
+  videoThrottleScopes: VideoThrottleScope[]
   localResources: ResourceItem[]
   cmsResources: ResourceItem[]
   externalSites: ResourceItem[]
@@ -141,6 +157,8 @@ export const state = reactive<SettingsState>({
   enableVideoCompress: false,
   videoCompressTargetGB: 1.5,
   videoCompressMinBitrateKbps: 1500,
+  videoCompressSpeedPreset: DEFAULT_VIDEO_COMPRESS_SPEED_PRESET,
+  videoThrottleScopes: [...DEFAULT_VIDEO_THROTTLE_SCOPES],
   localResources: [] as ResourceItem[],
   cmsResources: [] as ResourceItem[],
   externalSites: [] as ResourceItem[],
@@ -178,6 +196,14 @@ export const useSettings = () => {
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
     const savedMinBitrate = all['videoCompressMinBitrateKbps']
     state.videoCompressMinBitrateKbps = typeof savedMinBitrate === 'number' ? savedMinBitrate : 1500
+    const savedSpeedPreset = all['videoCompressSpeedPreset']
+    state.videoCompressSpeedPreset = isValidVideoCompressSpeedPreset(savedSpeedPreset)
+      ? savedSpeedPreset
+      : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
+    const savedThrottleScopes = all['videoThrottleScopes']
+    state.videoThrottleScopes = Array.isArray(savedThrottleScopes)
+      ? Array.from(new Set(savedThrottleScopes.filter(isValidVideoThrottleScope)))
+      : [...DEFAULT_VIDEO_THROTTLE_SCOPES]
     state.localResources = all['localResources'] || []
     state.cmsResources = all['cmsResources'] || []
     state.externalSites = all['externalSites'] || []
@@ -280,6 +306,18 @@ export const useSettings = () => {
   const saveVideoCompressMinBitrateKbps = async (kbps: number) => {
     state.videoCompressMinBitrateKbps = kbps
     await window.electronAPI.setSetting('videoCompressMinBitrateKbps', kbps)
+  }
+
+  const saveVideoCompressSpeedPreset = async (preset: VideoCompressSpeedPreset) => {
+    const validPreset = isValidVideoCompressSpeedPreset(preset) ? preset : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
+    state.videoCompressSpeedPreset = validPreset
+    await window.electronAPI.setSetting('videoCompressSpeedPreset', validPreset)
+  }
+
+  const saveVideoThrottleScopes = async (scopes: VideoThrottleScope[]) => {
+    const plainScopes = Array.from(new Set((Array.isArray(scopes) ? scopes : []).filter(isValidVideoThrottleScope)))
+    state.videoThrottleScopes = plainScopes
+    await window.electronAPI.setSetting('videoThrottleScopes', [...plainScopes])
   }
 
   const saveLocalResources = async (resources: ResourceItem[]) => {
@@ -406,7 +444,9 @@ export const useSettings = () => {
       payload.data.videoCompress = {
         enableVideoCompress: state.enableVideoCompress,
         videoCompressTargetGB: state.videoCompressTargetGB,
-        videoCompressMinBitrateKbps: state.videoCompressMinBitrateKbps
+        videoCompressMinBitrateKbps: state.videoCompressMinBitrateKbps,
+        videoCompressSpeedPreset: state.videoCompressSpeedPreset,
+        videoThrottleScopes: [...state.videoThrottleScopes]
       };
     }
 
@@ -483,6 +523,8 @@ export const useSettings = () => {
       if (typeof v.enableVideoCompress === 'boolean') await saveEnableVideoCompress(v.enableVideoCompress);
       if (typeof v.videoCompressTargetGB === 'number') await saveVideoCompressTargetGB(v.videoCompressTargetGB);
       if (typeof v.videoCompressMinBitrateKbps === 'number') await saveVideoCompressMinBitrateKbps(v.videoCompressMinBitrateKbps);
+      if (isValidVideoCompressSpeedPreset(v.videoCompressSpeedPreset)) await saveVideoCompressSpeedPreset(v.videoCompressSpeedPreset);
+      if (Array.isArray(v.videoThrottleScopes)) await saveVideoThrottleScopes(v.videoThrottleScopes);
     }
 
     // 4. 局域网服务
@@ -726,6 +768,8 @@ export const useSettings = () => {
     saveEnableVideoCompress,
     saveVideoCompressTargetGB,
     saveVideoCompressMinBitrateKbps,
+    saveVideoCompressSpeedPreset,
+    saveVideoThrottleScopes,
     saveLocalResources,
     saveCmsResources, 
     saveExternalSites, 
