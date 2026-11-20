@@ -42,7 +42,7 @@
 
         <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border-light);">
           <v-button variant="secondary" @click="handleCancel">取消</v-button>
-          <v-button variant="primary" :disabled="!form.domain.trim()" @click="goToStep2">
+          <v-button variant="secondary" :disabled="!form.domain.trim()" @click="goToStep2">
             下一步
           </v-button>
         </div>

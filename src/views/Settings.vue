@@ -4,9 +4,9 @@
       <!-- 页面顶部标题与操作栏 -->
       <div class="settings-header">
         <div class="settings-title-area">
-          <button class="back-btn" @click="goBack" title="返回">
+          <v-button variant="icon-secondary" class="back-btn" @click="goBack" title="返回">
             <VIcon name="arrow-left" :size="18" />
-          </button>
+          </v-button>
           <div>
             <h1 class="settings-page-title">系统设置</h1>
             <p class="settings-page-subtitle">管理应用程序行为、存储目录、网络服务与自定义规则</p>
@@ -37,11 +37,11 @@
           </div>
           <div class="action-buttons" style="display: flex; gap: 8px;">
             <v-button variant="secondary" @click="handleImportResources">
-              <v-icon name="import" :size="14" />
+              <VIcon name="import" :size="14" />
               <span>导入</span>
             </v-button>
             <v-button variant="secondary" @click="handleExportResources">
-              <v-icon name="export" :size="14" />
+              <VIcon name="export" :size="14" />
               <span>导出</span>
             </v-button>
           </div>
@@ -55,10 +55,12 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
             <v-button variant="secondary" :disabled="isUpdatingAllRules" @click="handleUpdateAllRules">
-              {{ isUpdatingAllRules ? '更新中' : '更新' }}
+              <VIcon :name="isUpdatingAllRules ? 'loading' : 'refresh'" :size="14" :class="{ 'spin-icon': isUpdatingAllRules }" />
+              <span>{{ isUpdatingAllRules ? '更新中' : '更新' }}</span>
             </v-button>
             <v-button variant="secondary" @click="showAdBlockModal = true">
-              编辑
+              <VIcon name="edit" :size="14" />
+              <span>编辑</span>
             </v-button>
           </div>
         </div>
@@ -71,7 +73,8 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-button variant="secondary" @click="showPanAccountsModal = true">
-              管理
+              <VIcon name="cloud" :size="14" />
+              <span>管理</span>
             </v-button>
           </div>
         </div>
@@ -136,7 +139,10 @@
               placeholder="输入或选择目录"
               style="flex: 1; max-width: 300px; margin-right: 8px;"
             />
-            <v-button variant="secondary" class="edit-btn" @click="handleSelectDirectory">选择目录</v-button>
+            <v-button variant="secondary" @click="handleSelectDirectory">
+              <VIcon name="folder" :size="14" />
+              <span>选择目录</span>
+            </v-button>
           </div>
         </div>
 
@@ -156,7 +162,10 @@
               placeholder="输入或选择目录"
               style="flex: 1; max-width: 300px; margin-right: 8px;"
             />
-            <v-button variant="secondary" class="edit-btn" @click="handleSelectAudioDirectory">选择目录</v-button>
+            <v-button variant="secondary" @click="handleSelectAudioDirectory">
+              <VIcon name="folder" :size="14" />
+              <span>选择目录</span>
+            </v-button>
           </div>
         </div>
 
@@ -176,7 +185,10 @@
               placeholder="输入或选择目录"
               style="flex: 1; max-width: 300px; margin-right: 8px;"
             />
-            <v-button variant="secondary" class="edit-btn" @click="handleSelectVideoDirectory">选择目录</v-button>
+            <v-button variant="secondary" @click="handleSelectVideoDirectory">
+              <VIcon name="folder" :size="14" />
+              <span>选择目录</span>
+            </v-button>
           </div>
         </div>
 
@@ -196,7 +208,10 @@
               placeholder="输入或选择目录"
               style="flex: 1; max-width: 300px; margin-right: 8px;"
             />
-            <v-button variant="secondary" class="edit-btn" @click="handleSelectFileDirectory">选择目录</v-button>
+            <v-button variant="secondary" @click="handleSelectFileDirectory">
+              <VIcon name="folder" :size="14" />
+              <span>选择目录</span>
+            </v-button>
           </div>
         </div>
 
@@ -278,25 +293,37 @@
         <div class="settings-row" style="border-top: 1px solid var(--border-light);">
           <div class="settings-info">
             <h3>速度限制</h3>
-            <p>限制视频转码处理倍速以降低资源占用</p>
+            <p>限制视频转码处理倍速（1-32x，留空或 0 为全速）</p>
           </div>
-          <v-switch
-            class="speed-preset-switch"
-            :model-value="state.videoCompressSpeedPreset"
-            :options="speedPresetOptions"
-            @change="handleSpeedPresetChange"
-          />
+          <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
+            <VInputSelect
+              v-model="speedLimitInput"
+              :options="speedLimitOptions"
+              :allow-input="true"
+              placeholder="留空或 0 为全速"
+              class="speed-limit-select"
+              @select="handleSpeedLimitSelect"
+              @blur="handleSpeedLimitCommit"
+              @enter="handleSpeedLimitCommit"
+              @focus="handleSpeedLimitFocus"
+            />
+          </div>
         </div>
 
         <!-- 限速生效范围 -->
-        <div class="settings-row" style="border-top: 1px solid var(--border-light);">
+        <div
+          v-if="state.videoCompressSpeedLimit > 0"
+          class="settings-row"
+          style="border-top: 1px solid var(--border-light);"
+        >
           <div class="settings-info">
             <h3>限速生效范围</h3>
             <p>限制压缩速度的生效场景</p>
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-button variant="secondary" @click="showThrottleScopeModal = true">
-              管理
+              <VIcon name="settings" :size="14" />
+              <span>管理</span>
             </v-button>
           </div>
         </div>
@@ -313,8 +340,8 @@
           </div>
           <div class="action-buttons" style="flex: 1; justify-content: flex-end;">
             <v-button variant="secondary" @click="showMountModal = true">
-              <VIcon name="folder" :size="14" style="margin-right: 4px;" />
-              挂载目录
+              <VIcon name="folder" :size="14" />
+              <span>挂载目录</span>
             </v-button>
           </div>
         </div>
@@ -393,12 +420,12 @@
             </div>
             <div class="action-buttons" style="flex: 1; justify-content: flex-end; gap: 8px;">
               <v-button variant="secondary" @click="handleCopyLanUrl">
-                <VIcon name="copy-text" :size="14" style="margin-right: 4px;" />
-                复制链接
+                <VIcon name="copy-text" :size="14" />
+                <span>复制链接</span>
               </v-button>
-              <v-button variant="primary" @click="showQrModal = true">
-                <VIcon name="qrcode" :size="14" style="margin-right: 4px;" />
-                手机扫码
+              <v-button variant="secondary" @click="showQrModal = true">
+                <VIcon name="qrcode" :size="14" />
+                <span>手机扫码</span>
               </v-button>
             </div>
           </div>
@@ -422,8 +449,14 @@
               <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @blur="editTempUrl = formatUrlPrefix(editTempUrl)" @enter="saveEdit('cms', index)" />
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
-              <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('cms', index)">保存</v-button>
+              <v-button variant="secondary" @mousedown.prevent @click="cancelEdit">
+                <VIcon name="close" :size="14" />
+                <span>取消</span>
+              </v-button>
+              <v-button variant="primary" @mousedown.prevent @click="saveEdit('cms', index)">
+                <VIcon name="check" :size="14" />
+                <span>保存</span>
+              </v-button>
             </div>
           </template>
           <template v-else>
@@ -432,8 +465,14 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
-              <v-button variant="danger-soft" class="delete-btn" @click="removeCmsResource(index)">删除</v-button>
+              <v-button variant="secondary" @click="startEdit(item)">
+                <VIcon name="edit" :size="14" />
+                <span>编辑</span>
+              </v-button>
+              <v-button variant="danger-soft" @click="removeCmsResource(index)">
+                <VIcon name="trash" :size="14" />
+                <span>删除</span>
+              </v-button>
             </div>
           </template>
         </div>
@@ -442,7 +481,10 @@
         <div class="settings-row add-row">
           <v-input v-model="newCmsName" type="text" placeholder="资源名称" class="inline-input name-input" />
           <v-input v-model="newCmsUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" @blur="newCmsUrl = formatUrlPrefix(newCmsUrl)" @enter="addCmsResource" />
-          <v-button variant="primary" class="add-btn" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">添加</v-button>
+          <v-button variant="primary" :disabled="!newCmsName || !newCmsUrl" @click="addCmsResource">
+            <VIcon name="plus" :size="14" />
+            <span>添加</span>
+          </v-button>
         </div>
       </div>
 
@@ -463,8 +505,14 @@
               <v-input v-model="editTempUrl" type="text" class="inline-input url-input flex-1" placeholder="URL" @blur="editTempUrl = formatUrlPrefix(editTempUrl)" @enter="saveEdit('ext', index)" />
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
-              <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('ext', index)">保存</v-button>
+              <v-button variant="secondary" @mousedown.prevent @click="cancelEdit">
+                <VIcon name="close" :size="14" />
+                <span>取消</span>
+              </v-button>
+              <v-button variant="primary" @mousedown.prevent @click="saveEdit('ext', index)">
+                <VIcon name="check" :size="14" />
+                <span>保存</span>
+              </v-button>
             </div>
           </template>
           <template v-else>
@@ -473,11 +521,30 @@
               <p>{{ item.url }}</p>
             </div>
             <div class="action-buttons">
-              <v-button variant="secondary" class="edit-btn" @click="openParseManager(item)">管理解析</v-button>
-              <v-button variant="secondary" class="edit-btn" @click="openScriptManager(item)">管理脚本</v-button>
-              <v-button variant="secondary" class="edit-btn" @click="openStyleManager(item)">管理样式</v-button>
-              <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
-              <v-button variant="danger-soft" class="delete-btn" @click="removeExternalSite(index)">删除</v-button>
+              <v-button variant="secondary" @click="openParseManager(item)">
+                <VIcon name="magic" :size="14" />
+                <span>解析</span>
+              </v-button>
+              <v-button variant="secondary" @click="openScriptManager(item)">
+                <VIcon name="js" :size="14" />
+                <span>脚本</span>
+              </v-button>
+              <v-button variant="secondary" @click="openStyleManager(item)">
+                <VIcon name="css" :size="14" />
+                <span>样式</span>
+              </v-button>
+              <v-button variant="secondary" @click="openSiteCacheModal(item)">
+                <VIcon name="clean" :size="14" />
+                <span>缓存</span>
+              </v-button>
+              <v-button variant="secondary" @click="startEdit(item)">
+                <VIcon name="edit" :size="14" />
+                <span>编辑</span>
+              </v-button>
+              <v-button variant="danger-soft" @click="removeExternalSite(index)">
+                <VIcon name="trash" :size="14" />
+                <span>删除</span>
+              </v-button>
             </div>
           </template>
         </div>
@@ -486,7 +553,10 @@
         <div class="settings-row add-row">
           <v-input v-model="newExtName" type="text" placeholder="网站名称" class="inline-input name-input" />
           <v-input v-model="newExtUrl" type="text" placeholder="https://" class="inline-input url-input flex-1" @blur="newExtUrl = formatUrlPrefix(newExtUrl)" @enter="addExternalSite" />
-          <v-button variant="primary" class="add-btn" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">添加</v-button>
+          <v-button variant="primary" :disabled="!newExtName || !newExtUrl" @click="addExternalSite">
+            <VIcon name="plus" :size="14" />
+            <span>添加</span>
+          </v-button>
         </div>
       </div>
 
@@ -514,8 +584,14 @@
                   {{ rule.domain }} <span style="font-size: 12px; color: var(--color-accent); font-weight: normal;">({{ rule.actionType === 'download' ? '下载' : (rule.actionType === 'copy' ? '复制' : rule.actionType) }})</span>
                 </span>
                 <div style="display: flex; gap: 8px;">
-                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openParseEditor(rule)">编辑</v-button>
-                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteParseRule(rule)">删除</v-button>
+                  <v-button variant="secondary" class="shrink-0" @click="openParseEditor(rule)">
+                    <VIcon name="edit" :size="14" />
+                    <span>编辑</span>
+                  </v-button>
+                  <v-button variant="danger-soft" class="shrink-0" @click="deleteParseRule(rule)">
+                    <VIcon name="trash" :size="14" />
+                    <span>删除</span>
+                  </v-button>
                 </div>
               </div>
             </div>
@@ -545,8 +621,14 @@
                 <span class="domain-name" style="text-align: left; opacity: 0.6; font-size: 11px;">匹配: {{ script.domain }}</span>
                 <span class="domain-name" style="text-align: center;">{{ script.name }} <span style="font-size: 10px; opacity: 0.5;">({{ script.runAt }})</span></span>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openScriptEditor(script)">编辑</v-button>
-                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteScript(script)">删除</v-button>
+                  <v-button variant="secondary" class="shrink-0" @click="openScriptEditor(script)">
+                    <VIcon name="edit" :size="14" />
+                    <span>编辑</span>
+                  </v-button>
+                  <v-button variant="danger-soft" class="shrink-0" @click="deleteScript(script)">
+                    <VIcon name="trash" :size="14" />
+                    <span>删除</span>
+                  </v-button>
                 </div>
               </div>
             </div>
@@ -575,8 +657,14 @@
                 <div></div>
                 <span class="domain-name" style="text-align: center;">{{ domain }}</span>
                 <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                  <v-button variant="secondary" class="edit-btn shrink-0" @click="openStyleEditor(domain as string, cssString as string)">编辑</v-button>
-                  <v-button variant="danger-soft" class="delete-btn shrink-0" @click="deleteDomainStyle(domain as string)">删除</v-button>
+                  <v-button variant="secondary" class="shrink-0" @click="openStyleEditor(domain as string, cssString as string)">
+                    <VIcon name="edit" :size="14" />
+                    <span>编辑</span>
+                  </v-button>
+                  <v-button variant="danger-soft" class="shrink-0" @click="deleteDomainStyle(domain as string)">
+                    <VIcon name="trash" :size="14" />
+                    <span>删除</span>
+                  </v-button>
                 </div>
               </div>
             </div>
@@ -644,12 +732,21 @@
                   <v-input v-model="editTempName" type="text" class="inline-input name-input" placeholder="挂载名称" @enter="saveEdit('local', index)" />
                   <div class="dir-input-group flex-1" style="display: flex; gap: 8px; align-items: center;">
                     <v-input v-model="editTempPath" type="text" class="inline-input url-input flex-1" placeholder="本地目录路径" @enter="saveEdit('local', index)" />
-                    <v-button variant="secondary" @mousedown.prevent @click="handleSelectEditLocalDir">选择目录</v-button>
+                    <v-button variant="secondary" @mousedown.prevent @click="handleSelectEditLocalDir">
+                      <VIcon name="folder" :size="14" />
+                      <span>选择目录</span>
+                    </v-button>
                   </div>
                 </div>
                 <div class="action-buttons">
-                  <v-button variant="secondary" class="cancel-btn" @mousedown.prevent @click="cancelEdit">取消</v-button>
-                  <v-button variant="primary" class="save-btn" @mousedown.prevent @click="saveEdit('local', index)">保存</v-button>
+                  <v-button variant="secondary" @mousedown.prevent @click="cancelEdit">
+                    <VIcon name="close" :size="14" />
+                    <span>取消</span>
+                  </v-button>
+                  <v-button variant="primary" @mousedown.prevent @click="saveEdit('local', index)">
+                    <VIcon name="check" :size="14" />
+                    <span>保存</span>
+                  </v-button>
                 </div>
               </template>
               <template v-else>
@@ -658,8 +755,14 @@
                   <p>{{ item.path || item.url }}</p>
                 </div>
                 <div class="action-buttons">
-                  <v-button variant="secondary" class="edit-btn" @click="startEdit(item)">编辑</v-button>
-                  <v-button variant="danger-soft" class="delete-btn" @click="removeLocalResource(index)">删除</v-button>
+                  <v-button variant="secondary" @click="startEdit(item)">
+                    <VIcon name="edit" :size="14" />
+                    <span>编辑</span>
+                  </v-button>
+                  <v-button variant="danger-soft" @click="removeLocalResource(index)">
+                    <VIcon name="trash" :size="14" />
+                    <span>删除</span>
+                  </v-button>
                 </div>
               </template>
             </div>
@@ -669,12 +772,21 @@
           <div class="settings-row add-row" style="margin-top: 14px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 12px;">
             <v-input v-model="newLocalName" type="text" placeholder="挂载名称" class="inline-input name-input" style="max-width: 140px;" />
             <v-input v-model="newLocalPath" type="text" placeholder="本地文件夹路径" class="inline-input url-input flex-1" />
-            <v-button variant="secondary" @mousedown.prevent @click="handleSelectNewLocalDir">选择目录</v-button>
-            <v-button variant="primary" class="add-btn" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">添加</v-button>
+            <v-button variant="secondary" @mousedown.prevent @click="handleSelectNewLocalDir">
+              <VIcon name="folder" :size="14" />
+              <span>选择目录</span>
+            </v-button>
+            <v-button variant="primary" :disabled="!newLocalName || !newLocalPath" @click="addLocalResource">
+              <VIcon name="plus" :size="14" />
+              <span>添加</span>
+            </v-button>
           </div>
         </div>
         <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end;">
-          <v-button variant="primary" @click="showMountModal = false">完成</v-button>
+          <v-button variant="secondary" @click="showMountModal = false">
+            <VIcon name="check" :size="14" />
+            <span>完成</span>
+          </v-button>
         </div>
       </div>
     </div>
@@ -698,8 +810,14 @@
           </p>
         </div>
         <div class="modal-footer" style="display: flex; justify-content: space-between; padding: 12px 20px; border-top: 1px solid var(--border-light);">
-          <v-button variant="secondary" size="small" @click="handleCopyLanUrl">复制链接</v-button>
-          <v-button variant="primary" size="small" @click="showQrModal = false">完成</v-button>
+          <v-button variant="secondary" @click="handleCopyLanUrl">
+            <VIcon name="copy-text" :size="14" />
+            <span>复制链接</span>
+          </v-button>
+          <v-button variant="secondary" @click="showQrModal = false">
+            <VIcon name="check" :size="14" />
+            <span>完成</span>
+          </v-button>
         </div>
       </div>
     </div>
@@ -735,25 +853,28 @@
               <v-button
                 v-if="getPanAccount(pan.type)"
                 variant="danger-soft"
-                size="small"
                 @click="handleLogoutPan(pan.type)"
               >
-                退出登录
+                <VIcon name="logout" :size="14" />
+                <span>退出登录</span>
               </v-button>
               <v-button
                 v-else
                 variant="secondary"
-                size="small"
                 :disabled="!!isLoggingInPan"
                 @click="handleLoginPan(pan.type)"
               >
-                {{ isLoggingInPan === pan.type ? '登录中' : '登录' }}
+                <VIcon :name="isLoggingInPan === pan.type ? 'loading' : 'login'" :size="14" :class="{ 'spin-icon': isLoggingInPan === pan.type }" />
+                <span>{{ isLoggingInPan === pan.type ? '登录中' : '登录' }}</span>
               </v-button>
             </div>
           </div>
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light);">
-          <v-button variant="primary" size="small" @click="showPanAccountsModal = false">完成</v-button>
+          <v-button variant="secondary" @click="showPanAccountsModal = false">
+            <VIcon name="check" :size="14" />
+            <span>完成</span>
+          </v-button>
         </div>
       </div>
     </div>
@@ -785,7 +906,53 @@
           </div>
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light);">
-          <v-button variant="primary" size="small" @click="showThrottleScopeModal = false">完成</v-button>
+          <v-button variant="secondary" @click="showThrottleScopeModal = false">
+            <VIcon name="check" :size="14" />
+            <span>完成</span>
+          </v-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Site Cache Clear Modal -->
+    <div v-if="clearingCacheFor" class="modal-overlay" v-overlay-close="closeSiteCacheModal">
+      <div class="modal-content" style="max-width: 440px; width: 90vw;">
+        <div class="modal-header">
+          <h3>清理缓存 - {{ clearingCacheFor.name }}</h3>
+          <v-button variant="icon" class="modal-close-btn" :disabled="isClearingSiteCache" @click="closeSiteCacheModal">
+            <VIcon name="close" :size="20" />
+          </v-button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px;">
+          <div class="throttle-scope-modal-list">
+            <v-checkbox
+              v-for="opt in cacheClearScopeOptions"
+              :key="opt.value"
+              class="throttle-scope-modal-item"
+              v-model="selectedCacheClearScopes"
+              :value="opt.value"
+              :disabled="isClearingSiteCache"
+            >
+              <div class="scope-item-content">
+                <span class="scope-item-title">{{ opt.label }}</span>
+                <span class="scope-item-desc">{{ opt.desc }}</span>
+              </div>
+            </v-checkbox>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border-light);">
+          <v-button variant="secondary" :disabled="isClearingSiteCache" @click="closeSiteCacheModal">
+            <VIcon name="close" :size="14" />
+            <span>取消</span>
+          </v-button>
+          <v-button
+            variant="danger-soft"
+            :disabled="isClearingSiteCache || selectedCacheClearScopes.length === 0"
+            @click="handleConfirmClearSiteCache"
+          >
+            <VIcon :name="isClearingSiteCache ? 'loading' : 'clean'" :size="14" :class="{ 'spin-icon': isClearingSiteCache }" />
+            <span>{{ isClearingSiteCache ? '清理中' : '清理' }}</span>
+          </v-button>
         </div>
       </div>
     </div>
@@ -793,19 +960,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   CustomScript,
   ParseRule,
   useSettings,
-  type VideoCompressSpeedPreset,
+  type ResourceItem,
   type VideoThrottleScope
 } from '@/composables/useSettings';
 import { useConfirm } from '@/composables/useConfirm';
 import { useMessage } from '@/composables/useMessage';
 import { useOpenedResources } from '@/composables/useOpenedResources';
 import { useOpenedCMS } from '@/composables/useOpenedCMS';
+import { useWorkspaces } from '@/composables/useWorkspaces';
+import type { SiteCacheClearScope } from '@/utils/sitePartition';
+import { formatSpeedLimitDisplay, parseSpeedLimitInput } from '@/utils/speedLimit';
 import { logger } from '@/services/logger';
 import { generateQrCodeSvg } from '@/utils/qrcode';
 import VButton from '@/components/base/VButton.vue';
@@ -816,6 +986,7 @@ import SettingsStyleEditor from '@/components/features/SettingsStyleEditor.vue';
 import ParseRuleDialog from '@/components/features/ParseRuleDialog.vue';
 import AdBlockDialog from '@/components/features/AdBlockDialog.vue';
 import VInput from '@/components/base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 import VSwitch, { type VSwitchOption } from '@/components/base/VSwitch.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
 import ConfigBackupDialog from '@/components/features/ConfigBackupDialog.vue';
@@ -849,7 +1020,7 @@ const {
   saveEnableVideoCompress,
   saveVideoCompressTargetGB,
   saveVideoCompressMinBitrateKbps,
-  saveVideoCompressSpeedPreset,
+  saveVideoCompressSpeedLimit,
   saveVideoThrottleScopes,
   saveLocalResources,
   saveCmsResources, 
@@ -877,12 +1048,14 @@ const handleCompressToggle = (val: boolean) => {
   showMessage(val ? '已开启下载后智能视频压缩' : '已关闭下载后视频压缩', 'info');
 };
 
-const speedPresetOptions: VSwitchOption[] = [
-  { label: '低速 2x', value: 'low' },
-  { label: '均衡 4x', value: 'balanced' },
-  { label: '加速 8x', value: 'fast' },
-  { label: '全速', value: 'unlimited' }
+const speedLimitOptions: InputSelectOption[] = [
+  { label: '低速 2x', value: '2x' },
+  { label: '均衡 4x', value: '4x' },
+  { label: '加速 8x', value: '8x' },
+  { label: '全速 (不限)', value: '全速' }
 ];
+
+const speedLimitInput = ref<string>(formatSpeedLimitDisplay(state.videoCompressSpeedLimit));
 
 const showThrottleScopeModal = ref(false);
 
@@ -891,10 +1064,63 @@ const throttleScopeOptions: Array<{ label: string; desc: string; value: VideoThr
   { label: '手动压缩', desc: '手动发起单个或批量视频压缩时生效', value: 'manualCompress' }
 ];
 
-const handleSpeedPresetChange = async (val: VideoCompressSpeedPreset) => {
-  await saveVideoCompressSpeedPreset(val);
-  const matched = speedPresetOptions.find(opt => opt.value === val);
-  showMessage(`已切换速度限制档位为：${matched?.label || val}`, 'info');
+watch(
+  () => state.videoCompressSpeedLimit,
+  (val) => {
+    speedLimitInput.value = formatSpeedLimitDisplay(val);
+    if (val <= 0) {
+      showThrottleScopeModal.value = false;
+    }
+  },
+  { immediate: true }
+);
+
+const handleSpeedLimitFocus = (_val: string, evt: FocusEvent) => {
+  const targetEl = evt?.target as HTMLInputElement | null;
+  if (targetEl && typeof targetEl.select === 'function') {
+    requestAnimationFrame(() => {
+      targetEl.select();
+    });
+  }
+};
+
+const commitSpeedLimit = async (rawOverride?: string) => {
+  const raw = rawOverride !== undefined ? rawOverride : speedLimitInput.value;
+  const parsed = parseSpeedLimitInput(raw);
+  if (!parsed.valid) {
+    speedLimitInput.value = formatSpeedLimitDisplay(state.videoCompressSpeedLimit);
+    showMessage('请输入 1-32 之间的整数，留空或输入 0 为全速', 'warning', 3000);
+    return;
+  }
+
+  const nextLimit = parsed.value;
+  speedLimitInput.value = formatSpeedLimitDisplay(nextLimit);
+
+  if (parsed.clamped) {
+    if (nextLimit !== state.videoCompressSpeedLimit) {
+      await saveVideoCompressSpeedLimit(nextLimit);
+    }
+    showMessage('速度限制最大为 32x，已自动调整为 32x', 'warning', 3000);
+    return;
+  }
+
+  if (nextLimit === state.videoCompressSpeedLimit) {
+    return;
+  }
+
+  await saveVideoCompressSpeedLimit(nextLimit);
+  showMessage(
+    nextLimit > 0 ? `已将速度限制设置为 ${nextLimit}x` : '已将速度限制设置为全速',
+    'info'
+  );
+};
+
+const handleSpeedLimitSelect = async (val: string) => {
+  await commitSpeedLimit(val);
+};
+
+const handleSpeedLimitCommit = async () => {
+  await commitSpeedLimit();
 };
 
 const handleThrottleScopesChange = async (val: VideoThrottleScope[]) => {
@@ -1442,6 +1668,9 @@ const removeExternalSite = async (index: number) => {
   const sites = [...state.externalSites];
   sites.splice(index, 1);
   saveExternalSites(sites);
+  resetWorkspace(site.id);
+  closeResource(site.id);
+  window.electronAPI?.clearSiteCache?.(site.id, ['cache', 'cookies', 'history']).catch(() => {});
   showMessage(`已删除 "${site.name}"`, 'success');
 };
 
@@ -1459,8 +1688,72 @@ const cancelEdit = () => {
   editTempPath.value = '';
 };
 
-const { updateResourceUrl } = useOpenedResources();
+const { updateResourceUrl, closeResource } = useOpenedResources();
 const { updateCMSUrl } = useOpenedCMS();
+const { getWorkspace, resetWorkspace } = useWorkspaces();
+
+const clearingCacheFor = ref<ResourceItem | null>(null);
+const selectedCacheClearScopes = ref<SiteCacheClearScope[]>(['cache', 'history']);
+const isClearingSiteCache = ref(false);
+
+const cacheClearScopeOptions: Array<{ label: string; desc: string; value: SiteCacheClearScope }> = [
+  { label: '网页缓存', desc: '清理图片、脚本、音视频缓冲与离线缓存文件', value: 'cache' },
+  { label: '浏览记录', desc: '清空已打开标签页、前进后退历史与嗅探记录，并重置该空间回到初始首页', value: 'history' },
+  { label: 'Cookies 与登录态', desc: '清理站点 Cookies、登录状态与本地存储数据，清理后需重新登录', value: 'cookies' }
+];
+
+const openSiteCacheModal = (item: ResourceItem) => {
+  clearingCacheFor.value = item;
+  selectedCacheClearScopes.value = ['cache', 'history'];
+};
+
+const closeSiteCacheModal = () => {
+  if (isClearingSiteCache.value) return;
+  clearingCacheFor.value = null;
+};
+
+const handleConfirmClearSiteCache = async () => {
+  const target = clearingCacheFor.value;
+  if (!target || isClearingSiteCache.value) return;
+  const scopes = [...selectedCacheClearScopes.value];
+  if (scopes.length === 0) {
+    showMessage('请至少选择一项需要清理的内容', 'warning', 3000);
+    return;
+  }
+
+  isClearingSiteCache.value = true;
+  try {
+    if (scopes.includes('history')) {
+      const ws = getWorkspace(target.id);
+      if (ws) {
+        for (const tab of ws.tabs) {
+          if (!tab.isBlank) {
+            const webviewEl = document.getElementById(`webview-${tab.id}`) as any;
+            try {
+              webviewEl?.clearHistory?.();
+            } catch {}
+          }
+        }
+      }
+      resetWorkspace(target.id);
+      closeResource(target.id);
+      await nextTick();
+    }
+
+    const res = await window.electronAPI?.clearSiteCache?.(target.id, scopes);
+    if (res && !res.success) {
+      showMessage(res.error || '清理缓存失败', 'error', 3000);
+      return;
+    }
+
+    clearingCacheFor.value = null;
+    showMessage(`已清理 "${target.name}" 的所选数据`, 'success', 2000);
+  } catch (err: any) {
+    showMessage(`清理缓存失败: ${err?.message || String(err)}`, 'error', 3000);
+  } finally {
+    isClearingSiteCache.value = false;
+  }
+};
 
 const handleEditFocusOut = (e: FocusEvent, type: 'local' | 'cms' | 'ext', index: number) => {
   if (isSelectingDirectory.value) {
@@ -1827,27 +2120,21 @@ const deleteDomainStyle = async (domain: string) => {
   gap: 16px;
 }
 
-.back-btn {
+.v-btn-icon-secondary.back-btn {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: var(--bg-surface);
-  border: 1px solid var(--border-color);
   color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
   flex-shrink: 0;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
 
-  &:active {
+  &:active:not(:disabled) {
     transform: scale(0.95);
   }
 }
@@ -1963,6 +2250,11 @@ const deleteDomainStyle = async (domain: string) => {
   line-height: 1.5;
 }
 
+.resource-info {
+  min-width: 0;
+  margin-right: 16px;
+}
+
 .resource-info h3 {
   font-size: 15px;
 }
@@ -1970,6 +2262,7 @@ const deleteDomainStyle = async (domain: string) => {
 .resource-info p {
   font-size: 13px;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .edit-mode-info {
@@ -2026,7 +2319,10 @@ const deleteDomainStyle = async (domain: string) => {
 
 .action-buttons {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* Buttons styled by VButton component */
@@ -2264,15 +2560,9 @@ const deleteDomainStyle = async (domain: string) => {
   }
 }
 
-.speed-preset-switch {
-  flex-shrink: 0;
-
-  :deep(.v-switch-item) {
-    flex: 1;
-    min-width: 76px;
-    padding: 6px 12px;
-    white-space: nowrap;
-  }
+.speed-limit-select {
+  width: 160px;
+  min-width: 160px;
 }
 
 .throttle-scope-modal-list {

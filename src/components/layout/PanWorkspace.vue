@@ -82,7 +82,7 @@
         <VIcon name="warning" :size="28" />
         <span class="error-msg">{{ loadError }}</span>
         <div class="error-actions" style="display: flex; gap: 8px; margin-top: 4px;">
-          <VButton v-if="loadError.includes('登录')" variant="primary" size="small" @click="handleRelogin">重新登录</VButton>
+          <VButton v-if="loadError.includes('登录')" variant="secondary" size="small" @click="handleRelogin">重新登录</VButton>
           <VButton variant="secondary" size="small" @click="loadCurrentDirectory(true)">重试</VButton>
         </div>
       </div>
@@ -421,7 +421,7 @@
           </template>
           <template v-else>
             <VButton variant="secondary" @click="closeShareModal">关闭</VButton>
-            <VButton variant="primary" @click="copyShareResult">
+            <VButton variant="secondary" @click="copyShareResult">
               <VIcon name="copy-text" :size="13" />
               <span>一键复制</span>
             </VButton>

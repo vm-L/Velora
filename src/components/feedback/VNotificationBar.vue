@@ -47,8 +47,8 @@
             <v-button variant="secondary" class="btn btn-secondary" @click="closeDialog">确定</v-button>
             <v-button 
               v-if="canGoToSource(selectedNotification)" 
-              variant="primary"
-              class="btn btn-primary" 
+              variant="secondary"
+              class="btn btn-secondary" 
               @click="goToSource(selectedNotification)"
             >
               前往查看
@@ -303,15 +303,6 @@ const goToSource = (notif: NotificationItem) => {
   &:hover {
     background: var(--border-light);
     color: var(--text-primary);
-  }
-}
-
-.btn-primary {
-  background: var(--color-accent);
-  color: var(--bg-surface);
-  
-  &:hover {
-    background: var(--color-accent-hover);
   }
 }
 </style>

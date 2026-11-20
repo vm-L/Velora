@@ -40,6 +40,7 @@ import { editVideoSegments, cancelVideoEdit, EditVideoParams, mergeVideos, cance
 import { videoTaskManager } from './videoTaskManager'
 import { panService } from './pan/service'
 import { panAccountManager, PAN_CONFIGS } from './pan/accountManager'
+import { clearSiteSessionData, isSitePartition, type SiteCacheClearScope } from './siteSession'
 
 interface ActiveMediaStream {
   filePath: string;
@@ -420,8 +421,10 @@ import { downloader } from './downloader'
 import { lanServer } from './lanServer'
 import { getSplashHtml } from './splash'
 import { trayWindowManager } from './trayWindow'
+import { setupTrayTooltip, type TrayTooltipGuard } from './trayTooltip'
 
 let tray: Tray | null = null
+let trayTooltipGuard: TrayTooltipGuard | null = null
 let mainWindow: BrowserWindow | null = null
 let splashWindow: BrowserWindow | null = null
 let splashStartTime = 0
@@ -722,6 +725,12 @@ function createWindow() {
 
   mainWindow.webContents.on('leave-html-full-screen', () => {
     mainWindow?.setFullScreen(false)
+  })
+
+  mainWindow.webContents.on('will-attach-webview', (_event, _webPreferences, params) => {
+    if (isSitePartition(params.partition)) {
+      setupNetworkInterceptors(session.fromPartition(params.partition))
+    }
   })
 
   mainWindow.on('closed', () => {
@@ -1082,16 +1091,20 @@ function setupIpcHandlers() {
       return { success: false, error: `读取解析备份文件失败: ${err.message || String(err)}` };
     }
   });
+
+  ipcMain.handle('clear-site-cache', async (_event, resourceId: string, scopes: SiteCacheClearScope[]) => {
+    return await clearSiteSessionData(resourceId, scopes);
+  });
 }
 
-let isInterceptorsInitialized = false;
+const interceptedSessions = new WeakSet<Electron.Session>();
 
-function setupNetworkInterceptors() {
-  if (isInterceptorsInitialized) return;
-  isInterceptorsInitialized = true;
+function setupNetworkInterceptors(targetSession: Electron.Session = session.defaultSession) {
+  if (interceptedSessions.has(targetSession)) return;
+  interceptedSessions.add(targetSession);
 
   // Network Sniffer & AdBlock Interceptor
-  session.defaultSession.webRequest.onBeforeRequest(
+  targetSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
     (details, callback) => {
       const isBackgroundMainReq = !details.webContentsId || details.webContentsId <= 0;
@@ -1147,7 +1160,7 @@ function setupNetworkInterceptors() {
   )
 
   // Network Sniffer - Catch by Headers & Bypass CORS globally
-  session.defaultSession.webRequest.onHeadersReceived(
+  targetSession.webRequest.onHeadersReceived(
     { urls: ['*://*/*'] },
     (details, callback) => {
       if (!details.webContentsId || details.webContentsId <= 0) {
@@ -1261,7 +1274,7 @@ function setupNetworkInterceptors() {
   );
 
   // Referer and Origin header handling: Set to client config (X-Velora-Client-Id) or webpage referrer if present, otherwise strip local/empty
-  session.defaultSession.webRequest.onBeforeSendHeaders(
+  targetSession.webRequest.onBeforeSendHeaders(
     { urls: ['*://*/*'] },
     (details, callback) => {
       if (details.resourceType === 'mainFrame') {
@@ -1559,7 +1572,7 @@ app.whenReady().then(async () => {
     trayIcon = fallbackUrl ? nativeImage.createFromDataURL(fallbackUrl) : nativeImage.createEmpty();
   }
   tray = new Tray(trayIcon);
-  tray.setToolTip('Velora');
+  trayTooltipGuard = setupTrayTooltip(tray, 'Velora');
   tray.on('click', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -1650,6 +1663,15 @@ app.on('before-quit', (e) => {
     e.preventDefault()
     isQuitting = true
     try {
+      trayTooltipGuard?.dispose()
+      trayTooltipGuard = null
+    } catch {}
+    try {
+      if (tray && !tray.isDestroyed()) {
+        tray.destroy()
+      }
+    } catch {}
+    try {
       storeManager.flushSync()
     } catch {}
     try {
@@ -1682,6 +1704,8 @@ app.on('web-contents-created', (_, contents) => {
   })
 
   if (contents.getType() === 'webview') {
+    setupNetworkInterceptors(contents.session);
+
     contents.on('enter-html-full-screen', () => {
       mainWindow?.setFullScreen(true)
     })

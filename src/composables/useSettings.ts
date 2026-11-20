@@ -1,5 +1,10 @@
 import { reactive } from 'vue'
 import type { ConfigBackupSectionKey } from '@/types/backup'
+import {
+  DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT,
+  normalizeVideoCompressSpeedLimit,
+  resolveVideoCompressSpeedLimit
+} from '@/utils/speedLimit'
 
 export interface ResourceItem {
   id: string
@@ -99,16 +104,10 @@ export interface DuplicateMarkRule {
   regexPattern?: string;
 }
 
-export type VideoCompressSpeedPreset = 'low' | 'balanced' | 'fast' | 'unlimited'
 export type VideoThrottleScope = 'autoCompress' | 'manualCompress'
 
-const DEFAULT_VIDEO_COMPRESS_SPEED_PRESET: VideoCompressSpeedPreset = 'unlimited'
 const DEFAULT_VIDEO_THROTTLE_SCOPES: VideoThrottleScope[] = ['autoCompress']
-const VALID_SPEED_PRESETS = new Set<VideoCompressSpeedPreset>(['low', 'balanced', 'fast', 'unlimited'])
 const VALID_THROTTLE_SCOPES = new Set<VideoThrottleScope>(['autoCompress', 'manualCompress'])
-
-const isValidVideoCompressSpeedPreset = (val: any): val is VideoCompressSpeedPreset =>
-  VALID_SPEED_PRESETS.has(val)
 
 const isValidVideoThrottleScope = (val: any): val is VideoThrottleScope =>
   VALID_THROTTLE_SCOPES.has(val)
@@ -126,7 +125,7 @@ export interface SettingsState {
   enableVideoCompress: boolean
   videoCompressTargetGB: number
   videoCompressMinBitrateKbps: number
-  videoCompressSpeedPreset: VideoCompressSpeedPreset
+  videoCompressSpeedLimit: number
   videoThrottleScopes: VideoThrottleScope[]
   localResources: ResourceItem[]
   cmsResources: ResourceItem[]
@@ -157,7 +156,7 @@ export const state = reactive<SettingsState>({
   enableVideoCompress: false,
   videoCompressTargetGB: 1.5,
   videoCompressMinBitrateKbps: 1500,
-  videoCompressSpeedPreset: DEFAULT_VIDEO_COMPRESS_SPEED_PRESET,
+  videoCompressSpeedLimit: DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT,
   videoThrottleScopes: [...DEFAULT_VIDEO_THROTTLE_SCOPES],
   localResources: [] as ResourceItem[],
   cmsResources: [] as ResourceItem[],
@@ -196,10 +195,10 @@ export const useSettings = () => {
     state.videoCompressTargetGB = typeof savedTarget === 'number' ? savedTarget : 1.5
     const savedMinBitrate = all['videoCompressMinBitrateKbps']
     state.videoCompressMinBitrateKbps = typeof savedMinBitrate === 'number' ? savedMinBitrate : 1500
-    const savedSpeedPreset = all['videoCompressSpeedPreset']
-    state.videoCompressSpeedPreset = isValidVideoCompressSpeedPreset(savedSpeedPreset)
-      ? savedSpeedPreset
-      : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
+    state.videoCompressSpeedLimit = resolveVideoCompressSpeedLimit({
+      videoCompressSpeedLimit: all['videoCompressSpeedLimit'],
+      videoCompressSpeedPreset: all['videoCompressSpeedPreset']
+    })
     const savedThrottleScopes = all['videoThrottleScopes']
     state.videoThrottleScopes = Array.isArray(savedThrottleScopes)
       ? Array.from(new Set(savedThrottleScopes.filter(isValidVideoThrottleScope)))
@@ -308,10 +307,10 @@ export const useSettings = () => {
     await window.electronAPI.setSetting('videoCompressMinBitrateKbps', kbps)
   }
 
-  const saveVideoCompressSpeedPreset = async (preset: VideoCompressSpeedPreset) => {
-    const validPreset = isValidVideoCompressSpeedPreset(preset) ? preset : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
-    state.videoCompressSpeedPreset = validPreset
-    await window.electronAPI.setSetting('videoCompressSpeedPreset', validPreset)
+  const saveVideoCompressSpeedLimit = async (limit: number) => {
+    const validLimit = normalizeVideoCompressSpeedLimit(limit, DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT)
+    state.videoCompressSpeedLimit = validLimit
+    await window.electronAPI.setSetting('videoCompressSpeedLimit', validLimit)
   }
 
   const saveVideoThrottleScopes = async (scopes: VideoThrottleScope[]) => {
@@ -445,7 +444,7 @@ export const useSettings = () => {
         enableVideoCompress: state.enableVideoCompress,
         videoCompressTargetGB: state.videoCompressTargetGB,
         videoCompressMinBitrateKbps: state.videoCompressMinBitrateKbps,
-        videoCompressSpeedPreset: state.videoCompressSpeedPreset,
+        videoCompressSpeedLimit: state.videoCompressSpeedLimit,
         videoThrottleScopes: [...state.videoThrottleScopes]
       };
     }
@@ -523,7 +522,17 @@ export const useSettings = () => {
       if (typeof v.enableVideoCompress === 'boolean') await saveEnableVideoCompress(v.enableVideoCompress);
       if (typeof v.videoCompressTargetGB === 'number') await saveVideoCompressTargetGB(v.videoCompressTargetGB);
       if (typeof v.videoCompressMinBitrateKbps === 'number') await saveVideoCompressMinBitrateKbps(v.videoCompressMinBitrateKbps);
-      if (isValidVideoCompressSpeedPreset(v.videoCompressSpeedPreset)) await saveVideoCompressSpeedPreset(v.videoCompressSpeedPreset);
+      if (v.videoCompressSpeedLimit !== undefined || v.videoCompressSpeedPreset !== undefined) {
+        await saveVideoCompressSpeedLimit(
+          resolveVideoCompressSpeedLimit(
+            {
+              videoCompressSpeedLimit: v.videoCompressSpeedLimit,
+              videoCompressSpeedPreset: v.videoCompressSpeedPreset
+            },
+            state.videoCompressSpeedLimit
+          )
+        );
+      }
       if (Array.isArray(v.videoThrottleScopes)) await saveVideoThrottleScopes(v.videoThrottleScopes);
     }
 
@@ -768,7 +777,7 @@ export const useSettings = () => {
     saveEnableVideoCompress,
     saveVideoCompressTargetGB,
     saveVideoCompressMinBitrateKbps,
-    saveVideoCompressSpeedPreset,
+    saveVideoCompressSpeedLimit,
     saveVideoThrottleScopes,
     saveLocalResources,
     saveCmsResources, 

@@ -120,6 +120,10 @@ interface Window {
       items: Array<{ fid: string; fidToken?: string; pwdId?: string; stoken?: string; extra?: Record<string, any> }>;
       targetDirFid: string;
     }) => Promise<{ success: boolean; savedCount?: number; error?: string }>
+    clearSiteCache?: (
+      resourceId: string,
+      scopes: Array<'cache' | 'cookies' | 'history'>
+    ) => Promise<{ success: boolean; partition?: string; clearedScopes?: Array<'cache' | 'cookies' | 'history'>; error?: string }>
   }
 }
 

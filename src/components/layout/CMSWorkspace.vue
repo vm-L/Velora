@@ -31,7 +31,7 @@
           />
           <VIcon class="search-icon" name="search" size="16" />
         </div>
-        <v-button variant="primary" class="search-btn" @click="handleSearch">搜索</v-button>
+        <v-button variant="secondary" class="search-btn" @click="handleSearch">搜索</v-button>
         <v-button v-if="keyword" variant="secondary" class="reset-btn" @click="handleReset">清空</v-button>
       </div>
 

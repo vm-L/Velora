@@ -1,5 +1,9 @@
 import { ipcMain, app } from 'electron'
 import { saveRuleCacheFileSync } from './adblock'
+import {
+  DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT,
+  normalizeVideoCompressSpeedLimit
+} from './utils/speedLimit'
 
 // A wrapper to handle the ESM nature of electron-store in a potentially CJS compiled environment
 // Adds an in-memory mirror cache + debounced persistence so getSetting() has zero synchronous disk I/O
@@ -33,7 +37,6 @@ class StoreManager {
         lanSharePassword: '',
         lanShareAllowEdit: false,
         customDuplicateRules: {},
-        videoCompressSpeedPreset: 'unlimited',
         videoThrottleScopes: ['autoCompress']
       }
     })
@@ -51,6 +54,33 @@ class StoreManager {
       try {
         this.store.delete('adBlockCache')
       } catch {}
+    }
+
+    // Migrate legacy videoCompressSpeedPreset ('low'|'balanced'|'fast'|'unlimited') to numeric videoCompressSpeedLimit
+    if (initialStore.videoCompressSpeedLimit !== undefined) {
+      const normalized = normalizeVideoCompressSpeedLimit(initialStore.videoCompressSpeedLimit)
+      if (normalized !== initialStore.videoCompressSpeedLimit) {
+        initialStore.videoCompressSpeedLimit = normalized
+        try {
+          this.store.set('videoCompressSpeedLimit', normalized)
+        } catch {}
+      }
+      if ('videoCompressSpeedPreset' in initialStore) {
+        delete initialStore.videoCompressSpeedPreset
+        try {
+          this.store.delete('videoCompressSpeedPreset')
+        } catch {}
+      }
+    } else if (initialStore.videoCompressSpeedPreset !== undefined) {
+      const migrated = normalizeVideoCompressSpeedLimit(initialStore.videoCompressSpeedPreset)
+      initialStore.videoCompressSpeedLimit = migrated
+      delete initialStore.videoCompressSpeedPreset
+      try {
+        this.store.set('videoCompressSpeedLimit', migrated)
+        this.store.delete('videoCompressSpeedPreset')
+      } catch {}
+    } else {
+      initialStore.videoCompressSpeedLimit = DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT
     }
 
     this.cache = initialStore

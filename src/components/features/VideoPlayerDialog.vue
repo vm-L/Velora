@@ -183,7 +183,7 @@
       <div class="dock-footer-row">
         <div class="footer-save-btns">
           <VButton variant="secondary" @click="handleSaveAs">另存为</VButton>
-          <VButton variant="primary" @click="promptConfirmOverwrite">覆盖保存</VButton>
+          <VButton variant="secondary" @click="promptConfirmOverwrite">覆盖保存</VButton>
         </div>
       </div>
     </div>

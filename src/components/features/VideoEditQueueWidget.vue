@@ -158,7 +158,7 @@
               打开文件目录
             </VButton>
             <VButton
-              variant="primary"
+              variant="secondary"
               @click="closeModalToBackground"
             >
               完成

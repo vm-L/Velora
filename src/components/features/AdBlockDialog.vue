@@ -24,7 +24,7 @@
                 <VIcon name="refresh" :size="13" :class="{ 'spin-icon': isSyncingAll }" />
                 {{ isSyncingAll ? '更新中' : '更新全部' }}
               </v-button>
-              <v-button variant="primary" size="small" @click="openAddModal">
+              <v-button variant="secondary" size="small" @click="openAddModal">
                 <VIcon name="plus" :size="13" />
                 添加规则源
               </v-button>

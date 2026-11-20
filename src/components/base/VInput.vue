@@ -8,6 +8,7 @@
     class="v-input"
     @input="onInput"
     @change="onChange"
+    @focus="onFocus"
     @blur="onBlur"
     @keyup.enter="$emit('enter', $event)"
   />
@@ -43,7 +44,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'input', 'change', 'blur', 'enter']);
+const emit = defineEmits(['update:modelValue', 'input', 'change', 'blur', 'focus', 'enter']);
 
 const computedValue = computed(() => {
   if (props.modelValue !== undefined) return props.modelValue;
@@ -60,6 +61,11 @@ const onInput = (e: Event) => {
 const onChange = (e: Event) => {
   const target = e.target as HTMLInputElement;
   emit('change', target.value);
+};
+
+const onFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLInputElement;
+  emit('focus', target.value, e);
 };
 
 const onBlur = (e: FocusEvent) => {

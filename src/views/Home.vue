@@ -67,11 +67,11 @@
               <span class="stat-value mono">{{ formatBytes(globalReceivedBytes) }}</span>
             </div>
           </div>
-          <VButton variant="primary" class="new-task-btn" @click="showPanParseModal = true">
+          <VButton variant="secondary" class="new-task-btn" @click="showPanParseModal = true">
             <VIcon name="cloud-download" :size="14" />
             网盘解析
           </VButton>
-          <VButton variant="primary" class="new-task-btn" @click="showNewDownloadModal = true">
+          <VButton variant="secondary" class="new-task-btn" @click="showNewDownloadModal = true">
             <VIcon name="plus" :size="14" />
             新建下载
           </VButton>

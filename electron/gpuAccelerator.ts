@@ -1,24 +1,34 @@
 import { spawn, type ChildProcess } from 'child_process'
-import os from 'os'
 import { logger } from './logger'
 import { storeManager } from './store'
+import {
+  DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT,
+  MIN_VIDEO_COMPRESS_SPEED_LIMIT,
+  MAX_VIDEO_COMPRESS_SPEED_LIMIT,
+  normalizeVideoCompressSpeedLimit,
+  resolveVideoCompressSpeedLimit
+} from './utils/speedLimit'
+
+export {
+  DEFAULT_VIDEO_COMPRESS_SPEED_LIMIT,
+  MIN_VIDEO_COMPRESS_SPEED_LIMIT,
+  MAX_VIDEO_COMPRESS_SPEED_LIMIT,
+  normalizeVideoCompressSpeedLimit,
+  resolveVideoCompressSpeedLimit
+}
 
 export type VideoEncoder = 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'h264_videotoolbox' | 'libx264'
-export type VideoCompressSpeedPreset = 'low' | 'balanced' | 'fast' | 'unlimited'
 export type VideoThrottleScope = 'autoCompress' | 'manualCompress'
 
-export const DEFAULT_VIDEO_COMPRESS_SPEED_PRESET: VideoCompressSpeedPreset = 'unlimited'
 export const DEFAULT_VIDEO_THROTTLE_SCOPES: VideoThrottleScope[] = ['autoCompress']
 
-const VALID_SPEED_PRESETS = new Set<VideoCompressSpeedPreset>(['low', 'balanced', 'fast', 'unlimited'])
 const VALID_THROTTLE_SCOPES = new Set<VideoThrottleScope>(['autoCompress', 'manualCompress'])
 
 export interface FfmpegThrottleConfig {
   enabled: boolean
-  preset: VideoCompressSpeedPreset
+  speedLimit: number
   readrate: number | null
   inputArgs: string[]
-  osPriority: number | null
 }
 
 const CANDIDATE_ENCODERS: VideoEncoder[] = [
@@ -244,7 +254,7 @@ export async function isReadrateSupported(): Promise<boolean> {
     if (supported) {
       logger.info('GPUAccelerator', 'FFmpeg 支持 -readrate 输入限速参数')
     } else {
-      logger.warn('GPUAccelerator', '当前 FFmpeg 不支持 -readrate 参数，将自动降级为仅降低进程优先级')
+      logger.warn('GPUAccelerator', '当前 FFmpeg 不支持 -readrate 参数，已跳过速度限制')
     }
     return supported
   })()
@@ -253,62 +263,44 @@ export async function isReadrateSupported(): Promise<boolean> {
 }
 
 /**
- * 根据生效范围与系统设置解析 FFmpeg 限速及进程优先级配置
+ * 根据生效范围与系统设置解析 FFmpeg 限速配置
  */
 export async function getFfmpegThrottleConfig(scope: VideoThrottleScope): Promise<FfmpegThrottleConfig> {
-  const rawPreset = await storeManager.getSetting('videoCompressSpeedPreset')
-  const preset: VideoCompressSpeedPreset = VALID_SPEED_PRESETS.has(rawPreset)
-    ? rawPreset
-    : DEFAULT_VIDEO_COMPRESS_SPEED_PRESET
+  const rawLimit = await storeManager.getSetting('videoCompressSpeedLimit')
+  const rawPreset = rawLimit === undefined ? await storeManager.getSetting('videoCompressSpeedPreset') : undefined
+  const speedLimit = resolveVideoCompressSpeedLimit({
+    videoCompressSpeedLimit: rawLimit,
+    videoCompressSpeedPreset: rawPreset
+  })
 
   const rawScopes = await storeManager.getSetting('videoThrottleScopes')
   const scopes: VideoThrottleScope[] = Array.isArray(rawScopes)
     ? rawScopes.filter((s): s is VideoThrottleScope => VALID_THROTTLE_SCOPES.has(s))
     : DEFAULT_VIDEO_THROTTLE_SCOPES
 
-  if (preset === 'unlimited' || !scopes.includes(scope)) {
+  if (speedLimit <= 0 || !scopes.includes(scope)) {
     return {
       enabled: false,
-      preset,
+      speedLimit,
       readrate: null,
-      inputArgs: [],
-      osPriority: null
+      inputArgs: []
     }
   }
 
-  let readrate: number
-  let osPriority: number
-  if (preset === 'low') {
-    readrate = 2
-    osPriority = os.constants.priority.PRIORITY_LOW
-  } else if (preset === 'fast') {
-    readrate = 8
-    osPriority = os.constants.priority.PRIORITY_BELOW_NORMAL
-  } else {
-    readrate = 4
-    osPriority = os.constants.priority.PRIORITY_BELOW_NORMAL
+  const readrateSupported = await isReadrateSupported()
+  if (!readrateSupported) {
+    return {
+      enabled: false,
+      speedLimit,
+      readrate: null,
+      inputArgs: []
+    }
   }
 
-  const readrateSupported = await isReadrateSupported()
   return {
     enabled: true,
-    preset,
-    readrate,
-    inputArgs: readrateSupported ? ['-readrate', String(readrate)] : [],
-    osPriority
-  }
-}
-
-/**
- * 为已启动的 FFmpeg 子进程应用限速对应的操作系统调度优先级
- */
-export function applyFfmpegProcessPriority(proc: ChildProcess, throttle?: FfmpegThrottleConfig | null): void {
-  if (!throttle?.enabled || throttle.osPriority === null || !proc.pid) {
-    return
-  }
-  try {
-    os.setPriority(proc.pid, throttle.osPriority)
-  } catch (err: any) {
-    logger.warn('GPUAccelerator', `设置 FFmpeg 进程优先级失败 (pid=${proc.pid}): ${err?.message || err}`)
+    speedLimit,
+    readrate: speedLimit,
+    inputArgs: ['-readrate', String(speedLimit)]
   }
 }

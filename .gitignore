@@ -21,7 +21,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 app.log
-error
 
 # Environment & Local Configs
 .env
@@ -51,3 +50,4 @@ desktop.ini
 *.temp
 
 mv.js
+msg

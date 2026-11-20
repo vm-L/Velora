@@ -93,5 +93,19 @@ export const useWorkspaces = () => {
     }
   }
 
-  return { workspaces, initWorkspace, getWorkspace, addTab, closeTab, updateTab }
+  const resetWorkspace = (resourceId: string) => {
+    const ws = workspaces[resourceId]
+    if (!ws) return
+    const win = typeof window !== 'undefined' ? (window as any) : null
+    if (win?._sniffedBuffer instanceof Map) {
+      for (const tab of ws.tabs) {
+        if (typeof tab.webContentsId === 'number') {
+          win._sniffedBuffer.delete(tab.webContentsId)
+        }
+      }
+    }
+    delete workspaces[resourceId]
+  }
+
+  return { workspaces, initWorkspace, getWorkspace, addTab, closeTab, updateTab, resetWorkspace }
 }

@@ -147,7 +147,7 @@
 
       <template v-for="tab in workspace?.tabs || []" :key="tab.id">
         <webview v-if="!tab.isBlank" v-show="workspace?.activeTabId === tab.id"
-          :src="tab.url" :id="`webview-${tab.id}`" class="webview-el" @dom-ready="onDomReady(tab.id)"
+          :src="tab.url" :id="`webview-${tab.id}`" :partition="sitePartition" class="webview-el" @dom-ready="onDomReady(tab.id)"
           @load-commit="onLoadCommit($event, tab.id)" @page-title-updated="onTitleUpdated($event, tab.id)"
           @page-favicon-updated="onFaviconUpdated($event, tab.id)" @did-start-loading="onStartLoading(tab.id)" @did-navigate="onDidNavigate($event, tab.id)" @did-navigate-in-page="onDidNavigate($event, tab.id)"
           @did-stop-loading="onStopLoading(tab.id)" @context-menu="handleWebviewContextMenu($event, tab.id)" allowpopups>
@@ -164,6 +164,7 @@
       <webview
         :src="target.url"
         :id="`silent-webview-${target.id}`"
+        :partition="sitePartition"
         allowpopups
       ></webview>
     </div>
@@ -178,6 +179,7 @@
         v-if="session.nextUrl && session.status !== 'finished'"
         :src="session.nextUrl"
         :id="`waterfall-bg-webview-${session.tabId}`"
+        :partition="sitePartition"
         allowpopups
         @did-stop-loading="onWaterfallBgStopLoading(session.tabId)"
         @did-fail-load="onWaterfallBgFailLoad($event, session.tabId)"
@@ -315,6 +317,7 @@ import type { WaterfallRule, DuplicateMarkRule } from '@/composables/useSettings
 import { useFileDeduplication } from '@/composables/useFileDeduplication';
 import { useElementPickerSession } from '@/composables/useElementPickerSession';
 import { isSimilarExistingFile } from '@/utils/similarity';
+import { getSitePartition } from '@/utils/sitePartition';
 
 
 import { useMessage } from '@/composables/useMessage';
@@ -325,6 +328,8 @@ const props = defineProps<{
   resourceId: string;
   resourceUrl: string;
 }>();
+
+const sitePartition = computed(() => getSitePartition(props.resourceId));
 
 const parseRuleVisible = ref(false);
 const toggleParseRule = () => {

@@ -96,7 +96,10 @@ export type IconName =
   | 'cloud'
   | 'cloud-download'
   | 'folder-enter'
-  | 'folder-move';
+  | 'folder-move'
+  | 'clean'
+  | 'login'
+  | 'logout';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -584,6 +587,28 @@ const iconsMap: Record<string, string> = {
     <rect x="14" y="3" width="7" height="5" rx="1.5"></rect>
     <rect x="14" y="12" width="7" height="9" rx="1.5"></rect>
     <rect x="3" y="16" width="7" height="5" rx="1.5"></rect>
+  `,
+
+  // 清理缓存 (扫把)
+  'clean': `
+    <path d="m16 22-1-4"></path>
+    <path d="M19 13.99a1 1 0 0 0 1-1V12a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v.99a1 1 0 0 0 1 1"></path>
+    <path d="M5 14h14l1.973 6.767A1 1 0 0 1 20 22H4a1 1 0 0 1-.973-1.233z"></path>
+    <path d="m8 22 1-4"></path>
+  `,
+
+  // 登录
+  'login': `
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+    <polyline points="10 17 15 12 10 7"></polyline>
+    <line x1="15" y1="12" x2="3" y2="12"></line>
+  `,
+
+  // 退出登录
+  'logout': `
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+    <polyline points="16 17 21 12 16 7"></polyline>
+    <line x1="21" y1="12" x2="9" y2="12"></line>
   `
 };
 

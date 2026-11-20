@@ -175,5 +175,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPanPreviewUrl: (params: { type: string; fid: string; filename?: string }) =>
     ipcRenderer.invoke('pan-get-preview-url', params),
   cleanupPanTempDir: (params: { type: string; cleanupDirFid: string }) =>
-    ipcRenderer.invoke('pan-cleanup-temp-dir', params)
+    ipcRenderer.invoke('pan-cleanup-temp-dir', params),
+  clearSiteCache: (resourceId: string, scopes: Array<'cache' | 'cookies' | 'history'>) =>
+    ipcRenderer.invoke('clear-site-cache', resourceId, scopes)
 })

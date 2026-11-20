@@ -4,6 +4,7 @@ import zlib from 'zlib'
 import fs from 'fs'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
+import { session as electronSession } from 'electron'
 
 import path from 'path'
 import { storeManager } from './store'
@@ -15,7 +16,6 @@ import {
   VideoEncoder,
   isGpuEncoder,
   getFfmpegThrottleConfig,
-  applyFfmpegProcessPriority,
   FfmpegThrottleConfig,
   VideoThrottleScope
 } from './gpuAccelerator'
@@ -193,6 +193,49 @@ function sanitizeOutboundHeaders(headers: Record<string, string> | undefined, st
 function hasHeaderCaseInsensitive(headers: Record<string, string>, name: string): boolean {
   const target = name.toLowerCase()
   return Object.keys(headers).some((k) => k.toLowerCase() === target && Boolean(headers[k]))
+}
+
+function getHeaderCaseInsensitive(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+  const target = name.toLowerCase()
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === target && v !== undefined && v !== null && v !== '') {
+      return String(v)
+    }
+  }
+  return undefined
+}
+
+function deleteHeaderCaseInsensitive(headers: Record<string, string> | undefined, name: string): void {
+  if (!headers) return
+  const target = name.toLowerCase()
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === target) {
+      delete headers[k]
+    }
+  }
+}
+
+function mergeCookieHeaders(baseCookie: string | undefined, extraCookie: string | undefined): string | undefined {
+  const cookieMap = new Map<string, string>()
+  const applyRaw = (raw?: string) => {
+    if (!raw) return
+    for (const part of raw.split(';')) {
+      const trimmed = part.trim()
+      if (!trimmed) continue
+      const eqIdx = trimmed.indexOf('=')
+      if (eqIdx <= 0) {
+        cookieMap.set(trimmed, trimmed)
+      } else {
+        const name = trimmed.slice(0, eqIdx).trim()
+        cookieMap.set(name, trimmed)
+      }
+    }
+  }
+  applyRaw(baseCookie)
+  applyRaw(extraCookie)
+  if (cookieMap.size === 0) return undefined
+  return Array.from(cookieMap.values()).join('; ')
 }
 
 function createNodeFetchResponse(
@@ -750,6 +793,18 @@ export function isTransientNetworkError(err: any): boolean {
     '请求超时',
     'network error',
     'timeout',
+    'terminated',
+    'other side closed',
+    'err_http2_protocol_error',
+    'err_quic_protocol_error',
+    'err_empty_response',
+    'err_content_length_mismatch',
+    'err_incomplete_chunked_encoding',
+    'err_proxy_connection_failed',
+    'err_tunnel_connection_failed',
+    'err_socket_not_connected',
+    'err_aborted',
+    'err_connection_aborted',
     'http 429',
     'http 500',
     'http 502',
@@ -775,6 +830,11 @@ export function formatTransientErrorMessage(err: any): string {
   if (/err_internet_disconnected/i.test(msg)) return '网络已断开'
   if (/err_name_not_resolved|enotfound/i.test(msg)) return '域名解析失败 (ENOTFOUND)'
   if (/econnreset/i.test(msg)) return '连接重置 (ECONNRESET)'
+  if (/err_http2_protocol_error/i.test(msg)) return 'HTTP/2 连接中断'
+  if (/err_quic_protocol_error/i.test(msg)) return 'QUIC 连接异常'
+  if (/err_proxy_connection_failed|err_tunnel_connection_failed/i.test(msg)) return '代理连接失败'
+  if (/err_empty_response/i.test(msg)) return '服务器返回空响应'
+  if (/err_content_length_mismatch|数据不完整/i.test(msg)) return '分片数据不完整'
   if (/http 429/i.test(msg)) return '请求过于频繁 (HTTP 429)'
   if (/http 502/i.test(msg)) return '网关错误 (HTTP 502)'
   if (/http 503/i.test(msg)) return '服务暂不可用 (HTTP 503)'
@@ -814,10 +874,177 @@ interface ManagedFetchHandle {
   cleanup: () => void
 }
 
+const M3U8_SESSION_POOL_SIZE = 12
+const M3U8_INTERNAL_REFERER_HEADER = 'X-Velora-M3U8-Referer'
+const M3U8_INTERNAL_ORIGIN_HEADER = 'X-Velora-M3U8-Origin'
+const M3U8_INTERNAL_COOKIE_HEADER = 'X-Velora-M3U8-Cookie'
+const M3U8_INTERNAL_UA_HEADER = 'X-Velora-M3U8-UA'
+let m3u8Sessions: Electron.Session[] | null = null
+
 /**
- * 带连接超时、流读取空闲超时与父级 AbortSignal 全程联动的无缓存网络请求封装
+ * 惰性创建 M3U8 专用无缓存 Electron Session 池（分散 HTTP/2 单连接队头阻塞并保留系统代理/TLS 指纹）
  */
-async function fetchWithManagedTimeout(
+function getM3U8Session(sessionIndex = 0): Electron.Session | null {
+  if (!electronSession || typeof electronSession.fromPartition !== 'function') {
+    return null
+  }
+  if (!m3u8Sessions) {
+    const pool: Electron.Session[] = []
+    for (let i = 0; i < M3U8_SESSION_POOL_SIZE; i++) {
+      const sess = electronSession.fromPartition(`velora-m3u8-pool-${i}`, { cache: false })
+      sess.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
+        const reqHeaders = details.requestHeaders || {}
+        const internalReferer = getHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_REFERER_HEADER)
+        const internalOrigin = getHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_ORIGIN_HEADER)
+        const internalCookie = getHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_COOKIE_HEADER)
+        const internalUa = getHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_UA_HEADER)
+
+        deleteHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_REFERER_HEADER)
+        deleteHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_ORIGIN_HEADER)
+        deleteHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_COOKIE_HEADER)
+        deleteHeaderCaseInsensitive(reqHeaders, M3U8_INTERNAL_UA_HEADER)
+        deleteHeaderCaseInsensitive(reqHeaders, 'X-Velora-Client-Id')
+        deleteHeaderCaseInsensitive(reqHeaders, 'X-Velora-Referer')
+
+        if (internalReferer) {
+          deleteHeaderCaseInsensitive(reqHeaders, 'Referer')
+          reqHeaders['Referer'] = internalReferer
+        }
+        if (internalOrigin) {
+          deleteHeaderCaseInsensitive(reqHeaders, 'Origin')
+          reqHeaders['Origin'] = internalOrigin
+        }
+        if (internalUa) {
+          deleteHeaderCaseInsensitive(reqHeaders, 'User-Agent')
+          reqHeaders['User-Agent'] = internalUa
+        }
+        if (internalCookie) {
+          const existingCookie = getHeaderCaseInsensitive(reqHeaders, 'Cookie')
+          const mergedCookie = mergeCookieHeaders(existingCookie, internalCookie)
+          deleteHeaderCaseInsensitive(reqHeaders, 'Cookie')
+          if (mergedCookie) {
+            reqHeaders['Cookie'] = mergedCookie
+          }
+        }
+
+        callback({ requestHeaders: reqHeaders })
+      })
+      pool.push(sess)
+    }
+    m3u8Sessions = pool
+  }
+  const idx = ((sessionIndex % m3u8Sessions.length) + m3u8Sessions.length) % m3u8Sessions.length
+  return m3u8Sessions[idx]
+}
+
+async function fetchWithM3U8Session(
+  fetchUrl: string,
+  fetchOptions: any,
+  sessionIndex = 0,
+  maxHops = 6
+): Promise<any> {
+  const sess = getM3U8Session(sessionIndex)
+  if (!sess) {
+    return fetchWithRedirectGuard(fetchUrl, fetchOptions, undefined, maxHops)
+  }
+
+  let currentUrl = fetchUrl
+  let currentHeaders = sanitizeOutboundHeaders(fetchOptions?.headers, false)
+  const fallbackReferer = getHeaderCaseInsensitive(fetchOptions?.headers, 'X-Velora-Referer')
+  if (fallbackReferer && !getHeaderCaseInsensitive(currentHeaders, 'Referer')) {
+    currentHeaders['Referer'] = fallbackReferer
+  }
+  let currentMethod = (fetchOptions?.method || 'GET').toUpperCase()
+  let currentBody = fetchOptions?.body
+  const signal = fetchOptions?.signal
+
+  for (let hop = 0; hop <= maxHops; hop++) {
+    if (signal?.aborted) {
+      const reason = signal.reason
+      throw reason instanceof Error ? reason : new DOMException('User aborted download', 'AbortError')
+    }
+
+    const wireHeaders: Record<string, string> = { ...currentHeaders }
+    const refererVal = getHeaderCaseInsensitive(wireHeaders, 'Referer')
+    const originVal = getHeaderCaseInsensitive(wireHeaders, 'Origin')
+    const cookieVal = getHeaderCaseInsensitive(wireHeaders, 'Cookie')
+    const uaVal = getHeaderCaseInsensitive(wireHeaders, 'User-Agent')
+
+    deleteHeaderCaseInsensitive(wireHeaders, 'Referer')
+    deleteHeaderCaseInsensitive(wireHeaders, 'Origin')
+    deleteHeaderCaseInsensitive(wireHeaders, 'Cookie')
+    deleteHeaderCaseInsensitive(wireHeaders, 'User-Agent')
+
+    if (refererVal) wireHeaders[M3U8_INTERNAL_REFERER_HEADER] = refererVal
+    if (originVal) wireHeaders[M3U8_INTERNAL_ORIGIN_HEADER] = originVal
+    if (cookieVal) wireHeaders[M3U8_INTERNAL_COOKIE_HEADER] = cookieVal
+    if (uaVal) wireHeaders[M3U8_INTERNAL_UA_HEADER] = uaVal
+
+    const reqInit: RequestInit = {
+      method: currentMethod,
+      headers: wireHeaders,
+      signal,
+      redirect: 'manual'
+    }
+    if (currentMethod !== 'GET' && currentMethod !== 'HEAD' && currentBody !== undefined && currentBody !== null) {
+      reqInit.body = currentBody
+    }
+
+    const res = await sess.fetch(currentUrl, reqInit)
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location')
+      if (!loc) return res
+      try { await res.body?.cancel?.() } catch {}
+      const resolved = new URL(loc, currentUrl)
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        throw new Error(`不支持的重定向协议: ${resolved.protocol}`)
+      }
+      const prevHost = parseUrlHost(currentUrl)
+      const nextHost = resolved.hostname.toLowerCase()
+      const trusted = isTrustedCrossDomainRedirect(prevHost, nextHost)
+      if (!trusted) {
+        currentHeaders = sanitizeOutboundHeaders(currentHeaders, true)
+      }
+      if ([301, 302, 303].includes(res.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
+        currentMethod = 'GET'
+        currentBody = undefined
+        deleteHeaderCaseInsensitive(currentHeaders, 'Content-Length')
+      }
+      currentUrl = resolved.toString()
+      continue
+    }
+
+    return res
+  }
+
+  throw new Error('下载直链重定向次数过多')
+}
+
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(
+      signal.reason instanceof Error ? signal.reason : new DOMException('User aborted download', 'AbortError')
+    )
+  }
+  if (ms <= 0) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal?.reason instanceof Error ? signal.reason : new DOMException('User aborted download', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+  })
+}
+
+async function fetchWithManagedTimeoutCore(
+  requester: (url: string, opts: any) => Promise<any>,
   fetchUrl: string,
   fetchOptions: any,
   connectTimeoutMs: number = 20000
@@ -861,7 +1088,7 @@ async function fetchWithManagedTimeout(
   }
 
   try {
-    const res = await fetchWithRedirectGuard(
+    const res = await requester(
       fetchUrl,
       {
         ...fetchOptions,
@@ -890,63 +1117,111 @@ async function fetchWithManagedTimeout(
 }
 
 /**
- * 带有超时控制的 fetch 封装（用于 M3U8 列表/小切片/密钥拉取）
+ * 带连接超时、流读取空闲超时与父级 AbortSignal 全程联动的无缓存网络请求封装
  */
-async function fetchWithTimeout(fetchUrl: string, fetchOptions: any, timeoutMs: number = 20000): Promise<any> {
-  const handle = await fetchWithManagedTimeout(fetchUrl, fetchOptions, timeoutMs)
-  const originalArrayBuffer = handle.response.arrayBuffer?.bind(handle.response)
-  const originalText = handle.response.text?.bind(handle.response)
-  handle.resetIdleTimeout(Math.max(timeoutMs, 25000))
-  const wrappedResponse = new Proxy(handle.response, {
-    get(target, prop) {
-      if (prop === 'arrayBuffer' && originalArrayBuffer) {
-        return async () => {
-          try {
-            return await originalArrayBuffer()
-          } catch (err: any) {
-            if (handle.isTimedOut() && !fetchOptions?.signal?.aborted) {
-              throw new Error(`流读取超时 (${timeoutMs}ms 未完成)`)
-            }
-            throw err
-          } finally {
-            handle.cleanup()
-          }
-        }
+async function fetchWithManagedTimeout(
+  fetchUrl: string,
+  fetchOptions: any,
+  connectTimeoutMs: number = 20000
+): Promise<ManagedFetchHandle> {
+  return fetchWithManagedTimeoutCore(
+    (u, opts) => fetchWithRedirectGuard(u, opts),
+    fetchUrl,
+    fetchOptions,
+    connectTimeoutMs
+  )
+}
+
+/**
+ * 基于 M3U8 多 Session 连接池、带连接与流空闲超时的网络请求封装
+ */
+async function fetchM3U8WithManagedTimeout(
+  fetchUrl: string,
+  fetchOptions: any,
+  connectTimeoutMs: number = 15000,
+  sessionIndex: number = 0
+): Promise<ManagedFetchHandle> {
+  return fetchWithManagedTimeoutCore(
+    (u, opts) => fetchWithM3U8Session(u, opts, sessionIndex),
+    fetchUrl,
+    fetchOptions,
+    connectTimeoutMs
+  )
+}
+
+async function readResponseBufferWithIdleTimeout(
+  res: any,
+  handle: ManagedFetchHandle,
+  idleMs: number,
+  signal?: AbortSignal
+): Promise<Buffer> {
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    handle.resetIdleTimeout(idleMs)
+    try {
+      const ab = await res.arrayBuffer()
+      return Buffer.from(ab)
+    } catch (err: any) {
+      if (handle.isTimedOut() && !signal?.aborted) {
+        throw new Error(`流读取超时 (${idleMs}ms 无数据响应)`)
       }
-      if (prop === 'text' && originalText) {
-        return async () => {
-          try {
-            return await originalText()
-          } catch (err: any) {
-            if (handle.isTimedOut() && !fetchOptions?.signal?.aborted) {
-              throw new Error(`流读取超时 (${timeoutMs}ms 未完成)`)
-            }
-            throw err
-          } finally {
-            handle.cleanup()
-          }
-        }
-      }
-      const val = Reflect.get(target, prop)
-      return typeof val === 'function' ? val.bind(target) : val
+      throw err
     }
-  })
-  return { response: wrappedResponse, cleanup: handle.cleanup }
+  }
+
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  handle.resetIdleTimeout(idleMs)
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      handle.resetIdleTimeout(idleMs)
+      if (signal?.aborted) {
+        try { await reader.cancel() } catch {}
+        throw new DOMException('User aborted download', 'AbortError')
+      }
+      if (value && value.byteLength > 0) {
+        chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
+      }
+    }
+    if (handle.isTimedOut() && !signal?.aborted) {
+      throw new Error(`流读取超时 (${idleMs}ms 无数据响应)`)
+    }
+    return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)
+  } catch (err: any) {
+    try { await reader.cancel() } catch {}
+    if (handle.isTimedOut() && !signal?.aborted) {
+      throw new Error(`流读取超时 (${idleMs}ms 无数据响应)`)
+    }
+    throw err
+  }
 }
 
 /**
  * 智能解析 M3U8 Playlist (自动处理 Master Playlist 与相对路径，识别 fMP4/m4s 切片)
  */
-async function parseM3U8(playlistUrl: string, originHeaders: any, signal?: AbortSignal): Promise<M3U8ParseResult> {
-  const { response, cleanup } = await fetchWithTimeout(playlistUrl, { headers: originHeaders, signal }, 20000)
+async function parseM3U8(
+  playlistUrl: string,
+  originHeaders: any,
+  signal?: AbortSignal,
+  sessionIndex: number = 0
+): Promise<M3U8ParseResult> {
+  const handle = await fetchM3U8WithManagedTimeout(
+    playlistUrl,
+    { headers: originHeaders, signal },
+    15000,
+    sessionIndex
+  )
   let text = ''
   try {
-    if (!response.ok) {
-      throw new Error(`无法获取 M3U8 播放列表: HTTP ${response.status}`)
+    if (!handle.response.ok) {
+      try { await handle.response.body?.cancel?.() } catch {}
+      throw new Error(`无法获取 M3U8 播放列表: HTTP ${handle.response.status}`)
     }
-    text = await response.text()
+    const buf = await readResponseBufferWithIdleTimeout(handle.response, handle, 15000, signal)
+    text = buf.toString('utf8')
   } finally {
-    cleanup()
+    handle.cleanup()
   }
   
   if (!text.includes('#EXTM3U')) {
@@ -979,7 +1254,7 @@ async function parseM3U8(playlistUrl: string, originHeaders: any, signal?: Abort
     }
     if (bestSubPlaylistUrl) {
       logger.info('Downloader', `[M3U8Parser] 发现 Master Playlist，已自动选择最高清晰度 (Bandwidth: ${highestBandwidth}) 转向二级子列表: ${bestSubPlaylistUrl}`)
-      return parseM3U8(bestSubPlaylistUrl, originHeaders, signal)
+      return parseM3U8(bestSubPlaylistUrl, originHeaders, signal, sessionIndex)
     }
   }
 
@@ -1511,10 +1786,11 @@ class Downloader {
 
     let handle: ManagedFetchHandle | null = null
     try {
-      handle = await fetchWithManagedTimeout(
+      handle = await fetchM3U8WithManagedTimeout(
         url,
         { headers: { ...headers, Range: 'bytes=0-512' }, signal },
-        15000
+        15000,
+        0
       )
       const reader = handle.response?.body?.getReader?.()
       if (!reader) return false
@@ -1655,7 +1931,7 @@ class Downloader {
         throw new DOMException('User aborted download', 'AbortError')
       }
       try {
-        parseResult = await parseM3U8(url, headers, abortController.signal)
+        parseResult = await parseM3U8(url, headers, abortController.signal, parseAttempts)
       } catch (err: any) {
         if (abortController.signal.aborted && err?.name === 'AbortError') throw err
         if (abortController.signal.aborted) {
@@ -1674,7 +1950,7 @@ class Downloader {
             speed: 0,
             errorMsg: `正在重试: ${friendlyMsg}`
           })
-          await new Promise(r => setTimeout(r, getTransientRetryDelay(parseAttempts, err)))
+          await sleepWithAbort(getTransientRetryDelay(parseAttempts, err), abortController.signal)
           continue
         }
         throw err
@@ -1778,6 +2054,8 @@ class Downloader {
 
     let lastReportTime = Date.now()
     let lastReportBytes = totalReceivedBytes
+    let lastDataReceivedAt = Date.now()
+    let smoothedSpeed = 0
 
     const enqueueSequentialFlush = (forceLog: boolean = false) => {
       const batchBuffers: Buffer[] = []
@@ -1814,24 +2092,33 @@ class Downloader {
       })
     }
 
-    const getAesKey = async (keyUrl: string): Promise<Buffer> => {
+    const getAesKey = async (keyUrl: string, sessionIndex = 0): Promise<Buffer> => {
       const cached = keyCache.get(keyUrl)
       if (cached) return cached
       let pending = keyPromiseCache.get(keyUrl)
       if (!pending) {
         pending = (async () => {
-          const { response: keyRes, cleanup: keyCleanup } = await fetchWithTimeout(
+          const handle = await fetchM3U8WithManagedTimeout(
             keyUrl,
             { headers, signal: abortController.signal as any },
-            15000
+            15000,
+            sessionIndex
           )
           try {
-            if (!keyRes.ok) throw new Error(`Key fetch failed: ${keyUrl} (HTTP ${keyRes.status})`)
-            const buf = Buffer.from(await keyRes.arrayBuffer())
+            if (!handle.response.ok) {
+              try { await handle.response.body?.cancel?.() } catch {}
+              throw new Error(`Key fetch failed: ${keyUrl} (HTTP ${handle.response.status})`)
+            }
+            const buf = await readResponseBufferWithIdleTimeout(
+              handle.response,
+              handle,
+              15000,
+              abortController.signal
+            )
             keyCache.set(keyUrl, buf)
             return buf
           } finally {
-            keyCleanup()
+            handle.cleanup()
           }
         })().finally(() => {
           keyPromiseCache.delete(keyUrl)
@@ -1841,11 +2128,38 @@ class Downloader {
       return pending
     }
 
+    const reportStreamProgress = (force: boolean = false) => {
+      const now = Date.now()
+      if (!force && now - lastReportTime < 500 && nextFlushIndex < segments.length) {
+        return
+      }
+      const dt = Math.max(1, now - lastReportTime)
+      const deltaBytes = Math.max(0, totalReceivedBytes - lastReportBytes)
+      const instSpeed = (deltaBytes / dt) * 1000
+      smoothedSpeed = smoothedSpeed > 0 ? smoothedSpeed * 0.4 + instSpeed * 0.6 : instSpeed
+      this.sendProgress({
+        id,
+        totalBytes: 0,
+        receivedBytes: totalReceivedBytes,
+        downloadedSegments: Math.max(flushedSegmentsCount, nextFlushIndex),
+        totalSegments: segments.length,
+        speed: smoothedSpeed,
+        status: 'downloading',
+        errorMsg: ''
+      })
+      lastReportTime = now
+      lastReportBytes = totalReceivedBytes
+    }
+
     const remainingSegments = Math.max(1, segments.length - skipSegments)
-    const concurrency = Math.min(16, remainingSegments)
+    const concurrency = Math.min(M3U8_SESSION_POOL_SIZE, remainingSegments)
     let segQueueIndex = skipSegments
 
-    const fetchNextSegment = async (): Promise<void> => {
+    const fetchNextSegment = async (workerId: number): Promise<void> => {
+      if (workerId > 0) {
+        await sleepWithAbort(workerId * 50, abortController.signal)
+      }
+
       while (segQueueIndex < segments.length) {
         if (abortController.signal.aborted) {
           throw new DOMException('User aborted download', 'AbortError')
@@ -1856,11 +2170,12 @@ class Downloader {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
-          await new Promise(r => setTimeout(r, 50))
+          await sleepWithAbort(50, abortController.signal)
         }
 
         const seg = segments[segQueueIndex++]
         let attempts = 0
+        let preemptCount = 0
         let success = false
         const maxAttempts = 5
         const maxTransientAttempts = 30
@@ -1869,22 +2184,115 @@ class Downloader {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
+
+          let handle: ManagedFetchHandle | null = null
+          let segReceivedBytes = 0
+          let slowPreempted = false
+          const rollbackSegBytes = () => {
+            if (segReceivedBytes > 0) {
+              totalReceivedBytes = Math.max(0, totalReceivedBytes - segReceivedBytes)
+              segReceivedBytes = 0
+            }
+          }
+          const sessionIdx = (workerId + attempts * 5 + preemptCount * 3) % M3U8_SESSION_POOL_SIZE
+
           try {
-            const { response: res, cleanup: segCleanup } = await fetchWithTimeout(
+            handle = await fetchM3U8WithManagedTimeout(
               seg.url,
               { headers, signal: abortController.signal as any },
-              20000
+              15000,
+              sessionIdx
             )
-            let buf: Buffer
-            try {
-              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-              buf = Buffer.from(await res.arrayBuffer())
-            } finally {
-              segCleanup()
+            const res = handle.response
+            if (!res.ok) {
+              try { await res.body?.cancel?.() } catch {}
+              throw new Error(`HTTP ${res.status}`)
             }
 
+            const rawLen = res.headers?.get?.('content-length')
+            const contentEncoding = String(res.headers?.get?.('content-encoding') || '').toLowerCase().trim()
+            const parsedLen = rawLen ? parseInt(rawLen, 10) : 0
+            const expectedLen = parsedLen > 0 && (!contentEncoding || contentEncoding === 'identity') ? parsedLen : 0
+
+            const chunks: Buffer[] = []
+            if (res.body && typeof res.body.getReader === 'function') {
+              const reader = res.body.getReader()
+              handle.resetIdleTimeout(12000)
+              const connStartTime = Date.now()
+              let windowStartTime = connStartTime
+              let windowBytes = 0
+
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                handle.resetIdleTimeout(12000)
+                if (abortController.signal.aborted) {
+                  try { await reader.cancel() } catch {}
+                  throw new DOMException('User aborted download', 'AbortError')
+                }
+                if (!value || value.byteLength === 0) continue
+
+                const chunkBuf = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+                chunks.push(chunkBuf)
+                segReceivedBytes += chunkBuf.length
+                totalReceivedBytes += chunkBuf.length
+                windowBytes += chunkBuf.length
+                lastDataReceivedAt = Date.now()
+
+                reportStreamProgress(false)
+
+                // 慢连接抢占：每 4s 采样窗口速度，持续 >= 10s 且明显拖后腿时切换新 Session 重下
+                const now = lastDataReceivedAt
+                if (now - windowStartTime >= 4000) {
+                  const winDt = Math.max(1, now - windowStartTime)
+                  const windowBps = (windowBytes * 1000) / winDt
+                  windowStartTime = now
+                  windowBytes = 0
+
+                  const remainingLargeOrUnknown = expectedLen <= 0 || expectedLen - segReceivedBytes > 256 * 1024
+                  if (now - connStartTime >= 10000 && preemptCount < 3 && remainingLargeOrUnknown) {
+                    const avgPerWorkerBps = smoothedSpeed > 0 ? smoothedSpeed / Math.max(1, concurrency) : 0
+                    const floorBps = Math.max(16 * 1024, avgPerWorkerBps * 0.2)
+                    if (windowBps < floorBps) {
+                      preemptCount++
+                      slowPreempted = true
+                      logger.warn(
+                        'Downloader',
+                        `[M3U8Downloader] 分片 ${seg.index} 连接过慢 (${(windowBps / 1024).toFixed(1)} KB/s < 阈值 ${(floorBps / 1024).toFixed(1)} KB/s)，切换连接重试 (${preemptCount}/3)`
+                      )
+                      try { await reader.cancel() } catch {}
+                      rollbackSegBytes()
+                      break
+                    }
+                  }
+                }
+              }
+
+              if (slowPreempted) {
+                continue
+              }
+
+              if (handle.isTimedOut() && !abortController.signal.aborted) {
+                throw new Error('流读取超时 (12000ms 无数据响应)')
+              }
+            } else {
+              handle.resetIdleTimeout(12000)
+              const ab = await res.arrayBuffer()
+              const fallbackBuf = Buffer.from(ab)
+              chunks.push(fallbackBuf)
+              segReceivedBytes = fallbackBuf.length
+              totalReceivedBytes += fallbackBuf.length
+              lastDataReceivedAt = Date.now()
+            }
+
+            if (expectedLen > 0 && segReceivedBytes !== expectedLen) {
+              throw new Error(`分片 ${seg.index} 数据不完整 (${segReceivedBytes}/${expectedLen} 字节)`)
+            }
+
+            let buf = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)
+
             if (seg.key && seg.key.method === 'AES-128') {
-              const keyBuf = await getAesKey(seg.key.url)
+              const keyBuf = await getAesKey(seg.key.url, sessionIdx)
               let ivBuf: Buffer
               if (seg.key.iv) {
                 let hex = seg.key.iv.startsWith('0x') || seg.key.iv.startsWith('0X') ? seg.key.iv.slice(2) : seg.key.iv
@@ -1907,63 +2315,62 @@ class Downloader {
 
             bufferMap.set(seg.index, buf)
             currentBufferedBytes += buf.length
-            totalReceivedBytes += buf.length
 
-            if (bufferMap.has(nextFlushIndex) && currentBufferedBytes >= maxMemoryBytes) {
-              enqueueSequentialFlush(false)
-            } else if (nextFlushIndex === seg.index && bufferMap.size >= 8) {
+            if (
+              bufferMap.has(nextFlushIndex) &&
+              (currentBufferedBytes >= Math.min(maxMemoryBytes, 16 * 1024 * 1024) ||
+                bufferMap.size >= 8 ||
+                nextFlushIndex + bufferMap.size >= segments.length)
+            ) {
               enqueueSequentialFlush(false)
             }
 
-            const now = Date.now()
-            if (now - lastReportTime > 400 || nextFlushIndex === segments.length) {
-              const dt = Math.max(1, now - lastReportTime)
-              const speed = ((totalReceivedBytes - lastReportBytes) / dt) * 1000
-              this.sendProgress({
-                id,
-                totalBytes: 0,
-                receivedBytes: totalReceivedBytes,
-                downloadedSegments: Math.max(flushedSegmentsCount, nextFlushIndex),
-                totalSegments: segments.length,
-                speed,
-                status: 'downloading',
-                errorMsg: ''
-              })
-              lastReportTime = now
-              lastReportBytes = totalReceivedBytes
-            }
-
+            reportStreamProgress(nextFlushIndex >= segments.length)
             success = true
           } catch (e: any) {
+            rollbackSegBytes()
             if (abortController.signal.aborted) {
               throw e?.name === 'AbortError' ? e : new DOMException('User aborted download', 'AbortError')
             }
+            const retryableErr =
+              handle?.isTimedOut()
+                ? new Error(e?.message || '流读取超时 (12000ms 无数据响应)')
+                : e
             attempts++
-            if (isTransientNetworkError(e) || e?.name === 'AbortError') {
+            if (isTransientNetworkError(retryableErr) || retryableErr?.name === 'AbortError') {
               if (attempts >= maxTransientAttempts) {
-                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxTransientAttempts} 次网络错误均无法恢复，终止任务: ${e.message}`)
-                throw new Error(`分片 ${seg.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${e.message})`)
+                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxTransientAttempts} 次网络错误均无法恢复，终止任务: ${retryableErr.message}`)
+                throw new Error(`分片 ${seg.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${retryableErr.message})`)
               }
-              const friendlyMsg = formatTransientErrorMessage(e)
-              logger.warn('Downloader', `[M3U8Downloader] 分片 ${seg.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${e.message}`)
-              this.sendProgress({
-                id,
-                totalBytes: 0,
-                receivedBytes: totalReceivedBytes,
-                downloadedSegments: flushedSegmentsCount,
-                totalSegments: segments.length,
-                speed: 0,
-                status: 'downloading',
-                errorMsg: `正在重试: ${friendlyMsg}`
-              })
-              await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, e)))
+              const friendlyMsg = formatTransientErrorMessage(retryableErr)
+              logger.warn('Downloader', `[M3U8Downloader] 分片 ${seg.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${retryableErr.message}`)
+              const now = Date.now()
+              const isGlobalStalled = now - lastDataReceivedAt > 3000
+              if (attempts >= 3 || isGlobalStalled) {
+                if (isGlobalStalled) {
+                  smoothedSpeed = 0
+                }
+                this.sendProgress({
+                  id,
+                  totalBytes: 0,
+                  receivedBytes: totalReceivedBytes,
+                  downloadedSegments: flushedSegmentsCount,
+                  totalSegments: segments.length,
+                  speed: isGlobalStalled ? 0 : smoothedSpeed,
+                  status: 'downloading',
+                  errorMsg: `正在重试: ${friendlyMsg}`
+                })
+              }
+              await sleepWithAbort(getTransientRetryDelay(attempts, retryableErr), abortController.signal)
             } else {
               if (attempts >= maxAttempts) {
-                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxAttempts} 次均失败: ${e.message}`)
-                throw new Error(`分片 ${seg.index} 下载失败 (${e.message})`)
+                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxAttempts} 次均失败: ${retryableErr.message}`)
+                throw new Error(`分片 ${seg.index} 下载失败 (${retryableErr.message})`)
               }
-              await new Promise(r => setTimeout(r, getTransientRetryDelay(attempts, e)))
+              await sleepWithAbort(getTransientRetryDelay(attempts, retryableErr), abortController.signal)
             }
+          } finally {
+            handle?.cleanup()
           }
         }
       }
@@ -1971,7 +2378,7 @@ class Downloader {
 
     const workers: Promise<void>[] = []
     for (let c = 0; c < concurrency; c++) {
-      workers.push(fetchNextSegment())
+      workers.push(fetchNextSegment(c))
     }
 
     try {
@@ -3102,8 +3509,8 @@ class Downloader {
 
       const encoders = await getAvailableEncoders()
       const throttle = await getFfmpegThrottleConfig(item.scope)
-      const throttleDesc = throttle.enabled
-        ? (throttle.readrate ? `限速 ${throttle.readrate}x` : '低进程优先级')
+      const throttleDesc = throttle.enabled && throttle.readrate
+        ? `限速 ${throttle.readrate}x`
         : '全速'
       let compressSuccess = false
       let usedEncoder = ''
@@ -3331,7 +3738,6 @@ class Downloader {
       ]
 
       const proc = spawn('ffmpeg', args)
-      applyFfmpegProcessPriority(proc, throttle)
       const startTime = Date.now()
       let lastProgressTime = 0
       let stdoutBuffer = ''

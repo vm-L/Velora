@@ -18,7 +18,7 @@
     <div v-else-if="!videoDetail" class="error-container">
       <VIcon name="error" :size="48" />
       <p>{{ error || '视频详情不存在或已被移除' }}</p>
-      <v-button variant="primary" @click="goBack">返回上一页</v-button>
+      <v-button variant="secondary" @click="goBack">返回上一页</v-button>
     </div>
 
     <!-- 主体内容 -->

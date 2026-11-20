@@ -8,13 +8,16 @@
         :readonly="!allowInput"
         class="select-input"
         @update:model-value="onInputChange"
-        @keyup.enter="$emit('enter', $event)"
+        @focus="onInputFocus"
+        @blur="onInputBlur"
+        @enter="onInputEnter"
       />
       <button
         type="button"
         class="dropdown-toggle-btn"
         :title="isOpen ? '收起选项' : '展开选项'"
         :disabled="disabled"
+        @mousedown.prevent.stop
         @click.stop="toggleOpen"
       >
         <VIcon name="chevron-down" :size="14" :class="{ open: isOpen }" />
@@ -31,6 +34,7 @@
             class="select-item"
             :class="{ active: modelValue === item.value }"
             :style="{ paddingLeft: (12 + (item.depth || 0) * 14) + 'px' }"
+            @mousedown.prevent
             @click="selectOption(item)"
           >
             <span class="item-icon" v-if="item.depth !== undefined">
@@ -83,6 +87,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', val: string): void;
   (e: 'change', val: string): void;
   (e: 'select', val: string, item: InputSelectOption): void;
+  (e: 'blur', val: string, evt: FocusEvent): void;
+  (e: 'focus', val: string, evt: FocusEvent): void;
   (e: 'enter', evt: KeyboardEvent): void;
 }>();
 
@@ -164,6 +170,19 @@ const onInputChange = (val: string) => {
   if (!props.allowInput) return;
   emit('update:modelValue', val);
   emit('change', val);
+};
+
+const onInputFocus = (val: string, evt: FocusEvent) => {
+  emit('focus', val, evt);
+};
+
+const onInputBlur = (val: string, evt: FocusEvent) => {
+  emit('blur', val, evt);
+};
+
+const onInputEnter = (evt: KeyboardEvent) => {
+  isOpen.value = false;
+  emit('enter', evt);
 };
 
 const selectOption = (item: InputSelectOption) => {
