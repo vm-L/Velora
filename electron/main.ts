@@ -945,6 +945,10 @@ function setupIpcHandlers() {
     downloader.cancelDownload(id)
   })
 
+  ipcMain.handle('skip-failed-m3u8-segments', async (_, cmd) => {
+    return await downloader.skipFailedM3U8Segments(cmd)
+  })
+
   ipcMain.handle('get-video-media-info', async (_, filePath: string) => {
     return await downloader.getVideoMediaInfo(filePath)
   })
@@ -967,6 +971,10 @@ function setupIpcHandlers() {
       filePath,
       filePath + '.temp.mp4',
       filePath + '.temp.ts',
+      filePath + '.spill.bin',
+      filePath + '.spill.meta.json',
+      filePath + '.spill.meta.json.tmp',
+      filePath + '.segs',
       filePath + '.temp',
       filePath + '.tmp',
       filePath + '.velora',
@@ -981,7 +989,7 @@ function setupIpcHandlers() {
       if (fs.existsSync(targetPath)) {
         for (let attempt = 0; attempt < 5; attempt++) {
           try {
-            await fs.promises.unlink(targetPath);
+            await fs.promises.rm(targetPath, { recursive: true, force: true });
             anyDeleted = true;
             logger.info('Main', `Deleted file: ${targetPath}`);
             break;
@@ -1021,6 +1029,10 @@ function setupIpcHandlers() {
       filePath,
       filePath + '.temp.mp4',
       filePath + '.temp.ts',
+      filePath + '.spill.bin',
+      filePath + '.spill.meta.json',
+      filePath + '.spill.meta.json.tmp',
+      filePath + '.segs',
       filePath + '.temp',
       filePath + '.tmp',
       filePath + '.velora',

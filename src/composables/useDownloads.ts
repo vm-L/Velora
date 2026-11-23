@@ -51,6 +51,9 @@ const serializeTaskForDb = (t: DownloadTask): DownloadTask => ({
   speed: t.speed,
   ...(t.downloadedSegments !== undefined ? { downloadedSegments: t.downloadedSegments } : {}),
   ...(t.totalSegments !== undefined ? { totalSegments: t.totalSegments } : {}),
+  ...(t.canSkipFailedSegments ? { canSkipFailedSegments: true } : {}),
+  ...(t.failedSegmentsCount !== undefined && t.failedSegmentsCount > 0 ? { failedSegmentsCount: t.failedSegmentsCount } : {}),
+  ...(t.skippedSegments !== undefined && t.skippedSegments > 0 ? { skippedSegments: t.skippedSegments } : {}),
   ...(t.referer !== undefined ? { referer: t.referer } : {}),
   ...(sanitizeHeadersForDb(t.headers) ? { headers: sanitizeHeadersForDb(t.headers) } : {}),
   ...(t.panContext ? { panContext: clonePanContext(t.panContext) } : {}),
@@ -278,7 +281,35 @@ export const useDownloads = () => {
             delete t.errorMsg
           }
 
-          if (data.progress !== undefined && (t.status === 'compressing' || t.status === 'converting' || t.status === 'processing' || t.status === 'waiting')) {
+          if (data.canSkipFailedSegments !== undefined) {
+            if (data.canSkipFailedSegments) {
+              t.canSkipFailedSegments = true
+            } else {
+              delete t.canSkipFailedSegments
+            }
+          } else if (['completed', 'converting', 'compressing', 'resolving', 'error'].includes(t.status)) {
+            delete t.canSkipFailedSegments
+          }
+
+          if (data.failedSegmentsCount !== undefined) {
+            if (data.failedSegmentsCount > 0) {
+              t.failedSegmentsCount = data.failedSegmentsCount
+            } else {
+              delete t.failedSegmentsCount
+            }
+          } else if (['completed', 'converting', 'compressing', 'resolving', 'error'].includes(t.status)) {
+            delete t.failedSegmentsCount
+          }
+
+          if (data.skippedSegments !== undefined) {
+            if (data.skippedSegments > 0) {
+              t.skippedSegments = data.skippedSegments
+            } else {
+              delete t.skippedSegments
+            }
+          }
+
+          if (data.progress !== undefined && (t.status === 'completed' || t.status === 'compressing' || t.status === 'converting' || t.status === 'processing' || t.status === 'waiting')) {
             t.progress = data.progress
           } else if (t.totalSegments && t.totalSegments > 0) {
             t.progress = Math.min(100, Math.round((t.downloadedSegments! / t.totalSegments!) * 100))
@@ -312,14 +343,26 @@ export const useDownloads = () => {
           } else if (prevStatus === 'compressing' && t.status === 'completed') {
             // Compression completed
             notifiedErrorTaskIds.delete(t.id)
+            const skipped = data.skippedSegments ?? t.skippedSegments ?? 0
             const { useMessage } = await import('@/composables/useMessage')
-            useMessage().showMessage(`任务 "${t.name}" 压缩完成`, 'success')
+            useMessage().showMessage(
+              skipped > 0
+                ? `任务 "${t.name}" 压缩完成（已跳过 ${skipped} 个失效分片）`
+                : `任务 "${t.name}" 压缩完成`,
+              'success'
+            )
             recordFile(t.name, t.savePath)
           } else if (activeStatuses.includes(prevStatus) && t.status === 'completed') {
             // Normal download completed (without compression)
             notifiedErrorTaskIds.delete(t.id)
+            const skipped = data.skippedSegments ?? t.skippedSegments ?? 0
             const { useMessage } = await import('@/composables/useMessage')
-            useMessage().showMessage(`任务 "${t.name}" 下载完成`, 'success')
+            useMessage().showMessage(
+              skipped > 0
+                ? `任务 "${t.name}" 下载完成（已跳过 ${skipped} 个失效分片）`
+                : `任务 "${t.name}" 下载完成`,
+              'success'
+            )
             recordFile(t.name, t.savePath)
           } else if (activeStatuses.includes(prevStatus) && t.status === 'error') {
             if (!notifiedErrorTaskIds.has(t.id)) {
@@ -635,6 +678,9 @@ export const useDownloads = () => {
     const t = tasks.value.find(t => t.id === id)
     if (t && window.electronAPI) {
       delete t.errorMsg
+      delete t.canSkipFailedSegments
+      delete t.failedSegmentsCount
+      delete t.skippedSegments
 
       if (t.status === 'file_removed' || t.status === 'file_corrupted') {
         t.receivedBytes = 0
@@ -727,6 +773,29 @@ export const useDownloads = () => {
     return changedTasks.length;
   };
 
+  const skipFailedSegmentsTask = async (id: string) => {
+    const t = tasks.value.find(task => task.id === id)
+    if (!t || !window.electronAPI?.skipFailedM3U8Segments) {
+      return { success: false, error: '当前环境不支持跳过分片封装' }
+    }
+    try {
+      return await window.electronAPI.skipFailedM3U8Segments({
+        id: t.id,
+        url: t.url,
+        savePath: t.savePath,
+        startBytes: t.receivedBytes,
+        downloadedSegments: t.downloadedSegments,
+        totalSegments: t.totalSegments,
+        referer: t.referer,
+        headers: t.headers,
+        totalBytes: t.totalBytes,
+        panContext: clonePanContext(t.panContext)
+      })
+    } catch (err: any) {
+      return { success: false, error: err?.message || '跳过失效分片封装失败' }
+    }
+  }
+
   return {
     tasks,
     isInitialized,
@@ -736,6 +805,7 @@ export const useDownloads = () => {
     addDownloadsBatch,
     pauseTask,
     resumeTask,
+    skipFailedSegmentsTask,
     deleteTask,
     updateTaskDb,
     auditDiskFiles

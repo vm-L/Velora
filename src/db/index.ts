@@ -23,6 +23,9 @@ export interface DownloadTask {
   speed: number; // bytes per second
   downloadedSegments?: number;
   totalSegments?: number;
+  canSkipFailedSegments?: boolean;
+  failedSegmentsCount?: number;
+  skippedSegments?: number;
   referer?: string;
   headers?: Record<string, string>;
   panContext?: PanTaskContext;

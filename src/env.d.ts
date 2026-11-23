@@ -34,6 +34,7 @@ interface Window {
     startDownload: (cmd: any) => void
     pauseDownload: (id: string) => void
     cancelDownload: (id: string) => void
+    skipFailedM3U8Segments?: (cmd: any) => Promise<{ success: boolean; skippedSegments?: number; error?: string }>
     getVideoMediaInfo: (filePath: string) => Promise<{ duration: number; bitrate: number; size: number }>
     compressVideoTask: (taskId: string, filePath: string, targetBitrateKbps: number) => Promise<{ success: boolean; newSize?: number; error?: string }>
     deleteFile: (filePath: string) => Promise<boolean>

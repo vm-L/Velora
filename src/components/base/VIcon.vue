@@ -99,7 +99,8 @@ export type IconName =
   | 'folder-move'
   | 'clean'
   | 'login'
-  | 'logout';
+  | 'logout'
+  | 'skip-forward';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -609,6 +610,12 @@ const iconsMap: Record<string, string> = {
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
     <polyline points="16 17 21 12 16 7"></polyline>
     <line x1="21" y1="12" x2="9" y2="12"></line>
+  `,
+
+  // 跳过失效分片并封装
+  'skip-forward': `
+    <polygon points="5 4 15 12 5 20 5 4"></polygon>
+    <line x1="19" y1="5" x2="19" y2="19"></line>
   `
 };
 

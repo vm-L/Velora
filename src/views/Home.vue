@@ -124,6 +124,15 @@
                 <v-button v-else-if="task.status === 'completed'" variant="icon-secondary" title="播放/预览" @click.stop="openTask(task)">
                   <VIcon name="play" :size="14" />
                 </v-button>
+                <!-- 仅剩失败分片或命中源站永久失效时：手动跳过失效分片并直接合并封装 -->
+                <VButton
+                  v-if="task.canSkipFailedSegments && ['downloading', 'paused'].includes(task.status)"
+                  variant="icon-secondary"
+                  title="跳过失效分片并封装"
+                  @click.stop="confirmSkipFailedSegments(task)"
+                >
+                  <VIcon name="skip-forward" :size="14" />
+                </VButton>
                 <VButton variant="icon-secondary" title="编辑任务" @click.stop="openEditTask(task)">
                   <VIcon name="edit" :size="14" />
                 </VButton>
@@ -241,7 +250,7 @@ import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
 import { logger } from '@/services/logger';
 import { formatBytes } from '@/utils/format';
 
-const { tasks, pauseTask, resumeTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
+const { tasks, pauseTask, resumeTask, skipFailedSegmentsTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 const { showMessage } = useMessage();
 const { showNotification } = useNotification();
 const { confirm } = useConfirm();
@@ -679,6 +688,23 @@ const formatETA = (total: number, received: number, speed: number) => {
 };
 
 
+
+const confirmSkipFailedSegments = async (task: any) => {
+  if (!task?.id) return;
+  const userConfirmed = await confirm({
+    title: '跳过失效分片并封装',
+    message: '确定要跳过当前无法下载的失败分片，直接合并封装已完成部分吗？缺失位置在播放时可能会有短暂跳帧。',
+    confirmText: '跳过并封装',
+    cancelText: '取消',
+    type: 'warning'
+  });
+  if (!userConfirmed) return;
+
+  const res = await skipFailedSegmentsTask(task.id);
+  if (!res?.success && res?.error) {
+    showMessage(`跳过封装失败: ${res.error}`, 'error', 3000);
+  }
+};
 
 const openDirectory = async (task: any) => {
   if (!task.savePath) {

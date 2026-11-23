@@ -10,6 +10,19 @@ import path from 'path'
 import { storeManager } from './store'
 import { logger } from './logger'
 import { ensureSafeTargetSavePath } from './utils/fileSystem'
+import { M3U8SegmentScheduler, isPermanentOriginSegmentError } from './utils/m3u8Scheduler'
+import {
+  M3U8SpillPack,
+  OrderedM3U8SegmentInput,
+  buildCoalescedM3U8StreamPlan,
+  cleanupM3U8SpillArtifacts,
+  getM3U8SpillPaths,
+  hasUnmergedM3U8Spill,
+  inspectM3U8SpillForResume,
+  materializeSourcesToFile,
+  streamSourcesToWritable,
+  writeBufferFully
+} from './utils/m3u8SpillPack'
 import {
   getAvailableEncoders,
   getEncoderArgs,
@@ -734,6 +747,8 @@ export interface M3U8Segment {
   url: string
   duration: number
   key?: { method: string, url: string, iv?: string }
+  discontinuity?: boolean
+  byteRange?: string
 }
 
 export interface M3U8ParseResult {
@@ -957,6 +972,21 @@ async function fetchWithM3U8Session(
   let currentMethod = (fetchOptions?.method || 'GET').toUpperCase()
   let currentBody = fetchOptions?.body
   const signal = fetchOptions?.signal
+  let redirectHops = 0
+  let crossDomainRedirect = false
+  let strippedCredentials = false
+
+  const attachFetchMeta = (res: any) => {
+    try {
+      ;(res as any).__veloraFetchMeta = {
+        finalUrl: currentUrl,
+        redirectHops,
+        crossDomainRedirect,
+        strippedCredentials
+      }
+    } catch {}
+    return res
+  }
 
   for (let hop = 0; hop <= maxHops; hop++) {
     if (signal?.aborted) {
@@ -994,7 +1024,7 @@ async function fetchWithM3U8Session(
 
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const loc = res.headers.get('location')
-      if (!loc) return res
+      if (!loc) return attachFetchMeta(res)
       try { await res.body?.cancel?.() } catch {}
       const resolved = new URL(loc, currentUrl)
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
@@ -1003,7 +1033,12 @@ async function fetchWithM3U8Session(
       const prevHost = parseUrlHost(currentUrl)
       const nextHost = resolved.hostname.toLowerCase()
       const trusted = isTrustedCrossDomainRedirect(prevHost, nextHost)
+      redirectHops++
+      if (prevHost && nextHost && prevHost !== nextHost) {
+        crossDomainRedirect = true
+      }
       if (!trusted) {
+        strippedCredentials = true
         currentHeaders = sanitizeOutboundHeaders(currentHeaders, true)
       }
       if ([301, 302, 303].includes(res.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
@@ -1015,7 +1050,7 @@ async function fetchWithM3U8Session(
       continue
     }
 
-    return res
+    return attachFetchMeta(res)
   }
 
   throw new Error('下载直链重定向次数过多')
@@ -1215,8 +1250,12 @@ async function parseM3U8(
   let text = ''
   try {
     if (!handle.response.ok) {
-      try { await handle.response.body?.cancel?.() } catch {}
-      throw new Error(`无法获取 M3U8 播放列表: HTTP ${handle.response.status}`)
+      throw await createHttpResponseError(
+        handle.response,
+        'playlist',
+        true,
+        `无法获取 M3U8 播放列表: HTTP ${handle.response.status}`
+      )
     }
     const buf = await readResponseBufferWithIdleTimeout(handle.response, handle, 15000, signal)
     text = buf.toString('utf8')
@@ -1265,6 +1304,8 @@ async function parseM3U8(
   let index = 0
   let currentKey: { method: string, url: string, iv?: string } | undefined = undefined
   let isFmp4 = false
+  let pendingDiscontinuity = false
+  let pendingByteRange: string | undefined = undefined
 
   if (text.includes('#EXT-X-MAP:')) {
     isFmp4 = true
@@ -1289,6 +1330,13 @@ async function parseM3U8(
           }
         }
       }
+    } else if (line === '#EXT-X-DISCONTINUITY') {
+      pendingDiscontinuity = true
+    } else if (line.startsWith('#EXT-X-BYTERANGE:')) {
+      const rawRange = line.slice('#EXT-X-BYTERANGE:'.length).trim()
+      if (rawRange) {
+        pendingByteRange = rawRange
+      }
     } else if (line.startsWith('#EXT-X-MAP:')) {
       isFmp4 = true
       const uriMatch = line.match(/URI="([^"]+)"/)
@@ -1297,8 +1345,12 @@ async function parseM3U8(
           index: index++,
           url: resolveUrl(playlistUrl, uriMatch[1]),
           duration: 0,
-          key: currentKey
+          key: currentKey,
+          ...(pendingDiscontinuity ? { discontinuity: true } : {}),
+          ...(pendingByteRange ? { byteRange: pendingByteRange } : {})
         })
+        pendingDiscontinuity = false
+        pendingByteRange = undefined
       }
     } else if (line.startsWith('#EXTINF:')) {
       const durMatch = line.match(/#EXTINF:([\d\.]+)/)
@@ -1315,8 +1367,12 @@ async function parseM3U8(
         index: index++,
         url: segUrl,
         duration: currentDuration,
-        key: currentKey
+        key: currentKey,
+        ...(pendingDiscontinuity ? { discontinuity: true } : {}),
+        ...(pendingByteRange ? { byteRange: pendingByteRange } : {})
       })
+      pendingDiscontinuity = false
+      pendingByteRange = undefined
     }
   }
 
@@ -1461,27 +1517,207 @@ interface CompressQueueItem {
   targetBitrateKbps: number
   scope: VideoThrottleScope
   totalSegments?: number
+  downloadedSegments?: number
+  skippedSegments?: number
   resolve?: (res: { success: boolean; newSize?: number; error?: string; skipped?: boolean }) => void
   reject?: (err: any) => void
 }
 
-async function writeBufferFully(
-  handle: fs.promises.FileHandle,
-  buf: Buffer,
-  position: number | null = null
-): Promise<void> {
-  let offset = 0
-  let currentPos = position
-  while (offset < buf.length) {
-    const { bytesWritten } = await handle.write(buf, offset, buf.length - offset, currentPos)
-    if (bytesWritten <= 0) {
-      throw new Error('磁盘写入失败 (0 字节写入)')
+function extractHttpStatusCode(err: any): number | null {
+  if (typeof err?.httpStatus === 'number') {
+    return err.httpStatus
+  }
+  const msg = err?.message || String(err || '')
+  const match = msg.match(/\bHTTP\s+(\d{3})\b/i)
+  return match ? parseInt(match[1], 10) : null
+}
+
+interface UrlDiagInfo {
+  host: string
+  ext: string
+  pathTail: string
+  queryKeys: string[]
+  fingerprint: string
+}
+
+interface FetchDiagMeta {
+  finalUrl: string
+  redirectHops: number
+  crossDomainRedirect: boolean
+  strippedCredentials: boolean
+}
+
+interface HttpErrorDiag {
+  phase: 'playlist' | 'segment' | 'key'
+  status: number
+  resHeaders: string
+  bodySnippet: string
+  fetchMeta?: FetchDiagMeta
+}
+
+const DIAG_RESPONSE_HEADER_WHITELIST = [
+  'server',
+  'content-type',
+  'content-length',
+  'cf-ray',
+  'cf-mitigated',
+  'x-cache',
+  'via',
+  'www-authenticate',
+  'retry-after',
+  'location',
+  'x-amz-error-code',
+  'x-oss-ec',
+  'x-cos-trace-id',
+  'x-request-id'
+]
+
+function sanitizeUrlDiagnostic(rawUrl: string): UrlDiagInfo {
+  const fingerprint = crypto.createHash('sha1').update(String(rawUrl || '')).digest('hex').slice(0, 8)
+  try {
+    const u = new URL(rawUrl)
+    const host = (u.hostname || '').toLowerCase()
+    const parts = u.pathname.split('/').filter(Boolean)
+    const pathTail = parts.length === 0 ? '/' : parts.slice(-2).join('/')
+    const lastPart = parts[parts.length - 1] || ''
+    const dotIdx = lastPart.lastIndexOf('.')
+    const ext = dotIdx > 0 ? lastPart.slice(dotIdx).toLowerCase() : 'none'
+    const keySet = new Set<string>()
+    u.searchParams.forEach((_v, k) => {
+      if (k) keySet.add(k)
+    })
+    return {
+      host: host || 'unknown',
+      ext,
+      pathTail,
+      queryKeys: Array.from(keySet),
+      fingerprint
     }
-    offset += bytesWritten
-    if (currentPos !== null) {
-      currentPos += bytesWritten
+  } catch {
+    return {
+      host: 'invalid',
+      ext: 'none',
+      pathTail: '',
+      queryKeys: [],
+      fingerprint
     }
   }
+}
+
+function extractDiagnosticResponseHeaders(headers: any): string {
+  if (!headers || typeof headers.get !== 'function') return ''
+  const pairs: string[] = []
+  for (let i = 0; i < DIAG_RESPONSE_HEADER_WHITELIST.length; i++) {
+    const key = DIAG_RESPONSE_HEADER_WHITELIST[i]
+    try {
+      const val = headers.get(key)
+      if (val !== null && val !== undefined && String(val).trim() !== '') {
+        const clean = String(val).replace(/[\r\n]+/g, ' ').trim()
+        pairs.push(`${key}=${clean.length > 100 ? clean.slice(0, 100) + '...' : clean}`)
+      }
+    } catch {}
+  }
+  return pairs.join(', ')
+}
+
+function buildRequestHeaderSummary(reqHeaders: Record<string, string>): string {
+  const ref = getHeaderCaseInsensitive(reqHeaders, 'Referer')
+  const origin = getHeaderCaseInsensitive(reqHeaders, 'Origin')
+  const cookie = getHeaderCaseInsensitive(reqHeaders, 'Cookie')
+  const cookieCount = cookie
+    ? cookie.split(';').map(s => s.trim()).filter(Boolean).length
+    : 0
+  const safeKeys = Object.keys(reqHeaders).filter(Boolean)
+  return `refererHost=${ref ? parseUrlHost(ref) || 'set' : 'none'}, originHost=${origin ? parseUrlHost(origin) || 'set' : 'none'}, cookieCount=${cookieCount}, keys=[${safeKeys.join(',')}]`
+}
+
+async function readErrorBodySnippet(res: any, maxBytes = 512, timeoutMs = 1500): Promise<string> {
+  if (!res) return ''
+  const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase()
+  if (/^(video|audio|image)\//i.test(contentType) || contentType.includes('application/octet-stream')) {
+    try { await res.body?.cancel?.() } catch {}
+    return ''
+  }
+
+  const formatSnippet = (buf: Buffer): string => {
+    const clean = buf
+      .toString('utf8')
+      .replace(/[\x00-\x1f\x7f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/"/g, "'")
+      .trim()
+    return clean.length > 240 ? clean.slice(0, 240) + '...' : clean
+  }
+
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    let timer: NodeJS.Timeout | null = null
+    try {
+      const text = await Promise.race<string>([
+        res.text(),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve(''), timeoutMs)
+        })
+      ])
+      return formatSnippet(Buffer.from(String(text || ''), 'utf8').subarray(0, maxBytes))
+    } catch {
+      return ''
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  let collected = 0
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    try { void reader.cancel() } catch {}
+  }, timeoutMs)
+
+  try {
+    while (collected < maxBytes && !timedOut) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.byteLength > 0) {
+        const remaining = maxBytes - collected
+        const slice = value.byteLength > remaining ? value.subarray(0, remaining) : value
+        chunks.push(Buffer.from(slice.buffer, slice.byteOffset, slice.byteLength))
+        collected += slice.byteLength
+      }
+    }
+  } catch {
+    // 忽略诊断体读取中断，返回已采集片段
+  } finally {
+    clearTimeout(timer)
+    try { await reader.cancel() } catch {}
+  }
+
+  if (chunks.length === 0) return ''
+  return formatSnippet(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks))
+}
+
+async function createHttpResponseError(
+  res: any,
+  phase: 'playlist' | 'segment' | 'key',
+  readBody: boolean,
+  prefixMessage?: string
+): Promise<Error> {
+  const resHeaders = extractDiagnosticResponseHeaders(res?.headers)
+  const bodySnippet = readBody ? await readErrorBodySnippet(res, 512, 1500) : ''
+  if (!readBody) {
+    try { await res?.body?.cancel?.() } catch {}
+  }
+  const err: any = new Error(prefixMessage || `HTTP ${res?.status ?? 'unknown'}`)
+  err.httpStatus = res?.status
+  err.diag = {
+    phase,
+    status: res?.status || 0,
+    resHeaders,
+    bodySnippet,
+    fetchMeta: (res as any)?.__veloraFetchMeta
+  } satisfies HttpErrorDiag
+  return err
 }
 
 export interface TaskStats {
@@ -1501,8 +1737,9 @@ export function formatSpeed(bytesPerSec: number): string {
 }
 
 class Downloader {
-  private activeDownloads: Map<string, { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[] }> = new Map()
+  private activeDownloads: Map<string, { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[]; switchingToSkip?: boolean }> = new Map()
   private startingIds: Set<string> = new Set()
+  private skippingIds: Set<string> = new Set()
   private pendingQueue: DownloadCommand[] = []
 
   hasUnfinishedTempDirRef(panType: string, cleanupDirFid: string, excludeTaskId?: string): boolean {
@@ -1810,7 +2047,7 @@ class Downloader {
 
   private runTask(cmd: DownloadCommand) {
     const abortController = new AbortController()
-    const entry: { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[] } = {
+    const entry: { abortController: AbortController; cmd: DownloadCommand; donePromise?: Promise<void>; tempPaths?: string[]; switchingToSkip?: boolean } = {
       abortController,
       cmd
     }
@@ -1845,7 +2082,17 @@ class Downloader {
     } catch (err: any) {
       logger.error('Downloader', `[Downloader] 任务 ${cmd.id} 执行异常: ${err.message}`)
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
-        const pausedPayload: any = { id: cmd.id, status: 'paused', speed: 0 }
+        if (this.activeDownloads.get(cmd.id)?.switchingToSkip) {
+          return
+        }
+        const pausedPayload: any = {
+          id: cmd.id,
+          status: 'paused',
+          speed: 0,
+          errorMsg: typeof err?.errorMsg === 'string' ? err.errorMsg : '',
+          canSkipFailedSegments: Boolean(err?.canSkipFailedSegments),
+          failedSegmentsCount: typeof err?.failedSegmentsCount === 'number' ? err.failedSegmentsCount : 0
+        }
         if (typeof err?.savedBytes === 'number') {
           pausedPayload.receivedBytes = err.savedBytes
         }
@@ -1889,9 +2136,10 @@ class Downloader {
     const isTargetMp4 = true
     const tempMp4Path = finalSavePath + '.temp.mp4'
     const tempTsPath = finalSavePath + '.temp.ts'
+    const spillPaths = getM3U8SpillPaths(finalSavePath)
 
     // 1. 检查是否已有完整封装的目标文件（仅当记录的分片数已达到总分片数且有效封装时才跳过）
-    if (fs.existsSync(finalSavePath) && !fs.existsSync(tempMp4Path) && !fs.existsSync(tempTsPath)) {
+    if (fs.existsSync(finalSavePath) && !fs.existsSync(tempMp4Path) && !fs.existsSync(tempTsPath) && !hasUnmergedM3U8Spill(finalSavePath)) {
       try {
         const stat = fs.statSync(finalSavePath)
         const isSegmentsFullyRecorded = cmd.totalSegments && cmd.downloadedSegments && cmd.downloadedSegments >= cmd.totalSegments
@@ -1968,7 +2216,7 @@ class Downloader {
       workSavePath = tempTsPath
     }
 
-    // 2. 检查临时文件是否已全量就绪（必须满足分片数全量达到总分片数，严禁只凭临时文件大小判定就绪）
+    // 2. 检查临时文件是否已全量就绪（必须满足分片数全量达到总分片数且无未合并的乱序分片目录）
     if (fs.existsSync(workSavePath)) {
       try {
         const stat = fs.statSync(workSavePath)
@@ -1978,7 +2226,8 @@ class Downloader {
             (cmd.totalSegments !== undefined && cmd.downloadedSegments >= cmd.totalSegments) ||
             (segments.length > 0 && cmd.downloadedSegments >= segments.length)
           ) &&
-          stat.size > 0
+          stat.size > 0 &&
+          !hasUnmergedM3U8Spill(finalSavePath)
 
         if (isReadyForConvert) {
           logger.info('Downloader', `[M3U8Downloader] 任务 ${id} 临时文件已完整落盘 (${stat.size} 字节, ${cmd.downloadedSegments}/${cmd.totalSegments || cmd.downloadedSegments} 分片)，直接进入格式转换`)
@@ -2008,12 +2257,64 @@ class Downloader {
       }
     }
 
-    // 检查断点续传：临时文件是否已存在及大小
+    type SegStoreEntry =
+      | { kind: 'mem'; buf: Buffer }
+      | { kind: 'spilling'; buf: Buffer }
+      | { kind: 'pack'; offset: number; length: number }
+      | { kind: 'legacy-disk'; filePath: string; size: number }
+
+    // 3. 检查断点续传：优先恢复单文件顺序包 (.spill.meta.json + .spill.bin)，向下兼容旧 .segs 与纯前缀续传
     let existingBytes = 0
+    let existingSpilledBytes = 0
     let skipSegments = 0
     let fileFlags = 'w'
+    let spillActive = false
+    const segmentStore = new Map<number, SegStoreEntry>()
+    const restoredSpilledIndices: number[] = []
+    let restoredPackEntries = new Map<number, { offset: number; length: number }>()
+    let restoredPackEndOffset = 0
 
-    if (fs.existsSync(workSavePath)) {
+    let inspection = inspectM3U8SpillForResume(finalSavePath, segments.length)
+    if (inspection.totalSegmentsMismatch) {
+      logger.warn(
+        'Downloader',
+        `[M3U8Downloader] 溢写缓存分片总数不匹配 (${inspection.totalSegments} !== ${segments.length})，清理旧缓存从头下载`
+      )
+      await cleanupM3U8SpillArtifacts(finalSavePath)
+      inspection = inspectM3U8SpillForResume(finalSavePath, segments.length)
+    }
+
+    if (inspection.mode === 'pack' || inspection.mode === 'legacy-segs') {
+      spillActive = true
+      if (inspection.flushedSegments > 0 && fs.existsSync(workSavePath)) {
+        try {
+          const stat = fs.statSync(workSavePath)
+          if (stat.size > 0) {
+            skipSegments = inspection.flushedSegments
+            existingBytes = stat.size
+            fileFlags = 'a'
+          }
+        } catch {}
+      }
+      restoredPackEntries = inspection.packEntries
+      restoredPackEndOffset = inspection.packValidEndOffset
+      inspection.packEntries.forEach((span, idx) => {
+        if (idx < skipSegments || idx >= segments.length) return
+        segmentStore.set(idx, { kind: 'pack', offset: span.offset, length: span.length })
+        existingSpilledBytes += span.length
+        restoredSpilledIndices.push(idx)
+      })
+      inspection.legacySegFiles.forEach((info, idx) => {
+        if (idx < skipSegments || idx >= segments.length || segmentStore.has(idx)) return
+        segmentStore.set(idx, { kind: 'legacy-disk', filePath: info.filePath, size: info.size })
+        existingSpilledBytes += info.size
+        restoredSpilledIndices.push(idx)
+      })
+      logger.info(
+        'Downloader',
+        `[M3U8Downloader] 恢复断点续传 (${inspection.mode}): 连续前缀 ${skipSegments}/${segments.length} (${existingBytes} B), 乱序暂存分片 ${restoredSpilledIndices.length} 个 (${existingSpilledBytes} B)`
+      )
+    } else if (fs.existsSync(workSavePath)) {
       try {
         const stat = fs.statSync(workSavePath)
         existingBytes = stat.size
@@ -2041,55 +2342,272 @@ class Downloader {
       }
     }
 
-    const fileHandle = await fs.promises.open(workSavePath, fileFlags)
+    const alreadyCompletedIndices: number[] = []
+    for (let i = 0; i < skipSegments; i++) {
+      alreadyCompletedIndices.push(i)
+    }
+    for (let i = 0; i < restoredSpilledIndices.length; i++) {
+      alreadyCompletedIndices.push(restoredSpilledIndices[i])
+    }
+    const scheduler = new M3U8SegmentScheduler({
+      totalSegments: segments.length,
+      alreadyCompleted: alreadyCompletedIndices
+    })
+
+    const spillPack = new M3U8SpillPack(finalSavePath, {
+      totalSegments: segments.length,
+      isFmp4,
+      flushedSegments: skipSegments,
+      initialEntries: restoredPackEntries,
+      initialWriteOffset: restoredPackEndOffset
+    })
+    let fileHandle: fs.promises.FileHandle | null = !spillActive
+      ? await fs.promises.open(workSavePath, fileFlags)
+      : null
     const keyCache = new Map<string, Buffer>()
     const keyPromiseCache = new Map<string, Promise<Buffer>>()
-    const bufferMap = new Map<number, Buffer>()
     let currentBufferedBytes = 0
     let nextFlushIndex = skipSegments
     let flushedSegmentsCount = skipSegments
-    let totalReceivedBytes = existingBytes
+    let totalReceivedBytes = existingBytes + existingSpilledBytes
     let diskWriteError: Error | null = null
     let writeChain: Promise<void> = Promise.resolve()
+    let spillChain: Promise<void> = Promise.resolve()
+    let isTaskEnded = false
 
     let lastReportTime = Date.now()
     let lastReportBytes = totalReceivedBytes
     let lastDataReceivedAt = Date.now()
     let smoothedSpeed = 0
 
+    let authErrorCountSinceRefresh = 0
+    let lastPlaylistRefreshAt = 0
+    let playlistRefreshPromise: Promise<void> | null = null
+    let refreshSessionCounter = 0
+
     const enqueueSequentialFlush = (forceLog: boolean = false) => {
-      const batchBuffers: Buffer[] = []
-      let batchBytes = 0
-      while (bufferMap.has(nextFlushIndex)) {
-        const chunkBuf = bufferMap.get(nextFlushIndex)!
-        batchBuffers.push(chunkBuf)
-        batchBytes += chunkBuf.length
-        bufferMap.delete(nextFlushIndex)
+      if (spillActive || !fileHandle) return
+      const steps: Array<{ index: number; entry: SegStoreEntry }> = []
+      let memStepBytes = 0
+      while (segmentStore.has(nextFlushIndex)) {
+        const entry = segmentStore.get(nextFlushIndex)!
+        segmentStore.delete(nextFlushIndex)
+        if (entry.kind === 'mem' || entry.kind === 'spilling') {
+          memStepBytes += entry.buf.length
+        }
+        steps.push({ index: nextFlushIndex, entry })
         nextFlushIndex++
       }
 
-      if (batchBuffers.length === 0) return
-      const batchCount = batchBuffers.length
+      if (steps.length === 0) return
       if (forceLog || currentBufferedBytes >= maxMemoryBytes) {
-        logger.info('Downloader', `[MemoryBuffer] M3U8 内存缓冲异步顺序落盘 (${batchCount} 分片, ${(batchBytes / 1024 / 1024).toFixed(2)} MB)`)
+        logger.info('Downloader', `[MemoryBuffer] M3U8 顺序合并落盘 (${steps.length} 分片, 内存待写 ${(memStepBytes / 1024 / 1024).toFixed(2)} MB)`)
       }
 
+      const targetHandle = fileHandle
       writeChain = writeChain.then(async () => {
         if (diskWriteError) {
-          currentBufferedBytes = Math.max(0, currentBufferedBytes - batchBytes)
+          currentBufferedBytes = Math.max(0, currentBufferedBytes - memStepBytes)
           return
         }
         try {
-          const combined = batchBuffers.length === 1 ? batchBuffers[0] : Buffer.concat(batchBuffers)
-          await writeBufferFully(fileHandle, combined)
-          flushedSegmentsCount += batchCount
+          let memGroup: Buffer[] = []
+          let memGroupBytes = 0
+
+          const flushMemGroup = async () => {
+            if (memGroup.length === 0) return
+            const combined = memGroup.length === 1 ? memGroup[0] : Buffer.concat(memGroup)
+            const count = memGroup.length
+            const bytes = memGroupBytes
+            memGroup = []
+            memGroupBytes = 0
+            try {
+              await writeBufferFully(targetHandle, combined)
+              flushedSegmentsCount += count
+            } finally {
+              currentBufferedBytes = Math.max(0, currentBufferedBytes - bytes)
+            }
+          }
+
+          for (let i = 0; i < steps.length; i++) {
+            const step = steps[i]
+            if (step.entry.kind === 'mem' || step.entry.kind === 'spilling') {
+              memGroup.push(step.entry.buf)
+              memGroupBytes += step.entry.buf.length
+              if (memGroupBytes >= 16 * 1024 * 1024) {
+                await flushMemGroup()
+              }
+            }
+          }
+          await flushMemGroup()
         } catch (writeErr: any) {
           diskWriteError = writeErr
+          currentBufferedBytes = Math.max(0, currentBufferedBytes - memStepBytes)
           abortController.abort(writeErr)
-        } finally {
-          currentBufferedBytes = Math.max(0, currentBufferedBytes - batchBytes)
         }
       })
+    }
+
+    const spillOutOfOrderBuffers = (forceAll: boolean = false): Promise<void> => {
+      const wasSpillActive = spillActive
+      const targets: Array<{ index: number; buf: Buffer }> = []
+      const entries = Array.from(segmentStore.entries()).sort((a, b) => a[0] - b[0])
+      for (let i = 0; i < entries.length; i++) {
+        const idx = entries[i][0]
+        const entry = entries[i][1]
+        if (entry.kind !== 'mem') continue
+        if (idx < nextFlushIndex) continue
+        if (!wasSpillActive && !forceAll && idx === nextFlushIndex) continue
+        segmentStore.set(idx, { kind: 'spilling', buf: entry.buf })
+        targets.push({ index: idx, buf: entry.buf })
+      }
+      if (targets.length === 0) {
+        return spillChain
+      }
+
+      // 同步锁定 spillActive，阻止新的顺序刷盘挂载到 writeChain
+      spillActive = true
+
+      spillChain = spillChain.then(async () => {
+        if (diskWriteError) return
+        if (forceAll && !fs.existsSync(path.dirname(spillPaths.spillBinPath))) {
+          return
+        }
+
+        try {
+          await writeChain.catch(() => {})
+          if (fileHandle) {
+            const fhToClose = fileHandle
+            fileHandle = null
+            await fhToClose.close().catch(() => {})
+          }
+          if (diskWriteError) return
+
+          const activeTargets: Array<{ index: number; buf: Buffer }> = []
+          for (let i = 0; i < targets.length; i++) {
+            const cur = segmentStore.get(targets[i].index)
+            if (cur && cur.kind === 'spilling') {
+              activeTargets.push(targets[i])
+            }
+          }
+          if (activeTargets.length === 0) {
+            return
+          }
+
+          const written = await spillPack.appendBatch(activeTargets, flushedSegmentsCount)
+          for (let i = 0; i < written.length; i++) {
+            const { index, offset, length } = written[i]
+            const after = segmentStore.get(index)
+            if (after && after.kind === 'spilling') {
+              segmentStore.set(index, { kind: 'pack', offset, length })
+              currentBufferedBytes = Math.max(0, currentBufferedBytes - after.buf.length)
+            }
+          }
+        } catch (err: any) {
+          if (!abortController.signal.aborted) {
+            diskWriteError = err
+            abortController.abort(err)
+          } else {
+            logger.warn('Downloader', `[M3U8Downloader] 溢写分片包失败: ${err.message}`)
+          }
+        }
+      })
+
+      return spillChain
+    }
+
+    const playlistUrlDiag = sanitizeUrlDiagnostic(url)
+    const reqHeaderSummary = buildRequestHeaderSummary(headers)
+    let loggedPlaylistDiag = false
+    let detailedDiagLoggedCount = 0
+
+    const logPlaylistStructureDiag = () => {
+      if (loggedPlaylistDiag) return
+      loggedPlaylistDiag = true
+      const hostCounts = new Map<string, number>()
+      let discCount = 0
+      let brCount = 0
+      let encCount = 0
+      for (let i = 0; i < segments.length; i++) {
+        const s = segments[i]
+        const h = sanitizeUrlDiagnostic(s.url).host
+        hostCounts.set(h, (hostCounts.get(h) || 0) + 1)
+        if (s.discontinuity) discCount++
+        if (s.byteRange) brCount++
+        if (s.key && s.key.method !== 'NONE') encCount++
+      }
+      const hostSummary = Array.from(hostCounts.entries())
+        .map(([h, count]) => `${h}(${count})`)
+        .join(', ')
+      logger.warn(
+        'Downloader',
+        `[M3U8Downloader] [Diag] 播放列表画像: total=${segments.length}, isFmp4=${isFmp4}, hosts=[${hostSummary}], discontinuity=${discCount}, byteRange=${brCount}, aes128=${encCount}, playlistHost=${playlistUrlDiag.host}, req={${reqHeaderSummary}}`
+      )
+    }
+
+    const maybeTriggerPlaylistRefresh = async (failCount: number): Promise<void> => {
+      const now = Date.now()
+      const shouldTrigger = (authErrorCountSinceRefresh >= 3 || failCount >= 2) && (now - lastPlaylistRefreshAt >= 15000)
+      if (!shouldTrigger && !playlistRefreshPromise) {
+        return
+      }
+      if (!playlistRefreshPromise) {
+        const sessIdx = ++refreshSessionCounter
+        const authErrSnapshot = authErrorCountSinceRefresh
+        playlistRefreshPromise = (async () => {
+          try {
+            logger.warn(
+              'Downloader',
+              `[M3U8Downloader] 检测到连续鉴权失败 (authErr=${authErrSnapshot}, segFailRound=${failCount})，重新拉取 M3U8 列表刷新分片链接`
+            )
+            const refreshed = await parseM3U8(url, headers, abortController.signal, sessIdx)
+            if (abortController.signal.aborted) return
+            if (refreshed.segments.length === segments.length) {
+              let uncompletedCount = 0
+              let changedUrlCount = 0
+              let changedKeyCount = 0
+              for (let i = 0; i < segments.length; i++) {
+                if (scheduler.isCompleted(i)) continue
+                uncompletedCount++
+                const prevKeyUrl = segments[i].key?.url
+                const nextKeyUrl = refreshed.segments[i].key?.url
+                if (prevKeyUrl !== nextKeyUrl) {
+                  changedKeyCount++
+                }
+                if (segments[i].url !== refreshed.segments[i].url) {
+                  changedUrlCount++
+                }
+                segments[i].url = refreshed.segments[i].url
+                segments[i].key = refreshed.segments[i].key
+              }
+              if (changedKeyCount > 0) {
+                keyCache.clear()
+              }
+              authErrorCountSinceRefresh = 0
+              logger.warn(
+                'Downloader',
+                `[M3U8Downloader] M3U8 列表重拉完成: total=${refreshed.segments.length}, uncompleted=${uncompletedCount}, changedUrls=${changedUrlCount}, changedKeys=${changedKeyCount}${changedUrlCount === 0 ? ' (未完成分片 URL 无变化)' : ''}`
+              )
+            } else {
+              logger.warn(
+                'Downloader',
+                `[M3U8Downloader] 重拉 M3U8 分片总数不一致 (${refreshed.segments.length} !== ${segments.length})，继续沿用原列表`
+              )
+            }
+          } catch (refreshErr: any) {
+            if (abortController.signal.aborted) return
+            const refreshDiag = refreshErr?.diag as HttpErrorDiag | undefined
+            const diagSuffix = refreshDiag
+              ? ` | diag: resHeaders={${refreshDiag.resHeaders || ''}}, body="${refreshDiag.bodySnippet || ''}"`
+              : ''
+            logger.warn('Downloader', `[M3U8Downloader] 重拉 M3U8 列表失败，继续沿用原分片链接: ${refreshErr.message}${diagSuffix}`)
+          } finally {
+            lastPlaylistRefreshAt = Date.now()
+            playlistRefreshPromise = null
+          }
+        })()
+      }
+      await playlistRefreshPromise
     }
 
     const getAesKey = async (keyUrl: string, sessionIndex = 0): Promise<Buffer> => {
@@ -2106,8 +2624,12 @@ class Downloader {
           )
           try {
             if (!handle.response.ok) {
-              try { await handle.response.body?.cancel?.() } catch {}
-              throw new Error(`Key fetch failed: ${keyUrl} (HTTP ${handle.response.status})`)
+              throw await createHttpResponseError(
+                handle.response,
+                'key',
+                true,
+                `Key fetch failed: ${keyUrl} (HTTP ${handle.response.status})`
+              )
             }
             const buf = await readResponseBufferWithIdleTimeout(
               handle.response,
@@ -2128,9 +2650,37 @@ class Downloader {
       return pending
     }
 
+    const buildRetryHint = (): string => {
+      const pending = scheduler.pendingRetryCount
+      if (pending <= 0) return ''
+      return scheduler.isTailRetryOnly
+        ? `正在重试剩余 ${pending} 个失败分片`
+        : `待重试 ${pending} 个分片`
+    }
+
+    let lastReportedHint = ''
+    let lastReportedCanSkip = false
+    let autoPauseInfo: {
+      errorMsg: string
+      canSkipFailedSegments: boolean
+      failedSegmentsCount: number
+    } | null = null
+
     const reportStreamProgress = (force: boolean = false) => {
+      if (isTaskEnded || abortController.signal.aborted) {
+        return
+      }
       const now = Date.now()
-      if (!force && now - lastReportTime < 500 && nextFlushIndex < segments.length) {
+      const retryHint = buildRetryHint()
+      const canSkipFailedSegments = scheduler.isTailRetryOnly && scheduler.completedCount > 0 && scheduler.pendingRetryCount > 0
+      const failedSegmentsCount = scheduler.pendingRetryCount
+      if (
+        !force &&
+        retryHint === lastReportedHint &&
+        canSkipFailedSegments === lastReportedCanSkip &&
+        now - lastReportTime < 500 &&
+        !scheduler.isDone
+      ) {
         return
       }
       const dt = Math.max(1, now - lastReportTime)
@@ -2141,50 +2691,70 @@ class Downloader {
         id,
         totalBytes: 0,
         receivedBytes: totalReceivedBytes,
-        downloadedSegments: Math.max(flushedSegmentsCount, nextFlushIndex),
+        downloadedSegments: scheduler.completedCount,
         totalSegments: segments.length,
         speed: smoothedSpeed,
         status: 'downloading',
-        errorMsg: ''
+        errorMsg: retryHint,
+        canSkipFailedSegments,
+        failedSegmentsCount
       })
       lastReportTime = now
       lastReportBytes = totalReceivedBytes
+      lastReportedHint = retryHint
+      lastReportedCanSkip = canSkipFailedSegments
     }
 
-    const remainingSegments = Math.max(1, segments.length - skipSegments)
-    const concurrency = Math.min(M3U8_SESSION_POOL_SIZE, remainingSegments)
-    let segQueueIndex = skipSegments
+    const remainingToDownload = Math.max(0, segments.length - scheduler.completedCount)
+    const concurrency = remainingToDownload > 0 ? Math.min(M3U8_SESSION_POOL_SIZE, remainingToDownload) : 0
 
     const fetchNextSegment = async (workerId: number): Promise<void> => {
       if (workerId > 0) {
         await sleepWithAbort(workerId * 50, abortController.signal)
       }
 
-      while (segQueueIndex < segments.length) {
+      while (true) {
         if (abortController.signal.aborted) {
           throw new DOMException('User aborted download', 'AbortError')
         }
 
-        // 背压控制：当缓冲及异步待写盘数据超过上限两倍时让出事件循环，防止慢分片导致内存激增
+        // 背压守卫：若缓冲达上限且处于溢写态或缺失队头分片则写入 .spill.bin，防止队头阻塞导致并发线程死锁
         while (currentBufferedBytes >= maxMemoryBytes * 2) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
+          if (!spillActive && segmentStore.has(nextFlushIndex)) {
+            enqueueSequentialFlush(false)
+          } else {
+            spillOutOfOrderBuffers(false)
+          }
           await sleepWithAbort(50, abortController.signal)
         }
 
-        const seg = segments[segQueueIndex++]
-        let attempts = 0
-        let preemptCount = 0
-        let success = false
-        const maxAttempts = 5
-        const maxTransientAttempts = 30
+        const acquired = scheduler.acquire()
+        if (acquired.type === 'done') {
+          break
+        }
+        if (acquired.type === 'wait') {
+          await scheduler.waitForUpdate(acquired.waitMs, abortController.signal)
+          continue
+        }
 
-        while (!success) {
+        const segIndex = acquired.index
+        let quickAttempt = 0
+        let preemptCount = 0
+        let fetchedBuf: Buffer | null = null
+        let lastErr: any = null
+        let lastStatusCode: number | null = null
+        let lastDiag: HttpErrorDiag | undefined = undefined
+        let lastSessionIdx = 0
+
+        while (quickAttempt < 2 && !fetchedBuf) {
           if (abortController.signal.aborted) {
             throw new DOMException('User aborted download', 'AbortError')
           }
 
+          const currentSeg = segments[segIndex]
           let handle: ManagedFetchHandle | null = null
           let segReceivedBytes = 0
           let slowPreempted = false
@@ -2194,19 +2764,22 @@ class Downloader {
               segReceivedBytes = 0
             }
           }
-          const sessionIdx = (workerId + attempts * 5 + preemptCount * 3) % M3U8_SESSION_POOL_SIZE
+          const sessionIdx = (workerId + acquired.failCount * 7 + quickAttempt * 5 + preemptCount * 3) % M3U8_SESSION_POOL_SIZE
+          lastSessionIdx = sessionIdx
 
           try {
             handle = await fetchM3U8WithManagedTimeout(
-              seg.url,
+              currentSeg.url,
               { headers, signal: abortController.signal as any },
               15000,
               sessionIdx
             )
             const res = handle.response
             if (!res.ok) {
-              try { await res.body?.cancel?.() } catch {}
-              throw new Error(`HTTP ${res.status}`)
+              const shouldCaptureBody =
+                (acquired.failCount < 2 && detailedDiagLoggedCount < 40) ||
+                (acquired.failCount < 2 && (res.status === 403 || res.status === 404 || res.status === 410))
+              throw await createHttpResponseError(res, 'segment', shouldCaptureBody)
             }
 
             const rawLen = res.headers?.get?.('content-length')
@@ -2250,7 +2823,7 @@ class Downloader {
                   windowBytes = 0
 
                   const remainingLargeOrUnknown = expectedLen <= 0 || expectedLen - segReceivedBytes > 256 * 1024
-                  if (now - connStartTime >= 10000 && preemptCount < 3 && remainingLargeOrUnknown) {
+                  if (now - connStartTime >= 10000 && preemptCount < 2 && remainingLargeOrUnknown) {
                     const avgPerWorkerBps = smoothedSpeed > 0 ? smoothedSpeed / Math.max(1, concurrency) : 0
                     const floorBps = Math.max(16 * 1024, avgPerWorkerBps * 0.2)
                     if (windowBps < floorBps) {
@@ -2258,7 +2831,7 @@ class Downloader {
                       slowPreempted = true
                       logger.warn(
                         'Downloader',
-                        `[M3U8Downloader] 分片 ${seg.index} 连接过慢 (${(windowBps / 1024).toFixed(1)} KB/s < 阈值 ${(floorBps / 1024).toFixed(1)} KB/s)，切换连接重试 (${preemptCount}/3)`
+                        `[M3U8Downloader] 分片 ${segIndex} 连接过慢 (${(windowBps / 1024).toFixed(1)} KB/s < 阈值 ${(floorBps / 1024).toFixed(1)} KB/s)，切换连接重试 (${preemptCount}/2)`
                       )
                       try { await reader.cancel() } catch {}
                       rollbackSegBytes()
@@ -2286,21 +2859,21 @@ class Downloader {
             }
 
             if (expectedLen > 0 && segReceivedBytes !== expectedLen) {
-              throw new Error(`分片 ${seg.index} 数据不完整 (${segReceivedBytes}/${expectedLen} 字节)`)
+              throw new Error(`分片 ${segIndex} 数据不完整 (${segReceivedBytes}/${expectedLen} 字节)`)
             }
 
             let buf = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)
 
-            if (seg.key && seg.key.method === 'AES-128') {
-              const keyBuf = await getAesKey(seg.key.url, sessionIdx)
+            if (currentSeg.key && currentSeg.key.method === 'AES-128') {
+              const keyBuf = await getAesKey(currentSeg.key.url, sessionIdx)
               let ivBuf: Buffer
-              if (seg.key.iv) {
-                let hex = seg.key.iv.startsWith('0x') || seg.key.iv.startsWith('0X') ? seg.key.iv.slice(2) : seg.key.iv
+              if (currentSeg.key.iv) {
+                let hex = currentSeg.key.iv.startsWith('0x') || currentSeg.key.iv.startsWith('0X') ? currentSeg.key.iv.slice(2) : currentSeg.key.iv
                 hex = hex.padStart(32, '0')
                 ivBuf = Buffer.from(hex, 'hex')
               } else {
                 ivBuf = Buffer.alloc(16)
-                ivBuf.writeUInt32BE(seg.index, 12)
+                ivBuf.writeUInt32BE(segIndex, 12)
               }
               try {
                 const decipher = crypto.createDecipheriv('aes-128-cbc', keyBuf, ivBuf)
@@ -2313,65 +2886,121 @@ class Downloader {
               }
             }
 
-            bufferMap.set(seg.index, buf)
-            currentBufferedBytes += buf.length
-
-            if (
-              bufferMap.has(nextFlushIndex) &&
-              (currentBufferedBytes >= Math.min(maxMemoryBytes, 16 * 1024 * 1024) ||
-                bufferMap.size >= 8 ||
-                nextFlushIndex + bufferMap.size >= segments.length)
-            ) {
-              enqueueSequentialFlush(false)
-            }
-
-            reportStreamProgress(nextFlushIndex >= segments.length)
-            success = true
+            fetchedBuf = buf
           } catch (e: any) {
             rollbackSegBytes()
             if (abortController.signal.aborted) {
               throw e?.name === 'AbortError' ? e : new DOMException('User aborted download', 'AbortError')
             }
-            const retryableErr =
-              handle?.isTimedOut()
-                ? new Error(e?.message || '流读取超时 (12000ms 无数据响应)')
-                : e
-            attempts++
-            if (isTransientNetworkError(retryableErr) || retryableErr?.name === 'AbortError') {
-              if (attempts >= maxTransientAttempts) {
-                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxTransientAttempts} 次网络错误均无法恢复，终止任务: ${retryableErr.message}`)
-                throw new Error(`分片 ${seg.index} 下载失败 (已重试 ${maxTransientAttempts} 次: ${retryableErr.message})`)
+            const errObj = handle?.isTimedOut()
+              ? new Error(e?.message || '流读取超时 (12000ms 无数据响应)')
+              : e
+            lastErr = errObj
+            const status = extractHttpStatusCode(errObj)
+            if (status !== null) {
+              lastStatusCode = status
+            }
+            if (errObj?.diag) {
+              const nextDiag = errObj.diag as HttpErrorDiag
+              if (!lastDiag || nextDiag.bodySnippet || !lastDiag.bodySnippet) {
+                lastDiag = nextDiag
               }
-              const friendlyMsg = formatTransientErrorMessage(retryableErr)
-              logger.warn('Downloader', `[M3U8Downloader] 分片 ${seg.index} 遭遇网络波动，正在后台自动重试 (第 ${attempts} 次): ${retryableErr.message}`)
-              const now = Date.now()
-              const isGlobalStalled = now - lastDataReceivedAt > 3000
-              if (attempts >= 3 || isGlobalStalled) {
-                if (isGlobalStalled) {
-                  smoothedSpeed = 0
-                }
-                this.sendProgress({
-                  id,
-                  totalBytes: 0,
-                  receivedBytes: totalReceivedBytes,
-                  downloadedSegments: flushedSegmentsCount,
-                  totalSegments: segments.length,
-                  speed: isGlobalStalled ? 0 : smoothedSpeed,
-                  status: 'downloading',
-                  errorMsg: `正在重试: ${friendlyMsg}`
-                })
-              }
-              await sleepWithAbort(getTransientRetryDelay(attempts, retryableErr), abortController.signal)
-            } else {
-              if (attempts >= maxAttempts) {
-                logger.error('Downloader', `[M3U8Downloader] 分片 ${seg.index} 连续重试 ${maxAttempts} 次均失败: ${retryableErr.message}`)
-                throw new Error(`分片 ${seg.index} 下载失败 (${retryableErr.message})`)
-              }
-              await sleepWithAbort(getTransientRetryDelay(attempts, retryableErr), abortController.signal)
+            }
+            quickAttempt++
+            if (quickAttempt < 2) {
+              await sleepWithAbort(200, abortController.signal)
             }
           } finally {
             handle?.cleanup()
           }
+        }
+
+        if (fetchedBuf) {
+          segmentStore.set(segIndex, { kind: 'mem', buf: fetchedBuf })
+          currentBufferedBytes += fetchedBuf.length
+          scheduler.markSuccess(segIndex)
+
+          if (
+            !spillActive &&
+            segmentStore.has(nextFlushIndex) &&
+            (currentBufferedBytes >= Math.min(maxMemoryBytes, 32 * 1024 * 1024) ||
+              segmentStore.size >= 32 ||
+              scheduler.isDone ||
+              nextFlushIndex + segmentStore.size >= segments.length)
+          ) {
+            enqueueSequentialFlush(false)
+          } else if (
+            (spillActive || !segmentStore.has(nextFlushIndex)) &&
+            currentBufferedBytes >= maxMemoryBytes
+          ) {
+            spillOutOfOrderBuffers(false)
+          }
+
+          reportStreamProgress(scheduler.isDone)
+        } else {
+          const errMsg = lastErr?.message || '分片下载失败'
+          const status = lastStatusCode ?? extractHttpStatusCode(lastErr)
+          const isPermanentOriginErr = isPermanentOriginSegmentError(
+            status,
+            lastDiag?.resHeaders,
+            lastDiag?.bodySnippet
+          )
+          const failCount = scheduler.markFailed(segIndex, errMsg, Date.now(), isPermanentOriginErr)
+          const currentSegSnap = segments[segIndex]
+          const segUrlDiag = sanitizeUrlDiagnostic(
+            lastDiag?.phase === 'key' && currentSegSnap.key?.url ? currentSegSnap.key.url : currentSegSnap.url
+          )
+
+          logPlaylistStructureDiag()
+
+          if (failCount === 1 && detailedDiagLoggedCount < 20) {
+            detailedDiagLoggedCount++
+            const phase = lastDiag?.phase || 'segment'
+            const prevHost = segIndex > 0 ? sanitizeUrlDiagnostic(segments[segIndex - 1].url).host : 'none'
+            const samePrevHost = segIndex > 0 ? segUrlDiag.host === prevHost : true
+            const samePlaylistHost = segUrlDiag.host === playlistUrlDiag.host
+            const meta = lastDiag?.fetchMeta
+            const redirSummary = meta && meta.redirectHops > 0
+              ? `hops=${meta.redirectHops},cross=${meta.crossDomainRedirect},stripped=${meta.strippedCredentials},finalHost=${sanitizeUrlDiagnostic(meta.finalUrl).host}`
+              : 'none'
+            const resHeaders = lastDiag?.resHeaders || ''
+            const bodySnippet = lastDiag?.bodySnippet || ''
+            logger.warn(
+              'Downloader',
+              `[M3U8Downloader] 分片 ${segIndex} 下载失败 (第 1 轮)，已移入延后队列稍后重试: ${errMsg} | diag: phase=${phase}, status=${status ?? 'err'}, host=${segUrlDiag.host}, samePlaylistHost=${samePlaylistHost}, samePrevHost=${samePrevHost}, ext=${segUrlDiag.ext}, path=${segUrlDiag.pathTail}, qKeys=[${segUrlDiag.queryKeys.join(',')}], fp=${segUrlDiag.fingerprint}, disc=${Boolean(currentSegSnap.discontinuity)}, br=${currentSegSnap.byteRange || 'none'}, sess=${lastSessionIdx}, redir=${redirSummary}, resHeaders={${resHeaders}}, body="${bodySnippet}"`
+            )
+          } else if (failCount <= 2 || failCount % 10 === 0) {
+            logger.warn(
+              'Downloader',
+              `[M3U8Downloader] 分片 ${segIndex} 下载失败 (第 ${failCount} 轮, fp=${segUrlDiag.fingerprint})，已移入延后队列稍后重试: ${errMsg}`
+            )
+          }
+
+          if (isPermanentOriginErr && scheduler.hasAllRemainingPermanentlyFailed(2)) {
+            const remaining = scheduler.remainingUncompletedCount
+            if (!autoPauseInfo) {
+              autoPauseInfo = {
+                errorMsg: `源站 ${remaining} 个分片不可用`,
+                canSkipFailedSegments: scheduler.completedCount > 0,
+                failedSegmentsCount: remaining
+              }
+              logger.warn(
+                'Downloader',
+                `[M3U8Downloader] 任务 ${id} 剩余 ${remaining} 个分片连续 2 轮确认为源站永久失效，自动暂停任务并保留已完成分片`
+              )
+            }
+            const autoAbortErr = new DOMException('Auto paused due to permanent origin segment failures', 'AbortError')
+            if (!abortController.signal.aborted) {
+              abortController.abort(autoAbortErr)
+            }
+            throw autoAbortErr
+          }
+
+          if ((status === 401 || status === 403) && (!isPermanentOriginErr || lastPlaylistRefreshAt === 0)) {
+            authErrorCountSinceRefresh++
+            await maybeTriggerPlaylistRefresh(failCount)
+          }
+          reportStreamProgress(false)
         }
       }
     }
@@ -2381,21 +3010,99 @@ class Downloader {
       workers.push(fetchNextSegment(c))
     }
 
+    if (concurrency > 0) {
+      reportStreamProgress(true)
+    }
+
+    const progressHeartbeat = setInterval(() => {
+      if (isTaskEnded || abortController.signal.aborted) return
+      if (Date.now() - lastDataReceivedAt >= 2000) {
+        smoothedSpeed = 0
+      }
+      reportStreamProgress(true)
+    }, 1000)
+
     try {
-      await Promise.all(workers)
-      enqueueSequentialFlush(true)
-      await writeChain
-      await fileHandle.close()
+      if (workers.length > 0) {
+        await Promise.all(workers)
+      }
+      isTaskEnded = true
+      clearInterval(progressHeartbeat)
+
+      await spillChain
+      if (!spillActive) {
+        enqueueSequentialFlush(true)
+        await writeChain
+        await spillChain
+      } else {
+        await writeChain
+      }
+
+      if (fileHandle) {
+        const fhToClose = fileHandle
+        fileHandle = null
+        await fhToClose.close()
+      }
+      await spillPack.close()
 
       if (diskWriteError) {
         throw diskWriteError
       }
-      if (flushedSegmentsCount < segments.length) {
-        throw new Error(`M3U8 分片未全部完成落盘: 仅写入 ${flushedSegmentsCount}/${segments.length} 分片`)
-      }
 
-      if (isTargetMp4) {
-        await this.remuxToMp4(workSavePath, finalSavePath, isFmp4, abortController, id)
+      if (!spillActive) {
+        if (flushedSegmentsCount < segments.length) {
+          throw new Error(`M3U8 分片未全部完成落盘: 仅写入 ${flushedSegmentsCount}/${segments.length} 分片`)
+        }
+        await cleanupM3U8SpillArtifacts(finalSavePath)
+        if (isTargetMp4) {
+          await this.remuxToMp4(workSavePath, finalSavePath, isFmp4, abortController, id)
+        }
+      } else {
+        const totalReadySegments = flushedSegmentsCount + segmentStore.size
+        if (totalReadySegments < segments.length) {
+          throw new Error(`M3U8 分片未全部完成落盘: 仅就绪 ${totalReadySegments}/${segments.length} 分片`)
+        }
+        const prefixBytes = flushedSegmentsCount > 0 && fs.existsSync(workSavePath)
+          ? fs.statSync(workSavePath).size
+          : 0
+        const orderedSegments: OrderedM3U8SegmentInput[] = []
+        segmentStore.forEach((entry, idx) => {
+          if (entry.kind === 'pack') {
+            orderedSegments.push({
+              index: idx,
+              fileRange: { filePath: spillPack.spillBinPath, offset: entry.offset, length: entry.length }
+            })
+          } else if (entry.kind === 'legacy-disk') {
+            orderedSegments.push({
+              index: idx,
+              fileRange: { filePath: entry.filePath, offset: 0, length: entry.size }
+            })
+          } else if (entry.kind === 'mem' || entry.kind === 'spilling') {
+            orderedSegments.push({
+              index: idx,
+              buffer: entry.buf
+            })
+          }
+        })
+        const streamPlan = buildCoalescedM3U8StreamPlan({
+          prefixFilePath: prefixBytes > 0 ? workSavePath : undefined,
+          prefixLength: prefixBytes,
+          orderedSegments
+        })
+        if (isTargetMp4) {
+          await this.remuxToMp4FromSources(
+            streamPlan,
+            workSavePath,
+            finalSavePath,
+            isFmp4,
+            abortController,
+            id,
+            false
+          )
+        } else {
+          await materializeSourcesToFile(streamPlan.sources, workSavePath, abortController.signal)
+          await cleanupM3U8SpillArtifacts(finalSavePath)
+        }
       }
 
       const targetVideoFile = isTargetMp4 ? finalSavePath : workSavePath
@@ -2408,25 +3115,295 @@ class Downloader {
         totalSegments: segments.length
       }
     } catch (err: any) {
+      isTaskEnded = true
+      clearInterval(progressHeartbeat)
+
+      if (!abortController.signal.aborted) {
+        abortController.abort(err)
+      }
+      if (workers.length > 0) {
+        await Promise.allSettled(workers)
+      }
+
       try {
-        enqueueSequentialFlush(false)
-        await writeChain.catch(() => {})
-        await fileHandle.close()
+        await spillChain.catch(() => {})
+        if (!spillActive) {
+          enqueueSequentialFlush(false)
+          await writeChain.catch(() => {})
+        } else {
+          await writeChain.catch(() => {})
+        }
+        let hasPendingMem = false
+        segmentStore.forEach((entry) => {
+          if (entry.kind === 'mem') hasPendingMem = true
+        })
+        if (!diskWriteError && hasPendingMem) {
+          await spillOutOfOrderBuffers(true)
+        }
+        if (fileHandle) {
+          const fhToClose = fileHandle
+          fileHandle = null
+          await fhToClose.close().catch(() => {})
+        }
+        await spillPack.close().catch(() => {})
       } catch {}
+
+      let spilledDiskBytes = 0
+      let spilledDiskCount = 0
+      segmentStore.forEach((entry) => {
+        if (entry.kind === 'pack') {
+          spilledDiskBytes += entry.length
+          spilledDiskCount++
+        } else if (entry.kind === 'legacy-disk') {
+          spilledDiskBytes += entry.size
+          spilledDiskCount++
+        }
+      })
+      if (spilledDiskCount === 0 && (spillActive || hasUnmergedM3U8Spill(finalSavePath))) {
+        await cleanupM3U8SpillArtifacts(finalSavePath).catch(() => {})
+      }
+
       if (diskWriteError) {
         throw diskWriteError
       }
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
-        const savedBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : totalReceivedBytes
+        const workBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
+        const savedBytes = workBytes + spilledDiskBytes
+        const downloadedSegments = flushedSegmentsCount + spilledDiskCount
+        const remainingCount = Math.max(0, segments.length - downloadedSegments)
+        const canSkipOnPause = autoPauseInfo
+          ? autoPauseInfo.canSkipFailedSegments
+          : (scheduler.isTailRetryOnly && downloadedSegments > 0 && remainingCount > 0)
+        const failedCountOnPause = autoPauseInfo
+          ? autoPauseInfo.failedSegmentsCount
+          : remainingCount
+        const pauseErrorMsg = autoPauseInfo ? autoPauseInfo.errorMsg : ''
         const pauseErr: any = Object.assign(new Error('User aborted download'), {
           name: 'AbortError',
           savedBytes,
-          downloadedSegments: flushedSegmentsCount
+          downloadedSegments,
+          errorMsg: pauseErrorMsg,
+          canSkipFailedSegments: canSkipOnPause,
+          failedSegmentsCount: failedCountOnPause
         })
         throw pauseErr
       }
       throw err
+    } finally {
+      clearInterval(progressHeartbeat)
     }
+  }
+
+  /**
+   * 通过 FFmpeg pipe:0 将连续前缀与 .spill.bin 区间合并流直喂封装为标准 MP4（保留 -movflags +faststart，不支持流式时自动回退临时文件封装）
+   */
+  private async remuxToMp4FromSources(
+    streamPlan: ReturnType<typeof buildCoalescedM3U8StreamPlan>,
+    workSavePath: string,
+    finalSavePath: string,
+    isFmp4: boolean,
+    abortController: AbortController,
+    taskId: string,
+    hasMissingSegments: boolean = false
+  ): Promise<void> {
+    logger.info(
+      'Downloader',
+      `[M3U8Downloader] 准备通过流式管道将 ${isFmp4 ? 'fMP4' : 'TS'} 封装为 MP4 (${streamPlan.sources.length} 连续区间, ${(streamPlan.totalBytes / 1024 / 1024).toFixed(2)} MB) -> ${finalSavePath}`
+    )
+    this.sendProgress({
+      id: taskId,
+      totalBytes: streamPlan.totalBytes,
+      receivedBytes: streamPlan.totalBytes,
+      status: 'converting',
+      speed: 0
+    })
+
+    const runFfmpegFromPipe = (args: string[]): Promise<void> => {
+      return new Promise<void>((resolve, reject) => {
+        const ffmpegBin = 'ffmpeg'
+        const child = spawn(ffmpegBin, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+        if (!child.stdin) {
+          try { child.kill('SIGKILL') } catch {}
+          reject(new Error('FFmpeg 子进程缺少 stdin 管道'))
+          return
+        }
+
+        // 防止 FFmpeg 提前结束写关闭时因内核 EPIPE 产生未捕获流异常
+        child.stdin.on('error', () => {})
+
+        const pipeAbortCtrl = new AbortController()
+        let streamReadError: Error | null = null
+        const streamPromise = streamSourcesToWritable(
+          streamPlan.sources,
+          child.stdin,
+          pipeAbortCtrl.signal
+        ).catch((err: any) => {
+          if (err?.name !== 'AbortError' && !pipeAbortCtrl.signal.aborted && !abortController.signal.aborted) {
+            streamReadError = err instanceof Error ? err : new Error(String(err))
+          }
+        })
+
+        let settled = false
+        let abortedByCaller = false
+
+        const onAbort = () => {
+          abortedByCaller = true
+          if (!pipeAbortCtrl.signal.aborted) {
+            pipeAbortCtrl.abort(abortController.signal.reason || new DOMException('User aborted download', 'AbortError'))
+          }
+          try { child.kill('SIGKILL') } catch {}
+        }
+        const detachAbort = () => {
+          abortController.signal.removeEventListener('abort', onAbort)
+        }
+
+        let stderrBuffer = ''
+        child.stderr?.on('data', (chunk) => {
+          stderrBuffer += chunk.toString()
+          if (stderrBuffer.length > 5000) {
+            stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 5000)
+          }
+        })
+
+        child.stdout?.on('data', () => {
+          // 消费 stdout 避免管道挂起
+        })
+
+        const finishWithWaitForHandles = async (code: number | null, spawnErr?: Error) => {
+          detachAbort()
+          if (!pipeAbortCtrl.signal.aborted) {
+            pipeAbortCtrl.abort(new DOMException('FFmpeg process closed', 'AbortError'))
+          }
+          await streamPromise
+          if (settled) return
+          settled = true
+
+          if (abortedByCaller || abortController.signal.aborted) {
+            reject(new DOMException('User aborted download', 'AbortError'))
+            return
+          }
+          if (spawnErr) {
+            logger.error('Downloader', `[M3U8Downloader] FFmpeg 启动异常 (pipe:0): ${spawnErr.message}`)
+            reject(spawnErr)
+            return
+          }
+          if (streamReadError) {
+            reject(streamReadError)
+            return
+          }
+          const outSize = code === 0 && fs.existsSync(finalSavePath) ? fs.statSync(finalSavePath).size : 0
+          if (code === 0 && outSize > 0) {
+            resolve()
+          } else {
+            const errDetail = code === 0 ? '输出文件为空' : stderrBuffer.slice(-300)
+            logger.warn('Downloader', `[M3U8Downloader] FFmpeg pipe:0 封装失败 (code ${code}): ${errDetail}`)
+            reject(new Error(`FFmpeg pipe exited with code ${code}: ${errDetail.slice(-200)}`))
+          }
+        }
+
+        child.on('close', (code) => {
+          finishWithWaitForHandles(code).catch((err) => {
+            if (!settled) {
+              settled = true
+              reject(err)
+            }
+          })
+        })
+
+        child.on('error', (err) => {
+          finishWithWaitForHandles(null, err).catch((e) => {
+            if (!settled) {
+              settled = true
+              reject(e)
+            }
+          })
+        })
+
+        if (abortController.signal.aborted) {
+          onAbort()
+        } else {
+          abortController.signal.addEventListener('abort', onAbort, { once: true })
+        }
+      })
+    }
+
+    const inputFlags = hasMissingSegments ? ['-fflags', '+genpts+igndts'] : []
+
+    if (isFmp4) {
+      try {
+        await runFfmpegFromPipe([
+          '-y',
+          ...inputFlags,
+          '-i', 'pipe:0',
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          finalSavePath
+        ])
+      } catch (pipeErr: any) {
+        if (abortController.signal.aborted) throw pipeErr
+        logger.warn('Downloader', `[M3U8Downloader] fMP4 pipe:0 流式封装失败，回退合并至临时文件后再封装: ${pipeErr.message}`)
+        await materializeSourcesToFile(streamPlan.sources, workSavePath, abortController.signal)
+        await this.remuxToMp4(workSavePath, finalSavePath, true, abortController, taskId, hasMissingSegments)
+      }
+    } else {
+      try {
+        await runFfmpegFromPipe([
+          '-y',
+          ...inputFlags,
+          '-f', 'mpegts',
+          '-i', 'pipe:0',
+          '-c', 'copy',
+          '-bsf:a', 'aac_adtstoasc',
+          '-movflags', '+faststart',
+          finalSavePath
+        ])
+      } catch (err: any) {
+        if (abortController.signal.aborted) throw err
+        logger.warn('Downloader', `[M3U8Downloader] TS pipe:0 转封装带 aac_adtstoasc 失败，尝试回退无滤镜 pipe:0 纯 copy 转封装: ${err.message}`)
+        try {
+          await runFfmpegFromPipe([
+            '-y',
+            ...inputFlags,
+            '-f', 'mpegts',
+            '-i', 'pipe:0',
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            finalSavePath
+          ])
+        } catch (fallbackErr: any) {
+          if (abortController.signal.aborted) throw fallbackErr
+          let lastPipeErr = fallbackErr
+          if (hasMissingSegments) {
+            logger.warn('Downloader', `[M3U8Downloader] 缺片 TS pipe:0 无滤镜 copy 失败，尝试 discardcorrupt pipe:0 封装: ${fallbackErr.message}`)
+            try {
+              await runFfmpegFromPipe([
+                '-y',
+                '-fflags', '+genpts+discardcorrupt',
+                '-f', 'mpegts',
+                '-i', 'pipe:0',
+                '-c', 'copy',
+                '-movflags', '+faststart',
+                finalSavePath
+              ])
+              lastPipeErr = null
+            } catch (discardErr: any) {
+              if (abortController.signal.aborted) throw discardErr
+              lastPipeErr = discardErr
+            }
+          }
+          if (lastPipeErr) {
+            logger.warn('Downloader', `[M3U8Downloader] TS pipe:0 全部流式封装失败，回退合并至临时文件后再封装: ${lastPipeErr.message}`)
+            await materializeSourcesToFile(streamPlan.sources, workSavePath, abortController.signal)
+            await this.remuxToMp4(workSavePath, finalSavePath, false, abortController, taskId, hasMissingSegments)
+          }
+        }
+      }
+    }
+
+    if (fs.existsSync(workSavePath)) {
+      try { fs.unlinkSync(workSavePath) } catch {}
+    }
+    await cleanupM3U8SpillArtifacts(finalSavePath)
   }
 
   /**
@@ -2437,7 +3414,8 @@ class Downloader {
     finalSavePath: string,
     isFmp4: boolean,
     abortController: AbortController,
-    taskId: string
+    taskId: string,
+    hasMissingSegments: boolean = false
   ): Promise<void> {
     logger.info('Downloader', `[M3U8Downloader] 准备将临时 ${isFmp4 ? 'fMP4' : 'TS'} 封装为 MP4: ${workSavePath} -> ${finalSavePath}`)
     const totalBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
@@ -2454,6 +3432,18 @@ class Downloader {
         const ffmpegBin = 'ffmpeg'
         const child = spawn(ffmpegBin, args)
 
+        let settled = false
+        const onAbort = () => {
+          try { child.kill('SIGKILL') } catch {}
+          if (!settled) {
+            settled = true
+            reject(new DOMException('User aborted download', 'AbortError'))
+          }
+        }
+        const detachAbort = () => {
+          abortController.signal.removeEventListener('abort', onAbort)
+        }
+
         let stderrBuffer = ''
         child.stderr?.on('data', (chunk) => {
           stderrBuffer += chunk.toString()
@@ -2467,6 +3457,9 @@ class Downloader {
         })
 
         child.on('close', (code) => {
+          detachAbort()
+          if (settled) return
+          settled = true
           if (code === 0) {
             try { fs.unlinkSync(workSavePath) } catch {}
             resolve()
@@ -2477,26 +3470,28 @@ class Downloader {
         })
 
         child.on('error', (err) => {
+          detachAbort()
+          if (settled) return
+          settled = true
           logger.error('Downloader', `[M3U8Downloader] FFmpeg 启动异常: ${err.message}`)
           reject(err)
         })
 
         if (abortController.signal.aborted) {
-          child.kill('SIGKILL')
-          reject(new DOMException('User aborted download', 'AbortError'))
+          onAbort()
         } else {
-          abortController.signal.addEventListener('abort', () => {
-            child.kill('SIGKILL')
-            reject(new DOMException('User aborted download', 'AbortError'))
-          }, { once: true })
+          abortController.signal.addEventListener('abort', onAbort, { once: true })
         }
       })
     }
+
+    const inputFlags = hasMissingSegments ? ['-fflags', '+genpts+igndts'] : []
 
     if (isFmp4) {
       // fMP4 流: 原生已经具备 ISO MP4 音频格式头，直接 -c copy 转封装，严禁添加 -bsf:a aac_adtstoasc
       await runFfmpeg([
         '-y',
+        ...inputFlags,
         '-i', workSavePath,
         '-c', 'copy',
         '-movflags', '+faststart',
@@ -2507,6 +3502,7 @@ class Downloader {
       try {
         await runFfmpeg([
           '-y',
+          ...inputFlags,
           '-i', workSavePath,
           '-c', 'copy',
           '-bsf:a', 'aac_adtstoasc',
@@ -2516,14 +3512,218 @@ class Downloader {
       } catch (err: any) {
         if (abortController.signal.aborted) throw err
         logger.warn('Downloader', `[M3U8Downloader] TS 转封装带 aac_adtstoasc 失败，尝试回退无滤镜纯 copy 转封装: ${err.message}`)
-        await runFfmpeg([
-          '-y',
-          '-i', workSavePath,
-          '-c', 'copy',
-          '-movflags', '+faststart',
-          finalSavePath
-        ])
+        try {
+          await runFfmpeg([
+            '-y',
+            ...inputFlags,
+            '-i', workSavePath,
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            finalSavePath
+          ])
+        } catch (fallbackErr: any) {
+          if (!hasMissingSegments || abortController.signal.aborted) throw fallbackErr
+          logger.warn('Downloader', `[M3U8Downloader] 缺片 TS 无滤镜 copy 转封装仍失败，尝试 discardcorrupt 兜底封装: ${fallbackErr.message}`)
+          await runFfmpeg([
+            '-y',
+            '-fflags', '+genpts+discardcorrupt',
+            '-i', workSavePath,
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            finalSavePath
+          ])
+        }
       }
+    }
+  }
+
+  /**
+   * 手动跳过当前无法下载的 M3U8 失败分片，通过流式直封装或临时文件将已完成分片封装为可用 MP4
+   */
+  async skipFailedM3U8Segments(cmd: DownloadCommand): Promise<{ success: boolean; skippedSegments?: number; error?: string }> {
+    if (!cmd?.id || !cmd?.savePath) {
+      return { success: false, error: '无效的任务参数' }
+    }
+    const safeSavePath = ensureSafeTargetSavePath(cmd.savePath)
+    if (this.skippingIds.has(cmd.id)) {
+      return { success: false, error: '任务正在执行跳过封装中' }
+    }
+    if (this.activeCompressTaskId === cmd.id || this.compressQueue.some(c => c.taskId === cmd.id)) {
+      return { success: false, error: '任务正在压缩队列中' }
+    }
+
+    this.skippingIds.add(cmd.id)
+    try {
+      const pendingIdx = this.pendingQueue.findIndex(c => c.id === cmd.id)
+      if (pendingIdx !== -1) {
+        this.pendingQueue.splice(pendingIdx, 1)
+      }
+
+      const activeEntry = this.activeDownloads.get(cmd.id)
+      if (activeEntry) {
+        activeEntry.switchingToSkip = true
+        if (!activeEntry.abortController.signal.aborted) {
+          activeEntry.abortController.abort(new DOMException('Switching to skip failed segments', 'AbortError'))
+        }
+        if (activeEntry.donePromise) {
+          await activeEntry.donePromise.catch(() => {})
+        }
+      }
+
+      let finalSavePath = safeSavePath
+      if (!finalSavePath.toLowerCase().endsWith('.mp4') && !finalSavePath.toLowerCase().endsWith('.mkv')) {
+        if (finalSavePath.toLowerCase().endsWith('.m3u8') || finalSavePath.toLowerCase().endsWith('.ts')) {
+          finalSavePath = finalSavePath.replace(/\.(m3u8|ts)$/i, '.mp4')
+        } else {
+          finalSavePath = finalSavePath + '.mp4'
+        }
+      }
+      const tempMp4Path = finalSavePath + '.temp.mp4'
+      const tempTsPath = finalSavePath + '.temp.ts'
+      const spillPaths = getM3U8SpillPaths(finalSavePath)
+      const inspection = inspectM3U8SpillForResume(finalSavePath)
+
+      let isFmp4 = typeof inspection.isFmp4 === 'boolean' ? inspection.isFmp4 : false
+      let workSavePath = isFmp4 ? tempMp4Path : tempTsPath
+      if (!fs.existsSync(workSavePath)) {
+        if (fs.existsSync(tempTsPath)) {
+          workSavePath = tempTsPath
+          if (typeof inspection.isFmp4 !== 'boolean') isFmp4 = false
+        } else if (fs.existsSync(tempMp4Path)) {
+          workSavePath = tempMp4Path
+          if (typeof inspection.isFmp4 !== 'boolean') isFmp4 = true
+        }
+      }
+
+      let flushedSegments = 0
+      if (inspection.mode !== 'none' && inspection.flushedSegments >= 0) {
+        flushedSegments = inspection.flushedSegments
+      } else if (fs.existsSync(workSavePath) && typeof cmd.downloadedSegments === 'number' && cmd.downloadedSegments > 0) {
+        flushedSegments = cmd.downloadedSegments
+      }
+
+      const workPrefixBytes = flushedSegments > 0 && fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
+      const hasWorkPrefix = workPrefixBytes > 0
+      if (!hasWorkPrefix) {
+        flushedSegments = 0
+      }
+
+      const orderedSegments: OrderedM3U8SegmentInput[] = []
+      const seenIndices = new Set<number>()
+      inspection.packEntries.forEach((span, idx) => {
+        if (idx < flushedSegments) return
+        seenIndices.add(idx)
+        orderedSegments.push({
+          index: idx,
+          fileRange: { filePath: spillPaths.spillBinPath, offset: span.offset, length: span.length }
+        })
+      })
+      inspection.legacySegFiles.forEach((info, idx) => {
+        if (idx < flushedSegments || seenIndices.has(idx)) return
+        seenIndices.add(idx)
+        orderedSegments.push({
+          index: idx,
+          fileRange: { filePath: info.filePath, offset: 0, length: info.size }
+        })
+      })
+
+      if (!hasWorkPrefix && orderedSegments.length === 0) {
+        return { success: false, error: '没有可合并的已完成分片' }
+      }
+
+      const parentDir = path.dirname(finalSavePath)
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true })
+      }
+
+      const abortController = new AbortController()
+      this.activeDownloads.set(cmd.id, { abortController, cmd })
+
+      let finalFileSize = 0
+      const mergedCount = flushedSegments + orderedSegments.length
+      const totalSegments =
+        typeof inspection.totalSegments === 'number' && inspection.totalSegments > 0
+          ? inspection.totalSegments
+          : (typeof cmd.totalSegments === 'number' && cmd.totalSegments > 0 ? cmd.totalSegments : mergedCount)
+      const skippedCount = Math.max(0, totalSegments - mergedCount)
+      let successCompleted = false
+
+      try {
+        this.sendProgress({
+          id: cmd.id,
+          status: 'converting',
+          canSkipFailedSegments: false,
+          failedSegmentsCount: 0,
+          errorMsg: '',
+          speed: 0
+        })
+
+        logger.warn(
+          'Downloader',
+          `[M3U8Downloader] 任务 ${cmd.id} 手动跳过 ${skippedCount} 个失效分片，直封装 ${mergedCount}/${totalSegments} 个已完成分片为 MP4`
+        )
+
+        if (orderedSegments.length > 0) {
+          const streamPlan = buildCoalescedM3U8StreamPlan({
+            prefixFilePath: hasWorkPrefix ? workSavePath : undefined,
+            prefixLength: hasWorkPrefix ? workPrefixBytes : 0,
+            orderedSegments
+          })
+          await this.remuxToMp4FromSources(
+            streamPlan,
+            workSavePath,
+            finalSavePath,
+            isFmp4,
+            abortController,
+            cmd.id,
+            skippedCount > 0
+          )
+        } else {
+          await this.remuxToMp4(workSavePath, finalSavePath, isFmp4, abortController, cmd.id, skippedCount > 0)
+          await cleanupM3U8SpillArtifacts(finalSavePath)
+        }
+
+        finalFileSize = fs.existsSync(finalSavePath) ? fs.statSync(finalSavePath).size : 0
+        if (finalFileSize <= 0) {
+          throw new Error('跳过失效分片封装后的输出文件为空')
+        }
+        successCompleted = true
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || abortController.signal.aborted) {
+          const curWorkBytes = fs.existsSync(workSavePath) ? fs.statSync(workSavePath).size : 0
+          this.sendProgress({
+            id: cmd.id,
+            status: 'paused',
+            receivedBytes: curWorkBytes + inspection.totalSpilledBytes,
+            errorMsg: '',
+            canSkipFailedSegments: false,
+            failedSegmentsCount: 0,
+            speed: 0
+          })
+          return { success: false, error: '已取消操作' }
+        }
+        logger.error('Downloader', `[M3U8Downloader] 任务 ${cmd.id} 跳过坏片封装失败: ${err?.message || err}`)
+        this.sendProgress({
+          id: cmd.id,
+          status: 'error',
+          errorMsg: err?.message || '跳过失效分片封装失败',
+          canSkipFailedSegments: false,
+          failedSegmentsCount: 0,
+          speed: 0
+        })
+        return { success: false, error: err?.message || '跳过失效分片封装失败' }
+      } finally {
+        this.activeDownloads.delete(cmd.id)
+        this.checkQueue()
+      }
+
+      if (successCompleted) {
+        await this.handlePostDownload(cmd.id, finalSavePath, finalFileSize, totalSegments, skippedCount, mergedCount)
+        return { success: true, skippedSegments: skippedCount }
+      }
+      return { success: false, error: '未能完成跳过封装' }
+    } finally {
+      this.skippingIds.delete(cmd.id)
     }
   }
 
@@ -3394,7 +4594,15 @@ class Downloader {
   /**
    * 下载完成后的收尾工作：无需压缩则标记完成；需压缩则加入单一压缩队列排队
    */
-  private async handlePostDownload(taskId: string, filePath: string, fileSize: number, totalSegments?: number) {
+  private async handlePostDownload(
+    taskId: string,
+    filePath: string,
+    fileSize: number,
+    totalSegments?: number,
+    skippedSegments?: number,
+    downloadedSegments?: number
+  ) {
+    const finalDownloadedSegments = downloadedSegments !== undefined ? downloadedSegments : totalSegments
     const { needCompress, targetBitrateKbps } = await this.evaluateAutoCompress(filePath, taskId)
 
     if (!needCompress) {
@@ -3404,8 +4612,12 @@ class Downloader {
         savePath: filePath,
         totalBytes: fileSize,
         receivedBytes: fileSize,
-        downloadedSegments: totalSegments,
+        downloadedSegments: finalDownloadedSegments,
         totalSegments: totalSegments,
+        ...(skippedSegments && skippedSegments > 0 ? { skippedSegments } : {}),
+        canSkipFailedSegments: false,
+        failedSegmentsCount: 0,
+        errorMsg: '',
         status: 'completed',
         progress: 100,
         speed: 0
@@ -3419,7 +4631,9 @@ class Downloader {
       filePath,
       targetBitrateKbps,
       scope: 'autoCompress',
-      totalSegments
+      totalSegments,
+      downloadedSegments: finalDownloadedSegments,
+      ...(skippedSegments && skippedSegments > 0 ? { skippedSegments } : {})
     })
   }
 
@@ -3427,6 +4641,7 @@ class Downloader {
    * 统一将压缩任务压入队列（单并发调度，完全不占用下载并发槽位）
    */
   private enqueueCompressTask(item: CompressQueueItem) {
+    const effectiveDownloaded = item.downloadedSegments !== undefined ? item.downloadedSegments : item.totalSegments
     if (this.isCompressingActive) {
       logger.info('Downloader', `[CompressQueue] 当前已有压缩任务进行中，任务 ${item.taskId} 进入排队 (队列位置: ${this.compressQueue.length + 1})`)
       this.sendProgress({
@@ -3434,8 +4649,12 @@ class Downloader {
         status: 'waiting',
         speedText: '等待压缩',
         progress: 100,
-        downloadedSegments: item.totalSegments,
+        downloadedSegments: effectiveDownloaded,
         totalSegments: item.totalSegments,
+        ...(item.skippedSegments && item.skippedSegments > 0 ? { skippedSegments: item.skippedSegments } : {}),
+        canSkipFailedSegments: false,
+        failedSegmentsCount: 0,
+        errorMsg: '',
         speed: 0
       })
       this.compressQueue.push(item)
@@ -3483,7 +4702,9 @@ class Downloader {
    * 执行单个压缩任务（同一时刻仅有且仅能有一个任务处于执行中）
    */
   private async executeCompressQueueItem(item: CompressQueueItem) {
-    const { taskId, filePath, targetBitrateKbps, totalSegments, resolve } = item
+    const { taskId, filePath, targetBitrateKbps, totalSegments, downloadedSegments, skippedSegments, resolve } = item
+    const finalDownloadedSegments = downloadedSegments !== undefined ? downloadedSegments : totalSegments
+    const skippedPayload = skippedSegments && skippedSegments > 0 ? { skippedSegments } : {}
     this.activeCompressTaskId = taskId
     this.activeCompressController = new AbortController()
 
@@ -3503,8 +4724,12 @@ class Downloader {
         status: 'compressing',
         progress: 0,
         speed: 0,
-        downloadedSegments: totalSegments,
-        totalSegments: totalSegments
+        downloadedSegments: finalDownloadedSegments,
+        totalSegments: totalSegments,
+        ...skippedPayload,
+        canSkipFailedSegments: false,
+        failedSegmentsCount: 0,
+        errorMsg: ''
       })
 
       const encoders = await getAvailableEncoders()
@@ -3565,8 +4790,12 @@ class Downloader {
             progress: 100,
             receivedBytes: compressedSize,
             totalBytes: compressedSize,
-            downloadedSegments: totalSegments,
+            downloadedSegments: finalDownloadedSegments,
             totalSegments: totalSegments,
+            ...skippedPayload,
+            canSkipFailedSegments: false,
+            failedSegmentsCount: 0,
+            errorMsg: '',
             speed: 0
           })
 
@@ -3580,8 +4809,12 @@ class Downloader {
             progress: 100,
             receivedBytes: currentSize,
             totalBytes: currentSize,
-            downloadedSegments: totalSegments,
+            downloadedSegments: finalDownloadedSegments,
             totalSegments: totalSegments,
+            ...skippedPayload,
+            canSkipFailedSegments: false,
+            failedSegmentsCount: 0,
+            errorMsg: '',
             speed: 0
           })
           if (resolve) resolve({ success: false, error: '文件替换失败（文件可能被其他程序占用），原视频已安全保留' })
@@ -3597,8 +4830,12 @@ class Downloader {
           progress: 100,
           receivedBytes: currentSize,
           totalBytes: currentSize,
-          downloadedSegments: totalSegments,
+          downloadedSegments: finalDownloadedSegments,
           totalSegments: totalSegments,
+          ...skippedPayload,
+          canSkipFailedSegments: false,
+          failedSegmentsCount: 0,
+          errorMsg: '',
           speed: 0
         })
 
@@ -3613,8 +4850,12 @@ class Downloader {
         progress: 100,
         receivedBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
         totalBytes: fs.existsSync(filePath) ? fs.statSync(filePath).size : 0,
-        downloadedSegments: totalSegments,
+        downloadedSegments: finalDownloadedSegments,
         totalSegments: totalSegments,
+        ...skippedPayload,
+        canSkipFailedSegments: false,
+        failedSegmentsCount: 0,
+        errorMsg: '',
         speed: 0
       })
       if (resolve) resolve({ success: false, error: err.message })
