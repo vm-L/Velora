@@ -1,41 +1,26 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import crypto from 'crypto';
 import { logger } from './logger';
 import { getLanWebHtml } from './lanWebTemplate';
-import { scanDirectory, resolveAppIconPath, retryFileOperation, copyDirRecursive, searchDirectoryRecursive } from './utils/fileSystem';
-import { videoTaskManager, VideoQueueState } from './videoTaskManager';
+import { resolveAppIconPath } from './utils/fileSystem';
+import type { VideoQueueState } from './videoTaskManager';
+import {
+  sendJson,
+  readRequestBody,
+  type LanServerConfig,
+  type ResourceInfo,
+  type TaskEvent,
+  type ActiveStreamEntry,
+  type LanRouteContext
+} from './lanServer/types';
+import { getLocalIp } from './lanServer/network';
+import { handleStreamRoutes } from './lanServer/streamRoutes';
+import { handleFsRoutes } from './lanServer/fsRoutes';
+import { handleVideoRoutes } from './lanServer/videoRoutes';
 
-function sanitizeFilename(filename: string, fallback: string): string {
-  if (!filename) return fallback;
-  const base = path.basename(filename.trim());
-  const sanitized = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
-  return sanitized || fallback;
-}
-
-export interface LanServerConfig {
-  enabled: boolean;
-  port: number;
-  password?: string;
-  allowEdit?: boolean;
-}
-
-export interface ResourceInfo {
-  id: string;
-  name: string;
-  path: string;
-}
-
-export interface TaskEvent {
-  type: 'progress' | 'complete' | 'error' | 'cancelled';
-  percent?: number;
-  text?: string;
-  outputPath?: string;
-  newSize?: number;
-  error?: string;
-}
+export type { LanServerConfig, ResourceInfo, TaskEvent };
 
 export class LanServer {
   private server: http.Server | null = null;
@@ -50,9 +35,12 @@ export class LanServer {
   private latestTaskEvents = new Map<string, TaskEvent>();
   private onFileSystemChangeCallback: ((event: any) => void) | null = null;
   private onReleaseMediaStreamsCallback: ((targetPath: string) => void) | null = null;
-  private activeStreams = new Set<{ filePath: string; fileStream: fs.ReadStream; res: http.ServerResponse }>();
+  private activeStreams = new Set<ActiveStreamEntry>();
+  private readonly routeContext: LanRouteContext;
 
-  constructor() {}
+  constructor() {
+    this.routeContext = this.buildRouteContext();
+  }
 
   public setFileSystemChangeCallback(cb: (event: any) => void) {
     this.onFileSystemChangeCallback = cb;
@@ -125,88 +113,7 @@ export class LanServer {
   }
 
   public getLocalIp(): string {
-    const interfaces = os.networkInterfaces();
-    interface Candidate {
-      ip: string;
-      score: number;
-      devName: string;
-    }
-
-    const candidates: Candidate[] = [];
-
-    // 虚拟网卡特征词列表（强惩罚）
-    const virtualPatterns = [
-      'vethernet', 'wsl', 'vmware', 'vmnet', 'virtualbox', 'vbox',
-      'docker', 'container', 'tun', 'tap', 'tailscale', 'zerotier',
-      'loopback', 'hyper-v', 'bridge', 'virbr', 'dummy', 'host-only',
-      'npcap', 'pcap', 'utun', 'awdl', 'llw', 'teredo', 'isatap',
-      'pseudo', 'vpn'
-    ];
-
-    // 物理网卡特征词列表（加分）
-    const wifiPatterns = ['wi-fi', 'wifi', 'wlan', 'wireless', '无线'];
-    const ethernetPatterns = ['ethernet', 'eth', 'en0', 'en1', '以太网', '本地连接'];
-
-    for (const devName of Object.keys(interfaces)) {
-      const iface = interfaces[devName];
-      if (!iface) continue;
-
-      const lowerDev = devName.toLowerCase();
-      const isVirtual = virtualPatterns.some(p => lowerDev.includes(p));
-      const isWifi = wifiPatterns.some(p => lowerDev.includes(p));
-      const isEthernet = ethernetPatterns.some(p => lowerDev.includes(p));
-
-      for (const alias of iface) {
-        if (alias.family !== 'IPv4' || alias.internal) continue;
-        const ip = alias.address;
-        if (!ip || ip === '127.0.0.1' || ip === '0.0.0.0' || ip.startsWith('169.254.') || ip.startsWith('255.')) {
-          continue;
-        }
-
-        let score = 0;
-
-        // 虚拟网卡惩罚
-        if (isVirtual) {
-          score -= 100;
-        } else {
-          // 物理网卡加分
-          if (isWifi) score += 50;
-          else if (isEthernet) score += 45;
-          else score += 10;
-        }
-
-        // IP 地址网段评分
-        if (ip.startsWith('192.168.')) {
-          score += 30;
-        } else if (ip.startsWith('10.')) {
-          score += 20;
-        } else if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)) {
-          score += 10;
-        } else {
-          score += 5;
-        }
-
-        // 主机位特征：.1 通常是虚拟适配器或网关地址，真实 DHCP 客户端通常 > .1
-        const parts = ip.split('.');
-        if (parts.length === 4) {
-          const lastOctet = parseInt(parts[3], 10);
-          if (lastOctet === 1) {
-            score -= 20;
-          } else if (lastOctet >= 2 && lastOctet <= 254) {
-            score += 15;
-          }
-        }
-
-        candidates.push({ ip, score, devName });
-      }
-    }
-
-    if (candidates.length === 0) {
-      return '127.0.0.1';
-    }
-
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates[0].ip;
+    return getLocalIp();
   }
 
   public getStatus() {
@@ -321,12 +228,34 @@ export class LanServer {
     return false;
   }
 
-  private sendJson(res: http.ServerResponse, statusCode: number, data: any) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(data));
+  private buildRouteContext(): LanRouteContext {
+    return {
+      allowEdit: () => this.allowEdit,
+      getResources: () => this.getResourcesCallback(),
+      isPathInAllowedResources: (targetPath) => this.isPathInAllowedResources(targetPath),
+      releaseStreams: (targetPath) => this.releaseStreams(targetPath),
+      notifyFileSystemChange: (event) => this.notifyFileSystemChange(event),
+      registerActiveStream: (entry) => this.activeStreams.add(entry),
+      unregisterActiveStream: (entry) => this.activeStreams.delete(entry),
+      addTaskQueueSubscriber: (res) => this.taskQueueSubscribers.add(res),
+      removeTaskQueueSubscriber: (res) => this.taskQueueSubscribers.delete(res),
+      subscribeTaskProgress: (taskId, res) => {
+        if (!this.sseSubscribers.has(taskId)) {
+          this.sseSubscribers.set(taskId, new Set());
+        }
+        this.sseSubscribers.get(taskId)!.add(res);
+        return this.latestTaskEvents.get(taskId);
+      },
+      unsubscribeTaskProgress: (taskId, res) => {
+        const subs = this.sseSubscribers.get(taskId);
+        if (!subs) return;
+        subs.delete(res);
+        if (subs.size === 0) {
+          this.sseSubscribers.delete(taskId);
+        }
+      },
+      broadcastTaskEvent: (taskId, event) => this.broadcastTaskEvent(taskId, event)
+    };
   }
 
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -361,7 +290,7 @@ export class LanServer {
 
       // API: info
       if (pathname === '/api/info') {
-        return this.sendJson(res, 200, {
+        return sendJson(res, 200, {
           success: true,
           requireAuth: !!this.password,
           allowEdit: this.allowEdit
@@ -370,763 +299,27 @@ export class LanServer {
 
       // API: login
       if (pathname === '/api/login' && req.method === 'POST') {
-        const body = await this.readRequestBody(req);
+        const body = await readRequestBody(req);
         const { password } = JSON.parse(body || '{}');
         if (this.password && password === this.password) {
           const token = crypto.randomBytes(24).toString('hex');
           this.validTokens.add(token);
-          return this.sendJson(res, 200, { success: true, token });
+          return sendJson(res, 200, { success: true, token });
         } else if (!this.password) {
-          return this.sendJson(res, 200, { success: true, token: 'free' });
+          return sendJson(res, 200, { success: true, token: 'free' });
         } else {
-          return this.sendJson(res, 401, { success: false, error: '密码错误' });
+          return sendJson(res, 401, { success: false, error: '密码错误' });
         }
       }
 
       // Check authentication for protected APIs
       if (!this.isAuthorized(req, urlObj)) {
-        return this.sendJson(res, 401, { success: false, error: '未授权或登录已过期' });
+        return sendJson(res, 401, { success: false, error: '未授权或登录已过期' });
       }
 
-      // API: resources
-      if (pathname === '/api/resources') {
-        const resources = await this.getResourcesCallback();
-        return this.sendJson(res, 200, {
-          success: true,
-          resources: resources.map(r => ({ id: r.id, name: r.name, path: r.path }))
-        });
-      }
-
-      // API: directory
-      if (pathname === '/api/directory') {
-        const resourceId = urlObj.searchParams.get('id') || '';
-        let targetPath = urlObj.searchParams.get('path') || '';
-
-        const resources = await this.getResourcesCallback();
-        if (!targetPath && resourceId) {
-          const matched = resources.find(r => r.id === resourceId);
-          if (matched && matched.path) {
-            targetPath = matched.path;
-          }
-        }
-
-        if (!targetPath) {
-          return this.sendJson(res, 400, { success: false, error: '缺少路径参数' });
-        }
-
-        const isAllowed = await this.isPathInAllowedResources(targetPath);
-        if (!isAllowed) {
-          return this.sendJson(res, 403, { success: false, error: '拒绝访问非挂载资源目录' });
-        }
-
-        const scanRes = await scanDirectory(targetPath);
-        if (!scanRes.success) {
-          return this.sendJson(res, 400, { success: false, error: scanRes.error });
-        }
-
-        return this.sendJson(res, 200, { success: true, items: scanRes.items });
-      }
-
-      // API: search (递归深度搜索)
-      if (pathname === '/api/search') {
-        const resourceId = urlObj.searchParams.get('id') || '';
-        let targetPath = urlObj.searchParams.get('path') || '';
-        const query = urlObj.searchParams.get('q') || '';
-
-        const resources = await this.getResourcesCallback();
-        if (!targetPath && resourceId) {
-          const matched = resources.find(r => r.id === resourceId);
-          if (matched && matched.path) {
-            targetPath = matched.path;
-          }
-        }
-
-        if (!targetPath) {
-          return this.sendJson(res, 400, { success: false, error: '缺少路径参数' });
-        }
-
-        const isAllowed = await this.isPathInAllowedResources(targetPath);
-        if (!isAllowed) {
-          return this.sendJson(res, 403, { success: false, error: '拒绝访问非挂载资源目录' });
-        }
-
-        const searchRes = await searchDirectoryRecursive(targetPath, query);
-        if (!searchRes.success) {
-          return this.sendJson(res, 400, { success: false, error: searchRes.error });
-        }
-
-        return this.sendJson(res, 200, { success: true, items: searchRes.items });
-      }
-
-      // Stream Range Stream (Video / Audio / Image / Static Files)
-      if (pathname === '/stream') {
-        const filePath = urlObj.searchParams.get('path') || '';
-        if (!filePath) {
-          res.writeHead(400);
-          return res.end('Missing path');
-        }
-
-        const isAllowed = await this.isPathInAllowedResources(filePath);
-        if (!isAllowed) {
-          res.writeHead(403);
-          return res.end('Forbidden');
-        }
-
-        if (!fs.existsSync(filePath)) {
-          res.writeHead(404);
-          return res.end('File not found');
-        }
-
-        const stat = await fs.promises.stat(filePath);
-        const rangeHeader = req.headers['range'];
-
-        let contentType = 'application/octet-stream';
-        const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
-        if (ext === 'mp4') contentType = 'video/mp4';
-        else if (ext === 'm3u8') contentType = 'application/x-mpegURL';
-        else if (ext === 'ts') contentType = 'video/MP2T';
-        else if (ext === 'mkv') contentType = 'video/x-matroska';
-        else if (ext === 'webm') contentType = 'video/webm';
-        else if (ext === 'mov') contentType = 'video/quicktime';
-        else if (ext === 'mp3') contentType = 'audio/mpeg';
-        else if (ext === 'wav') contentType = 'audio/wav';
-        else if (ext === 'aac') contentType = 'audio/aac';
-        else if (ext === 'flac') contentType = 'audio/flac';
-        else if (ext === 'ogg' || ext === 'opus') contentType = 'audio/ogg';
-        else if (ext === 'png') contentType = 'image/png';
-        else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
-        else if (ext === 'webp') contentType = 'image/webp';
-        else if (ext === 'gif') contentType = 'image/gif';
-        else if (ext === 'svg') contentType = 'image/svg+xml';
-
-        const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
-        const lastModified = stat.mtime.toUTCString();
-        const ifRange = req.headers['if-range'];
-        const isIfRangeValid = !ifRange || ifRange === etag || ifRange === lastModified;
-
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Accept-Ranges', 'bytes');
-        res.setHeader('Cache-Control', 'no-cache, private');
-        res.setHeader('ETag', etag);
-        res.setHeader('Last-Modified', lastModified);
-        res.setHeader('Connection', 'keep-alive');
-
-        if (rangeHeader && stat.size > 0 && isIfRangeValid) {
-          const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
-          if (!match) {
-            res.writeHead(416, {
-              'Content-Range': `bytes */${stat.size}`,
-              'Access-Control-Allow-Origin': '*'
-            });
-            return res.end();
-          }
-
-          let start = match[1] ? parseInt(match[1], 10) : NaN;
-          let end = match[2] ? parseInt(match[2], 10) : NaN;
-
-          if (isNaN(start)) {
-            if (isNaN(end)) {
-              res.writeHead(416, {
-                'Content-Range': `bytes */${stat.size}`,
-                'Access-Control-Allow-Origin': '*'
-              });
-              return res.end();
-            }
-            start = Math.max(0, stat.size - end);
-            end = stat.size - 1;
-          } else if (isNaN(end)) {
-            end = stat.size - 1;
-          }
-
-          if (start >= stat.size || start < 0 || end < start) {
-            res.writeHead(416, {
-              'Content-Range': `bytes */${stat.size}`,
-              'Access-Control-Allow-Origin': '*'
-            });
-            return res.end();
-          }
-
-          end = Math.min(end, stat.size - 1);
-
-          const chunksize = end - start + 1;
-
-          res.writeHead(206, {
-            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-            'Content-Length': chunksize,
-            'Content-Type': contentType,
-            'Access-Control-Allow-Origin': '*',
-            'Accept-Ranges': 'bytes',
-            'Connection': 'keep-alive'
-          });
-
-          const fileStream = fs.createReadStream(filePath, { start, end });
-          const streamEntry = { filePath, fileStream, res };
-          this.activeStreams.add(streamEntry);
-          const cleanUpStream = () => {
-            this.activeStreams.delete(streamEntry);
-            try { fileStream.destroy(); } catch {}
-          };
-
-          fileStream.on('error', (err) => {
-            logger.warn('LanServer', `Stream pipe error for ${filePath}: ${err.message}`);
-            cleanUpStream();
-            if (!res.headersSent) {
-              res.writeHead(500);
-            }
-            res.end();
-          });
-          req.on('close', cleanUpStream);
-          res.on('finish', cleanUpStream);
-          fileStream.on('close', () => this.activeStreams.delete(streamEntry));
-          return fileStream.pipe(res);
-        } else {
-          res.writeHead(200, {
-            'Content-Length': stat.size,
-            'Content-Type': contentType,
-            'Access-Control-Allow-Origin': '*',
-            'Accept-Ranges': 'bytes'
-          });
-          const fileStream = fs.createReadStream(filePath);
-          const streamEntry = { filePath, fileStream, res };
-          this.activeStreams.add(streamEntry);
-          const cleanUpStream = () => {
-            this.activeStreams.delete(streamEntry);
-            try { fileStream.destroy(); } catch {}
-          };
-
-          fileStream.on('error', (err) => {
-            logger.warn('LanServer', `Full stream error for ${filePath}: ${err.message}`);
-            cleanUpStream();
-            if (!res.headersSent) {
-              res.writeHead(500);
-            }
-            res.end();
-          });
-          req.on('close', cleanUpStream);
-          res.on('finish', cleanUpStream);
-          fileStream.on('close', () => this.activeStreams.delete(streamEntry));
-          return fileStream.pipe(res);
-        }
-      }
-
-      // Download file attachment
-      if (pathname === '/download') {
-        const filePath = urlObj.searchParams.get('path') || '';
-        if (!filePath) {
-          res.writeHead(400);
-          return res.end('Missing path');
-        }
-
-        const isAllowed = await this.isPathInAllowedResources(filePath);
-        if (!isAllowed || !fs.existsSync(filePath)) {
-          res.writeHead(404);
-          return res.end('File not found');
-        }
-
-        const stat = await fs.promises.stat(filePath);
-        const fileName = path.basename(filePath);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Length', stat.size);
-        const fileStream = fs.createReadStream(filePath);
-        const streamEntry = { filePath, fileStream, res };
-        this.activeStreams.add(streamEntry);
-        const cleanUpStream = () => {
-          this.activeStreams.delete(streamEntry);
-          try { fileStream.destroy(); } catch {}
-        };
-        fileStream.on('error', cleanUpStream);
-        req.on('close', cleanUpStream);
-        res.on('finish', cleanUpStream);
-        fileStream.on('close', () => this.activeStreams.delete(streamEntry));
-        return fileStream.pipe(res);
-      }
-
-      // API: dir-tree
-      if (pathname === '/api/dir-tree') {
-        const resourceId = urlObj.searchParams.get('id') || '';
-        let rootPath = urlObj.searchParams.get('rootPath') || '';
-
-        const resources = await this.getResourcesCallback();
-        if (!rootPath && resourceId) {
-          const matched = resources.find(r => r.id === resourceId);
-          if (matched && matched.path) {
-            rootPath = matched.path;
-          }
-        }
-
-        if (!rootPath) {
-          return this.sendJson(res, 400, { success: false, error: '缺少 rootPath 参数' });
-        }
-
-        const isAllowed = await this.isPathInAllowedResources(rootPath);
-        if (!isAllowed) {
-          return this.sendJson(res, 403, { success: false, error: '越界操作' });
-        }
-
-        const maxDepth = 6;
-        interface DirTreeItem {
-          path: string;
-          name: string;
-          depth: number;
-        }
-        const results: DirTreeItem[] = [];
-
-        const scan = async (currentDir: string, depth: number) => {
-          if (depth > maxDepth) return;
-          try {
-            const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
-            for (const entry of entries) {
-              if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                const fullPath = path.join(currentDir, entry.name).replace(/\\/g, '/');
-                results.push({
-                  path: fullPath,
-                  name: entry.name,
-                  depth
-                });
-                await scan(fullPath, depth + 1);
-              }
-            }
-          } catch (err: any) {
-            logger.error('LanServer', `Error scanning dir tree: ${err.message}`);
-          }
-        };
-
-        const rootName = path.basename(rootPath) || rootPath;
-        results.push({
-          path: rootPath.replace(/\\/g, '/'),
-          name: `根目录 (${rootName})`,
-          depth: 0
-        });
-
-        await scan(rootPath, 1);
-        return this.sendJson(res, 200, { success: true, dirList: results });
-      }
-
-      // Edit Actions (Protected by allowEdit flag)
-      if (pathname.startsWith('/api/') && ['/api/create-folder', '/api/rename', '/api/delete', '/api/move'].includes(pathname)) {
-        if (!this.allowEdit) {
-          return this.sendJson(res, 403, { success: false, error: '未开启局域网编辑权限，当前为只读模式' });
-        }
-
-        const body = await this.readRequestBody(req);
-        const params = JSON.parse(body || '{}');
-
-        if (pathname === '/api/create-folder') {
-          const { parentPath, name } = params;
-          if (!parentPath || !name) return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          const targetDir = path.join(parentPath, name);
-          const isAllowed = await this.isPathInAllowedResources(targetDir);
-          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          await fs.promises.mkdir(targetDir, { recursive: true });
-          return this.sendJson(res, 200, { success: true });
-        }
-
-        if (pathname === '/api/rename') {
-          const { targetPath, newName } = params;
-          if (!targetPath || !newName) return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          const isAllowed = await this.isPathInAllowedResources(targetPath);
-          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
-          const dir = path.dirname(targetPath);
-          const newPath = path.join(dir, newName);
-
-          this.releaseStreams(targetPath);
-
-          try {
-            await retryFileOperation(async () => {
-              await fs.promises.rename(targetPath, newPath);
-            });
-            this.notifyFileSystemChange({
-              type: 'rename',
-              oldPath: targetPath,
-              newPath,
-              name: newName,
-              isDirectory: isDir
-            });
-            return this.sendJson(res, 200, { success: true });
-          } catch (err: any) {
-            logger.error('LanServer', `重命名失败: ${err.message}`);
-            return this.sendJson(res, 500, { success: false, error: `重命名失败: ${err.message}` });
-          }
-        }
-
-        if (pathname === '/api/delete') {
-          const { targetPath } = params;
-          if (!targetPath) return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          const isAllowed = await this.isPathInAllowedResources(targetPath);
-          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          const isDir = fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
-
-          this.releaseStreams(targetPath);
-
-          try {
-            await retryFileOperation(async () => {
-              await fs.promises.rm(targetPath, { recursive: true, force: true });
-            });
-            this.notifyFileSystemChange({
-              type: 'delete',
-              path: targetPath,
-              isDirectory: isDir
-            });
-            return this.sendJson(res, 200, { success: true });
-          } catch (err: any) {
-            logger.error('LanServer', `删除失败: ${err.message}`);
-            return this.sendJson(res, 500, { success: false, error: `删除失败: ${err.message}` });
-          }
-        }
-
-        if (pathname === '/api/move') {
-          const { sourcePath, sourcePaths, targetDirPath } = params;
-          const pathsToMove: string[] = Array.isArray(sourcePaths)
-            ? sourcePaths.filter((p: any) => typeof p === 'string' && p.trim())
-            : (sourcePath && typeof sourcePath === 'string' && sourcePath.trim() ? [sourcePath.trim()] : []);
-
-          if (pathsToMove.length === 0 || !targetDirPath) {
-            return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          }
-
-          const isTargetAllowed = await this.isPathInAllowedResources(targetDirPath);
-          if (!isTargetAllowed) {
-            return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          }
-
-          if (!fs.existsSync(targetDirPath)) {
-            return this.sendJson(res, 404, { success: false, error: '目标目录不存在' });
-          }
-
-          const targetStat = await fs.promises.stat(targetDirPath);
-          if (!targetStat.isDirectory()) {
-            return this.sendJson(res, 400, { success: false, error: '目标路径不是文件夹' });
-          }
-
-          const movedPaths: string[] = [];
-          const errors: string[] = [];
-
-          for (let i = 0; i < pathsToMove.length; i++) {
-            const src = pathsToMove[i];
-            const isSourceAllowed = await this.isPathInAllowedResources(src);
-            if (!isSourceAllowed) {
-              errors.push(`权限不足: ${path.basename(src)}`);
-              continue;
-            }
-
-            if (!fs.existsSync(src)) {
-              errors.push(`源文件不存在: ${path.basename(src)}`);
-              continue;
-            }
-
-            const srcStat = await fs.promises.stat(src);
-            const resolvedSrc = path.resolve(src);
-            const resolvedTargetDir = path.resolve(targetDirPath);
-
-            if (srcStat.isDirectory()) {
-              const relative = path.relative(resolvedSrc, resolvedTargetDir);
-              if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-                errors.push(`无法将文件夹移动到其子目录中: ${path.basename(src)}`);
-                continue;
-              }
-            }
-
-            const baseName = path.basename(src);
-            let destPath = path.join(targetDirPath, baseName);
-
-            if (resolvedSrc === path.resolve(destPath)) {
-              continue;
-            }
-
-            if (fs.existsSync(destPath)) {
-              const ext = path.extname(baseName);
-              const nameWithoutExt = path.basename(baseName, ext);
-              destPath = path.join(targetDirPath, `${nameWithoutExt}_moved_${Date.now()}_${i}${ext}`);
-            }
-
-            try {
-              this.releaseStreams(src);
-
-              await retryFileOperation(async () => {
-                try {
-                  await fs.promises.rename(src, destPath);
-                } catch (err: any) {
-                  if (err.code === 'EXDEV') {
-                    if (srcStat.isDirectory()) {
-                      await copyDirRecursive(src, destPath);
-                      await fs.promises.rm(src, { recursive: true, force: true });
-                    } else {
-                      await fs.promises.copyFile(src, destPath);
-                      await fs.promises.unlink(src);
-                    }
-                  } else {
-                    throw err;
-                  }
-                }
-              });
-
-              movedPaths.push(destPath.replace(/\\/g, '/'));
-              this.notifyFileSystemChange({
-                type: 'move',
-                oldPath: src,
-                newPath: destPath,
-                name: path.basename(destPath),
-                isDirectory: srcStat.isDirectory()
-              });
-            } catch (err: any) {
-              errors.push(`移动失败: ${baseName} (${err.message || '未知原因'})`);
-            }
-          }
-
-          if (movedPaths.length === 0 && errors.length > 0) {
-            return this.sendJson(res, 400, { success: false, error: errors.join('; ') });
-          }
-
-          return this.sendJson(res, 200, {
-            success: true,
-            movedCount: movedPaths.length,
-            totalCount: pathsToMove.length,
-            newPath: movedPaths[0] || '',
-            errors: errors.length > 0 ? errors : undefined
-          });
-        }
-      }
-
-      // Global Task Queue Event Stream (SSE)
-      if (pathname === '/api/task-queue-stream') {
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
-        });
-
-        this.taskQueueSubscribers.add(res);
-
-        // 立即发送当前全局任务队列状态快照
-        const snapshot = videoTaskManager.getQueueState();
-        res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
-
-        const heartbeat = setInterval(() => {
-          try {
-            res.write(': heartbeat\n\n');
-          } catch {
-            clearInterval(heartbeat);
-          }
-        }, 15000);
-
-        req.on('close', () => {
-          clearInterval(heartbeat);
-          this.taskQueueSubscribers.delete(res);
-        });
-        return;
-      }
-
-      // Global Task Queue Snapshot (GET)
-      if (pathname === '/api/task-queue' && req.method === 'GET') {
-        return this.sendJson(res, 200, {
-          success: true,
-          ...videoTaskManager.getQueueState()
-        });
-      }
-
-      // Task Progress Event Stream (SSE, Backward Compatibility)
-      if (pathname === '/api/task-progress') {
-        const taskId = urlObj.searchParams.get('taskId');
-        if (!taskId) {
-          return this.sendJson(res, 400, { success: false, error: '缺少 taskId 参数' });
-        }
-
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
-        });
-
-        if (!this.sseSubscribers.has(taskId)) {
-          this.sseSubscribers.set(taskId, new Set());
-        }
-        const subs = this.sseSubscribers.get(taskId)!;
-        subs.add(res);
-
-        const latest = this.latestTaskEvents.get(taskId);
-        if (latest) {
-          res.write(`data: ${JSON.stringify(latest)}\n\n`);
-        } else {
-          res.write(`data: ${JSON.stringify({ type: 'progress', percent: 0, text: '连接已就绪...' })}\n\n`);
-        }
-
-        const heartbeat = setInterval(() => {
-          try {
-            res.write(': heartbeat\n\n');
-          } catch {
-            clearInterval(heartbeat);
-          }
-        }, 15000);
-
-        req.on('close', () => {
-          clearInterval(heartbeat);
-          subs.delete(res);
-          if (subs.size === 0) {
-            this.sseSubscribers.delete(taskId);
-          }
-        });
-        return;
-      }
-
-      // Video Editing Operations (Protected by allowEdit flag)
-      if (pathname === '/api/video-cut' || pathname === '/api/video-merge' || pathname === '/api/video-compress' || pathname === '/api/task-cancel') {
-        if (!this.allowEdit) {
-          return this.sendJson(res, 403, { success: false, error: '未开启局域网编辑权限，当前为只读模式' });
-        }
-
-        const body = await this.readRequestBody(req);
-        const params = JSON.parse(body || '{}');
-
-        // Cancel video task (Unified via VideoTaskManager)
-        if (pathname === '/api/task-cancel') {
-          const { taskId } = params;
-          if (!taskId) return this.sendJson(res, 400, { success: false, error: '缺少 taskId 参数' });
-          const success = videoTaskManager.cancelTask(taskId);
-          this.broadcastTaskEvent(taskId, { type: 'cancelled' });
-          return this.sendJson(res, 200, { success });
-        }
-
-        // Cut video segments (Unified via VideoTaskManager)
-        if (pathname === '/api/video-cut') {
-          const { taskId, sourcePath, segments, mode, customFilename } = params;
-          if (!sourcePath || !Array.isArray(segments) || segments.length === 0) {
-            return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          }
-          const isAllowed = await this.isPathInAllowedResources(sourcePath);
-          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-
-          const editMode: 'replace' | 'saveAs' = mode === 'replace' ? 'replace' : 'saveAs';
-          let targetPath = sourcePath;
-
-          if (editMode === 'saveAs') {
-            const dir = path.dirname(sourcePath);
-            const ext = path.extname(sourcePath) || '.mp4';
-            const baseName = path.basename(sourcePath, ext);
-            const defaultName = `${baseName}_cut${ext}`;
-            const fileName = sanitizeFilename(customFilename || '', defaultName);
-            targetPath = path.join(dir, fileName);
-            const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
-            if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          }
-
-          const effectiveTaskId = taskId || `cut_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          const sourceName = path.basename(sourcePath);
-
-          videoTaskManager.enqueueTask({
-            id: effectiveTaskId,
-            type: 'cut',
-            title: sourceName,
-            payload: {
-              cutParams: {
-                taskId: effectiveTaskId,
-                sourcePath,
-                segments,
-                mode: editMode,
-                outputPath: editMode === 'saveAs' ? targetPath : undefined
-              }
-            },
-            extra: {
-              sourcePath,
-              mode: editMode
-            }
-          });
-
-          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
-        }
-
-        // Merge multiple videos (Unified via VideoTaskManager)
-        if (pathname === '/api/video-merge') {
-          const { taskId, videoPaths, customFilename } = params;
-          if (!Array.isArray(videoPaths) || videoPaths.length < 2) {
-            return this.sendJson(res, 400, { success: false, error: '至少需要 2 个视频文件进行合并' });
-          }
-          for (const vp of videoPaths) {
-            const isAllowed = await this.isPathInAllowedResources(vp);
-            if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          }
-
-          const dir = path.dirname(videoPaths[0]);
-          const defaultName = `velora_merge_${Date.now()}.mp4`;
-          const fileName = sanitizeFilename(customFilename || '', defaultName);
-          const targetPath = path.join(dir, fileName);
-          const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
-          if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-
-          const effectiveTaskId = taskId || `merge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-          videoTaskManager.enqueueTask({
-            id: effectiveTaskId,
-            type: 'merge',
-            title: `合并 ${videoPaths.length} 个视频`,
-            payload: {
-              mergeParams: {
-                taskId: effectiveTaskId,
-                videoPaths,
-                outputPath: targetPath
-              }
-            },
-            extra: {
-              mode: 'saveAs'
-            }
-          });
-
-          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
-        }
-
-        // Compress video (Unified via VideoTaskManager)
-        if (pathname === '/api/video-compress') {
-          const { taskId, filePath, targetBitrateKbps, mode, customFilename } = params;
-          if (!filePath || !targetBitrateKbps) {
-            return this.sendJson(res, 400, { success: false, error: '参数缺失' });
-          }
-          const isAllowed = await this.isPathInAllowedResources(filePath);
-          if (!isAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-
-          const compressMode: 'replace' | 'saveAs' = mode === 'replace' ? 'replace' : 'saveAs';
-          let targetPath = filePath;
-
-          if (compressMode === 'saveAs') {
-            const dir = path.dirname(filePath);
-            const ext = path.extname(filePath) || '.mp4';
-            const baseName = path.basename(filePath, ext);
-            const defaultName = `${baseName}_compressed${ext}`;
-            const fileName = sanitizeFilename(customFilename || '', defaultName);
-            targetPath = path.join(dir, fileName);
-            const isTargetAllowed = await this.isPathInAllowedResources(targetPath);
-            if (!isTargetAllowed) return this.sendJson(res, 403, { success: false, error: '越界操作' });
-          }
-
-          const effectiveTaskId = taskId || `compress_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          const fileName = path.basename(filePath);
-
-          videoTaskManager.enqueueTask({
-            id: effectiveTaskId,
-            type: 'compress',
-            title: fileName,
-            payload: {
-              compressParams: {
-                taskId: effectiveTaskId,
-                filePath,
-                targetBitrateKbps: Number(targetBitrateKbps) || 2000,
-                outputPath: compressMode === 'saveAs' ? targetPath : undefined,
-                mode: compressMode
-              }
-            },
-            extra: {
-              filePath,
-              mode: compressMode
-            }
-          });
-
-          return this.sendJson(res, 200, { success: true, taskId: effectiveTaskId });
-        }
-      }
+      if (await handleStreamRoutes(req, res, urlObj, this.routeContext)) return;
+      if (await handleFsRoutes(req, res, urlObj, this.routeContext)) return;
+      if (await handleVideoRoutes(req, res, urlObj, this.routeContext)) return;
 
       res.writeHead(404);
       res.end('Not Found');
@@ -1150,21 +343,6 @@ export class LanServer {
         }
       });
     }
-  }
-
-  private readRequestBody(req: http.IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let data = '';
-      req.on('data', (chunk) => {
-        data += chunk;
-        if (data.length > 10 * 1024 * 1024) {
-          req.destroy();
-          reject(new Error('Payload too large'));
-        }
-      });
-      req.on('end', () => resolve(data));
-      req.on('error', reject);
-    });
   }
 }
 
