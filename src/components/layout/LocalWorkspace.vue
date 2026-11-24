@@ -447,7 +447,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
@@ -458,21 +458,20 @@ import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
 import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
 import CompressVideoDialog from '@/components/features/CompressVideoDialog.vue';
 import BatchCompressVideoDialog from '@/components/features/BatchCompressVideoDialog.vue';
-import MergeVideoDialog, { MergeVideoItem } from '@/components/features/MergeVideoDialog.vue';
-import { useMessage } from '@/composables/useMessage';
-import { useConfirm } from '@/composables/useConfirm';
-import { logger } from '@/services/logger';
+import MergeVideoDialog from '@/components/features/MergeVideoDialog.vue';
 import { formatBytes } from '@/utils/format';
+import {
+  formatTime,
+  getFileCategory,
+  isRecentFile,
+  type LocalFileItem
+} from '@/composables/local/types';
+import { useLocalDirectory } from '@/composables/local/useLocalDirectory';
+import { useLocalSelectionAndMarquee } from '@/composables/local/useLocalSelectionAndMarquee';
+import { useLocalFileOperations } from '@/composables/local/useLocalFileOperations';
+import { useLocalDragMove } from '@/composables/local/useLocalDragMove';
 
-export interface LocalFileItem {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size: number;
-  mtime: number;
-  ext: string;
-  hasRecentFile?: boolean;
-}
+export type { LocalFileItem };
 
 const props = defineProps<{
   resourceId: string;
@@ -482,200 +481,142 @@ const props = defineProps<{
 
 const route = useRoute();
 
-const { showMessage, removeMessage } = useMessage();
-const { confirm } = useConfirm();
+let clearSelectionImpl = () => {};
 
-const currentPath = ref<string>(props.resourcePath);
-const items = ref<LocalFileItem[]>([]);
-const searchResults = ref<LocalFileItem[]>([]);
-const isSearching = ref<boolean>(false);
-const loading = ref<boolean>(false);
-const errorMsg = ref<string>('');
-const searchQuery = ref<string>('');
-const sortBy = ref<string>('mtime-desc');
-
-// Multi-selection state
-const selectedPaths = ref<Set<string>>(new Set());
-const lastSelectedIndex = ref<number>(-1);
-
-// Preview states
-const activeVideoUrl = ref<string | null>(null);
-const activeAudioUrl = ref<string | null>(null);
-const activeImageUrl = ref<string | null>(null);
-
-// Dialogs state
-const showNewFolderModal = ref<boolean>(false);
-const newFolderName = ref<string>('');
-
-const renameModal = ref<{ visible: boolean; item: LocalFileItem | null; newName: string }>({
-  visible: false,
-  item: null,
-  newName: ''
+const {
+  currentPath,
+  items,
+  searchResults,
+  isSearching,
+  loading,
+  errorMsg,
+  searchQuery,
+  sortBy,
+  isAtRoot,
+  breadcrumbs,
+  filteredItems,
+  loadDirectory,
+  handleExecuteSearch,
+  handleClearSearch,
+  refreshDirectorySilently,
+  navigateUp,
+  jumpToBreadcrumb
+} = useLocalDirectory({
+  resourcePath: () => props.resourcePath,
+  resourceName: () => props.resourceName,
+  onClearSelection: () => clearSelectionImpl()
 });
 
-const moveDialog = ref<{ visible: boolean; items: LocalFileItem[] }>({
-  visible: false,
-  items: []
+const {
+  selectedPaths,
+  workspaceBodyRef,
+  marqueeState,
+  contextMenu,
+  selectedItems,
+  isAllSelectedVideos,
+  singleSelectedItem,
+  totalSelectedBytes,
+  clearSelection,
+  selectAll,
+  handleCardClick,
+  onItemContextMenu,
+  onBodyContextMenu,
+  closeContextMenu,
+  onContextMenuClick,
+  handleWorkspaceMouseDown,
+  cleanupMarquee
+} = useLocalSelectionAndMarquee({
+  items,
+  searchResults,
+  isSearching,
+  filteredItems
 });
 
-// Drag & Drop move state
-const dragState = ref<{
-  isDragging: boolean;
-  items: LocalFileItem[];
-}>({
-  isDragging: false,
-  items: []
-});
-const dragHoverTarget = ref<string | null>(null);
+clearSelectionImpl = clearSelection;
 
-const compressModal = ref<{ visible: boolean; task: any }>({
-  visible: false,
-  task: null
-});
-
-const isBatchCompressDialogVisible = ref<boolean>(false);
-const batchCompressTasks = ref<Array<{ id: string; name: string; savePath: string; totalBytes: number }>>([]);
-
-const isMergeVideoDialogVisible = ref<boolean>(false);
-const mergeVideosList = ref<MergeVideoItem[]>([]);
-
-// Marquee Selection state
-const workspaceBodyRef = ref<HTMLElement | null>(null);
-const marqueeState = ref<{
-  visible: boolean;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}>({
-  visible: false,
-  left: 0,
-  top: 0,
-  width: 0,
-  height: 0
-});
-
-// Context menu state
-const contextMenu = ref<{
-  visible: boolean;
-  x: number;
-  y: number;
-  targetItem: LocalFileItem | null;
-}>({
-  visible: false,
-  x: 0,
-  y: 0,
-  targetItem: null
+const {
+  activeVideoUrl,
+  activeAudioUrl,
+  activeImageUrl,
+  showNewFolderModal,
+  newFolderName,
+  renameModal,
+  moveDialog,
+  compressModal,
+  isBatchCompressDialogVisible,
+  batchCompressTasks,
+  isMergeVideoDialogVisible,
+  mergeVideosList,
+  handleItemDblClick,
+  handleContextPreview,
+  openInExplorer,
+  isPathCurrentlyPlayingOrPreviewed,
+  openRenameModal,
+  handleConfirmRename,
+  handleConfirmNewFolder,
+  openMoveModal,
+  openBatchMoveModal,
+  handleConfirmMove,
+  openCompressModal,
+  handleConfirmCompress,
+  handleCompressDirectory,
+  openMergeVideoModal,
+  handleMergeSuccess,
+  openBatchCompressModal,
+  handleConfirmBatchCompress,
+  handleDelete,
+  handleBatchDelete
+} = useLocalFileOperations({
+  currentPath,
+  selectedPaths,
+  selectedItems,
+  closeContextMenu,
+  loadDirectory
 });
 
-const isAtRoot = computed(() => {
-  const normRoot = props.resourcePath.replace(/\\/g, '/').replace(/\/+$/, '');
-  const normCurrent = currentPath.value.replace(/\\/g, '/').replace(/\/+$/, '');
-  return normRoot === normCurrent;
+const {
+  dragHoverTarget,
+  isDraggingItem,
+  onCardDragStart,
+  onCardDragEnd,
+  onCardDragEnter,
+  onCardDragOver,
+  onCardDragLeave,
+  onCardDrop,
+  onBreadcrumbDragEnter,
+  onBreadcrumbDragOver,
+  onBreadcrumbDragLeave,
+  onBreadcrumbDrop
+} = useLocalDragMove({
+  currentPath,
+  selectedPaths,
+  selectedItems,
+  closeContextMenu,
+  isPathCurrentlyPlayingOrPreviewed,
+  loadDirectory
 });
 
-const breadcrumbs = computed(() => {
-  const normRoot = props.resourcePath.replace(/\\/g, '/').replace(/\/+$/, '');
-  const normCurrent = currentPath.value.replace(/\\/g, '/').replace(/\/+$/, '');
+// Keyboard Shortcuts: Ctrl+A / Cmd+A, Delete
+const handleKeyDown = (e: KeyboardEvent) => {
+  const target = e.target as HTMLElement | null;
+  if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
 
-  const result: Array<{ name: string; path: string }> = [
-    { name: props.resourceName, path: props.resourcePath }
-  ];
-
-  if (normCurrent.startsWith(normRoot) && normCurrent.length > normRoot.length) {
-    const rel = normCurrent.substring(normRoot.length).replace(/^\/+/, '');
-    const parts = rel.split('/');
-    let accum = normRoot;
-    for (const part of parts) {
-      if (part) {
-        accum += '/' + part;
-        result.push({ name: part, path: accum });
-      }
+  if (e.key === 'Escape') {
+    if (contextMenu.value.visible) {
+      closeContextMenu();
+      return;
     }
   }
 
-  return result;
-});
-
-const loadDirectory = async (dirPath: string) => {
-  if (!dirPath || !window.electronAPI) return;
-  loading.value = true;
-  errorMsg.value = '';
-  selectedPaths.value.clear();
-  lastSelectedIndex.value = -1;
-
-  try {
-    const res = await window.electronAPI.readLocalDirectory(dirPath);
-    if (res && res.success) {
-      items.value = res.items || [];
-      currentPath.value = dirPath;
-      if (isSearching.value && searchQuery.value.trim()) {
-        await handleExecuteSearch();
-      }
-    } else {
-      errorMsg.value = res?.error || '无法读取目录';
-      items.value = [];
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    selectAll();
+  } else if (e.key === 'Delete') {
+    if (selectedPaths.value.size > 1) {
+      handleBatchDelete();
+    } else if (selectedPaths.value.size === 1 && singleSelectedItem.value) {
+      handleDelete(singleSelectedItem.value);
     }
-  } catch (err: any) {
-    errorMsg.value = err?.message || '读取异常';
-    items.value = [];
-  } finally {
-    loading.value = false;
-  }
-};
-
-const handleExecuteSearch = async () => {
-  const q = searchQuery.value.trim();
-  if (!q) {
-    handleClearSearch();
-    return;
-  }
-  if (!currentPath.value || !window.electronAPI?.searchLocalFiles) return;
-
-  loading.value = true;
-  errorMsg.value = '';
-  selectedPaths.value.clear();
-  lastSelectedIndex.value = -1;
-  isSearching.value = true;
-
-  try {
-    const res = await window.electronAPI.searchLocalFiles(currentPath.value, q);
-    if (res && res.success) {
-      searchResults.value = res.items || [];
-    } else {
-      errorMsg.value = res?.error || '搜索失败';
-      searchResults.value = [];
-    }
-  } catch (err: any) {
-    errorMsg.value = err?.message || '搜索异常';
-    searchResults.value = [];
-  } finally {
-    loading.value = false;
-  }
-};
-
-const handleClearSearch = () => {
-  searchQuery.value = '';
-  isSearching.value = false;
-  searchResults.value = [];
-};
-
-watch(searchQuery, (newVal) => {
-  if (!newVal.trim() && isSearching.value) {
-    isSearching.value = false;
-    searchResults.value = [];
-  }
-});
-
-const refreshDirectorySilently = async () => {
-  if (!currentPath.value || !window.electronAPI?.readLocalDirectory) return;
-  try {
-    const res = await window.electronAPI.readLocalDirectory(currentPath.value);
-    if (res && res.success && res.items) {
-      items.value = res.items;
-    }
-  } catch (err: any) {
-    logger.error('LocalWorkspace', `Failed to silently refresh directory: ${err?.message}`);
   }
 };
 
@@ -717,1050 +658,15 @@ onUnmounted(() => {
   window.removeEventListener('blur', closeContextMenu);
   window.removeEventListener('resize', closeContextMenu);
   window.removeEventListener('keydown', handleKeyDown);
-  window.removeEventListener('mousemove', handleWindowMouseMove);
-  window.removeEventListener('mouseup', handleWindowMouseUp);
-  if (autoScrollRafId !== null) {
-    cancelAnimationFrame(autoScrollRafId);
-    autoScrollRafId = null;
-  }
-  document.body.style.userSelect = '';
+  cleanupMarquee();
   closeContextMenu();
 });
 
 // 路由变化（切换页面）时立即关闭右键菜单并清空选中
 watch(() => route.fullPath, () => {
   closeContextMenu();
-  selectedPaths.value.clear();
+  clearSelection();
 });
-
-watch(() => props.resourcePath, (newPath) => {
-  if (newPath) {
-    currentPath.value = newPath;
-    handleClearSearch();
-    loadDirectory(newPath);
-  }
-});
-
-const navigateUp = () => {
-  if (isAtRoot.value) return;
-  const normCurrent = currentPath.value.replace(/\\/g, '/').replace(/\/+$/, '');
-  const lastSlash = normCurrent.lastIndexOf('/');
-  if (lastSlash > 0) {
-    const parentPath = normCurrent.substring(0, lastSlash);
-    loadDirectory(parentPath);
-  }
-};
-
-const jumpToBreadcrumb = (index: number) => {
-  if (index >= 0 && index < breadcrumbs.value.length) {
-    loadDirectory(breadcrumbs.value[index].path);
-  }
-};
-
-const getFileCategory = (item: LocalFileItem): 'folder' | 'video' | 'audio' | 'image' | 'code' | 'doc' | 'other' => {
-  if (item.isDirectory) return 'folder';
-  const ext = item.ext.toLowerCase();
-  if (['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'm4v', 'ts', 'm3u8'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'opus'].includes(ext)) return 'audio';
-  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp', 'ico', 'avif'].includes(ext)) return 'image';
-  if (['js', 'ts', 'vue', 'json', 'html', 'css', 'less', 'scss', 'py', 'go', 'rs', 'c', 'cpp', 'sh', 'bat'].includes(ext)) return 'code';
-  if (['pdf', 'txt', 'md', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) return 'doc';
-  return 'other';
-};
-
-const filteredItems = computed(() => {
-  let list = isSearching.value ? [...searchResults.value] : [...items.value];
-
-  // Sorting
-  const [field, order] = sortBy.value.split('-');
-  const isAsc = order === 'asc';
-
-  list.sort((a, b) => {
-    // Directories always first
-    if (a.isDirectory && !b.isDirectory) return -1;
-    if (!a.isDirectory && b.isDirectory) return 1;
-
-    if (field === 'name') {
-      const cmp = a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
-      return isAsc ? cmp : -cmp;
-    } else if (field === 'mtime') {
-      return isAsc ? a.mtime - b.mtime : b.mtime - a.mtime;
-    } else if (field === 'size') {
-      return isAsc ? a.size - b.size : b.size - a.size;
-    } else if (field === 'type') {
-      const cmp = a.ext.localeCompare(b.ext);
-      return isAsc ? cmp : -cmp;
-    }
-    return 0;
-  });
-
-  return list;
-});
-
-const selectedItems = computed(() => {
-  const currentList = isSearching.value ? searchResults.value : items.value;
-  return currentList.filter(item => selectedPaths.value.has(item.path));
-});
-
-const isAllSelectedVideos = computed(() => {
-  if (selectedItems.value.length === 0) return false;
-  return selectedItems.value.every(item => !item.isDirectory && getFileCategory(item) === 'video');
-});
-
-const singleSelectedItem = computed(() => {
-  return selectedItems.value.length === 1 ? selectedItems.value[0] : null;
-});
-
-const totalSelectedBytes = computed(() => {
-  return selectedItems.value.reduce((acc, item) => acc + (item.size || 0), 0);
-});
-
-const handleCardClick = (e: MouseEvent, item: LocalFileItem, index: number) => {
-  if (e.ctrlKey || e.metaKey) {
-    const newSet = new Set(selectedPaths.value);
-    if (newSet.has(item.path)) {
-      newSet.delete(item.path);
-    } else {
-      newSet.add(item.path);
-    }
-    selectedPaths.value = newSet;
-    lastSelectedIndex.value = index;
-  } else if (e.shiftKey && lastSelectedIndex.value >= 0) {
-    const start = Math.min(lastSelectedIndex.value, index);
-    const end = Math.max(lastSelectedIndex.value, index);
-    const newSet = new Set(selectedPaths.value);
-    for (let i = start; i <= end; i++) {
-      if (filteredItems.value[i]) {
-        newSet.add(filteredItems.value[i].path);
-      }
-    }
-    selectedPaths.value = newSet;
-  } else {
-    selectedPaths.value = new Set([item.path]);
-    lastSelectedIndex.value = index;
-  }
-};
-
-const handleItemDblClick = (item: LocalFileItem) => {
-  if (item.isDirectory) {
-    loadDirectory(item.path);
-  } else {
-    handlePreview(item);
-  }
-};
-
-const handlePreview = async (item: LocalFileItem) => {
-  const cat = getFileCategory(item);
-  if (cat === 'video') {
-    activeVideoUrl.value = item.path;
-  } else if (cat === 'audio') {
-    activeAudioUrl.value = item.path;
-  } else if (cat === 'image') {
-    activeImageUrl.value = item.path;
-  } else {
-    // Open in system default application
-    if (window.electronAPI) {
-      await window.electronAPI.openFile(item.path);
-    }
-  }
-};
-
-const openInExplorer = (targetPath: string) => {
-  closeContextMenu();
-  if (!targetPath || !window.electronAPI) return;
-  window.electronAPI.showItemInFolder(targetPath);
-};
-
-// Context Menu Handling
-const onItemContextMenu = (e: MouseEvent, item: LocalFileItem, index: number) => {
-  if (!selectedPaths.value.has(item.path)) {
-    selectedPaths.value = new Set([item.path]);
-    lastSelectedIndex.value = index;
-  }
-  contextMenu.value = {
-    visible: true,
-    x: Math.min(e.clientX, window.innerWidth - 190),
-    y: Math.min(e.clientY, window.innerHeight - 260),
-    targetItem: item
-  };
-};
-
-// Marquee Selection Logic
-let isSelecting = false;
-let startClientX = 0;
-let startClientY = 0;
-let startContentX = 0;
-let startContentY = 0;
-let isCtrlSelection = false;
-let isShiftSelection = false;
-let initialSelectedPaths = new Set<string>();
-let cachedCardRects: Array<{ path: string; left: number; top: number; right: number; bottom: number }> = [];
-let autoScrollRafId: number | null = null;
-let currentClientX = 0;
-let currentClientY = 0;
-
-const updateMarqueeAndSelection = () => {
-  const container = workspaceBodyRef.value;
-  if (!container) return;
-
-  const containerRect = container.getBoundingClientRect();
-  const curContentX = currentClientX - containerRect.left + container.scrollLeft;
-  const curContentY = currentClientY - containerRect.top + container.scrollTop;
-
-  const boxLeft = Math.min(startContentX, curContentX);
-  const boxTop = Math.min(startContentY, curContentY);
-  const boxRight = Math.max(startContentX, curContentX);
-  const boxBottom = Math.max(startContentY, curContentY);
-  const boxWidth = Math.max(0, boxRight - boxLeft);
-  const boxHeight = Math.max(0, boxBottom - boxTop);
-
-  marqueeState.value = {
-    visible: true,
-    left: boxLeft,
-    top: boxTop,
-    width: boxWidth,
-    height: boxHeight
-  };
-
-  // Intersect collision detection (相交即选中)
-  const intersected = new Set<string>();
-  for (const card of cachedCardRects) {
-    const isIntersect = !(
-      card.right < boxLeft ||
-      card.left > boxRight ||
-      card.bottom < boxTop ||
-      card.top > boxBottom
-    );
-    if (isIntersect) {
-      intersected.add(card.path);
-    }
-  }
-
-  // Apply selection according to modifier keys
-  if (isShiftSelection) {
-    // Union / 累加
-    const newSet = new Set(initialSelectedPaths);
-    intersected.forEach(p => newSet.add(p));
-    selectedPaths.value = newSet;
-  } else if (isCtrlSelection) {
-    // Toggle / 增减选
-    const newSet = new Set(initialSelectedPaths);
-    for (const p of intersected) {
-      if (initialSelectedPaths.has(p)) {
-        newSet.delete(p);
-      } else {
-        newSet.add(p);
-      }
-    }
-    selectedPaths.value = newSet;
-  } else {
-    // Replace / 覆盖选中
-    selectedPaths.value = new Set(intersected);
-  }
-};
-
-const processAutoScroll = () => {
-  if (!isSelecting) return;
-  const container = workspaceBodyRef.value;
-  if (!container) return;
-
-  const containerRect = container.getBoundingClientRect();
-  const edgeZone = 36;
-  const maxSpeed = 16;
-
-  const distTop = currentClientY - containerRect.top;
-  const distBottom = containerRect.bottom - currentClientY;
-
-  let scrolled = false;
-
-  if (distTop < edgeZone && distTop >= -40) {
-    const ratio = Math.max(0, 1 - Math.max(0, distTop) / edgeZone);
-    const speed = Math.max(3, Math.round(maxSpeed * ratio));
-    container.scrollTop -= speed;
-    scrolled = true;
-  } else if (distBottom < edgeZone && distBottom >= -40) {
-    const ratio = Math.max(0, 1 - Math.max(0, distBottom) / edgeZone);
-    const speed = Math.max(3, Math.round(maxSpeed * ratio));
-    container.scrollTop += speed;
-    scrolled = true;
-  }
-
-  if (scrolled) {
-    updateMarqueeAndSelection();
-  }
-
-  autoScrollRafId = requestAnimationFrame(processAutoScroll);
-};
-
-const handleWindowMouseMove = (e: MouseEvent) => {
-  currentClientX = e.clientX;
-  currentClientY = e.clientY;
-
-  if (!isSelecting) {
-    const dist = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
-    if (dist >= 4) {
-      isSelecting = true;
-      document.body.style.userSelect = 'none';
-      autoScrollRafId = requestAnimationFrame(processAutoScroll);
-    }
-  }
-
-  if (isSelecting) {
-    updateMarqueeAndSelection();
-  }
-};
-
-const handleWindowMouseUp = (_e: MouseEvent) => {
-  window.removeEventListener('mousemove', handleWindowMouseMove);
-  window.removeEventListener('mouseup', handleWindowMouseUp);
-
-  if (autoScrollRafId !== null) {
-    cancelAnimationFrame(autoScrollRafId);
-    autoScrollRafId = null;
-  }
-
-  document.body.style.userSelect = '';
-
-  if (!isSelecting) {
-    // 单击空白区域：清空选择
-    if (!isCtrlSelection && !isShiftSelection) {
-      selectedPaths.value.clear();
-      lastSelectedIndex.value = -1;
-    }
-  }
-
-  isSelecting = false;
-  marqueeState.value.visible = false;
-};
-
-const handleWorkspaceMouseDown = (e: MouseEvent) => {
-  if (e.button !== 0) return;
-
-  const target = e.target as HTMLElement | null;
-  if (target?.closest('.file-card, button, input, select, .nav-btn, .action-btn, .modal-overlay, .context-menu, .context-menu-backdrop')) {
-    return;
-  }
-
-  const container = workspaceBodyRef.value;
-  if (!container) return;
-
-  closeContextMenu();
-
-  const containerRect = container.getBoundingClientRect();
-  startClientX = e.clientX;
-  startClientY = e.clientY;
-  currentClientX = e.clientX;
-  currentClientY = e.clientY;
-
-  startContentX = e.clientX - containerRect.left + container.scrollLeft;
-  startContentY = e.clientY - containerRect.top + container.scrollTop;
-
-  isCtrlSelection = e.ctrlKey || e.metaKey;
-  isShiftSelection = e.shiftKey;
-  initialSelectedPaths = new Set(selectedPaths.value);
-
-  const cardEls = container.querySelectorAll<HTMLElement>('.file-card');
-  cachedCardRects = [];
-  cardEls.forEach((el, idx) => {
-    const item = filteredItems.value[idx];
-    if (item) {
-      const elRect = el.getBoundingClientRect();
-      const left = elRect.left - containerRect.left + container.scrollLeft;
-      const top = elRect.top - containerRect.top + container.scrollTop;
-      cachedCardRects.push({
-        path: item.path,
-        left,
-        top,
-        right: left + elRect.width,
-        bottom: top + elRect.height
-      });
-    }
-  });
-
-  isSelecting = false;
-
-  window.addEventListener('mousemove', handleWindowMouseMove);
-  window.addEventListener('mouseup', handleWindowMouseUp);
-};
-
-const onBodyContextMenu = (e: MouseEvent) => {
-  selectedPaths.value.clear();
-  lastSelectedIndex.value = -1;
-  contextMenu.value = {
-    visible: true,
-    x: Math.min(e.clientX, window.innerWidth - 180),
-    y: Math.min(e.clientY, window.innerHeight - 150),
-    targetItem: null
-  };
-};
-
-const closeContextMenu = () => {
-  contextMenu.value.visible = false;
-};
-
-const onContextMenuClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement | null;
-  if (target?.closest('.menu-action-item')) {
-    closeContextMenu();
-  }
-};
-
-const handleContextPreview = (item: LocalFileItem) => {
-  closeContextMenu();
-  handleItemDblClick(item);
-};
-
-// 检查指定路径（或该目录下的子文件）当前是否正被播放器/预览器打开播放中
-const isPathCurrentlyPlayingOrPreviewed = (targetPath: string): { occupied: boolean; mediaName?: string } => {
-  if (!targetPath) return { occupied: false };
-  const normalizedTarget = targetPath.trim().replace(/\\/g, '/').toLowerCase();
-
-  const activeMediaPaths = [
-    activeVideoUrl.value,
-    activeAudioUrl.value,
-    activeImageUrl.value
-  ].filter(Boolean) as string[];
-
-  for (const activePath of activeMediaPaths) {
-    const normalizedActive = activePath.trim().replace(/\\/g, '/').toLowerCase();
-    const isExactMatch = normalizedActive === normalizedTarget;
-    const isInsideFolder = normalizedActive.startsWith(normalizedTarget.endsWith('/') ? normalizedTarget : normalizedTarget + '/');
-
-    if (isExactMatch || isInsideFolder) {
-      const parts = activePath.replace(/\\/g, '/').split('/');
-      const mediaName = parts[parts.length - 1] || '媒体文件';
-      return { occupied: true, mediaName };
-    }
-  }
-
-  return { occupied: false };
-};
-
-// Rename
-const openRenameModal = (item: LocalFileItem) => {
-  closeContextMenu();
-  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-  if (check.occupied) {
-    showMessage(`无法重命名：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
-    return;
-  }
-  renameModal.value = {
-    visible: true,
-    item,
-    newName: item.name
-  };
-};
-
-const handleConfirmRename = async () => {
-  const { item, newName } = renameModal.value;
-  if (!item || !newName.trim() || !window.electronAPI) return;
-
-  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-  if (check.occupied) {
-    showMessage(`无法重命名：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
-    return;
-  }
-
-  const trimmed = newName.trim();
-  const dir = item.path.substring(0, item.path.lastIndexOf(/[\\/]/.test(item.path) ? item.path.match(/[\\/]/)![0] : '/'));
-  const newPath = `${dir}/${trimmed}`.replace(/\\/g, '/');
-
-  try {
-    const res = await window.electronAPI.moveFile(item.path, newPath);
-    if (res && res.success) {
-      showMessage(`重命名为 "${trimmed}" 成功`, 'success');
-      renameModal.value.visible = false;
-      await loadDirectory(currentPath.value);
-    } else {
-      showMessage(res?.error || '重命名失败', 'error');
-    }
-  } catch (err: any) {
-    showMessage(`重命名失败: ${err?.message}`, 'error');
-  }
-};
-
-// New Folder
-const handleConfirmNewFolder = async () => {
-  const name = newFolderName.value.trim();
-  if (!name || !window.electronAPI) return;
-
-  const targetPath = `${currentPath.value}/${name}`.replace(/\\/g, '/');
-  try {
-    const res = await window.electronAPI.createLocalFolder(targetPath);
-    if (res && res.success) {
-      showMessage(`文件夹 "${name}" 创建成功`, 'success');
-      showNewFolderModal.value = false;
-      newFolderName.value = '';
-      await loadDirectory(currentPath.value);
-    } else {
-      showMessage(res?.error || '创建文件夹失败', 'error');
-    }
-  } catch (err: any) {
-    showMessage(`创建失败: ${err?.message}`, 'error');
-  }
-};
-
-// Move
-const openMoveModal = (item: LocalFileItem) => {
-  closeContextMenu();
-  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-  if (check.occupied) {
-    showMessage(`无法移动：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
-    return;
-  }
-  moveDialog.value = {
-    visible: true,
-    items: [item]
-  };
-};
-
-const openBatchMoveModal = () => {
-  closeContextMenu();
-  if (selectedItems.value.length === 0) return;
-  for (const item of selectedItems.value) {
-    const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-    if (check.occupied) {
-      showMessage(`无法移动：项目 "${item.name}" 正在播放预览中，请先关闭播放器`, 'warning');
-      return;
-    }
-  }
-  moveDialog.value = {
-    visible: true,
-    items: [...selectedItems.value]
-  };
-};
-
-const handleConfirmMove = async (targetDir: string) => {
-  const targetItems = moveDialog.value.items;
-  if (!targetItems || targetItems.length === 0 || !targetDir || !window.electronAPI) return;
-
-  for (const item of targetItems) {
-    const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-    if (check.occupied) {
-      showMessage(`无法移动：项目 "${item.name}" 正在播放预览中，请先关闭播放器`, 'warning');
-      return;
-    }
-  }
-
-  const count = targetItems.length;
-  if (count === 1) {
-    const item = targetItems[0];
-    const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
-    const msgId = showMessage(`正在移动 "${item.name}"`, 'loading', 0);
-    try {
-      const res = await window.electronAPI.moveFile(item.path, newPath);
-      removeMessage(msgId);
-      if (res && res.success) {
-        showMessage(`已将 "${item.name}" 移动至目标目录`, 'success');
-        selectedPaths.value.delete(item.path);
-        await loadDirectory(currentPath.value);
-      } else {
-        showMessage(res?.error || '移动失败', 'error');
-      }
-    } catch (err: any) {
-      removeMessage(msgId);
-      showMessage(`移动失败: ${err?.message}`, 'error');
-    }
-  } else {
-    const msgId = showMessage('正在移动选中的项目', 'loading', 0);
-    let successCount = 0;
-    let failCount = 0;
-    for (const item of targetItems) {
-      const newPath = `${targetDir}/${item.name}`.replace(/\\/g, '/');
-      try {
-        const res = await window.electronAPI.moveFile(item.path, newPath);
-        if (res && res.success) {
-          successCount++;
-        } else {
-          failCount++;
-          logger.error('LocalWorkspace', `[BatchMove] 移动失败 "${item.name}": ${res?.error}`);
-        }
-      } catch (err: any) {
-        failCount++;
-        logger.error('LocalWorkspace', `[BatchMove] 移动异常 "${item.name}": ${err?.message}`);
-      }
-    }
-    removeMessage(msgId);
-    if (failCount === 0) {
-      showMessage('已成功移动选中的项目', 'success');
-    } else {
-      showMessage('移动完成，部分项目未能成功移动', 'warning');
-    }
-    selectedPaths.value = new Set();
-    await loadDirectory(currentPath.value);
-  }
-};
-
-// ==================== 拖拽移动 (Drag & Drop Move) 核心逻辑 ====================
-
-const isDraggingItem = (itemPath: string): boolean => {
-  if (!dragState.value.isDragging) return false;
-  return dragState.value.items.some(i => i.path === itemPath);
-};
-
-// 严格判断指定目标目录路径对某个源文件/文件夹是否合法
-const isValidDropTargetForItem = (targetDirPath: string, item: LocalFileItem): boolean => {
-  if (!targetDirPath || !item?.path) return false;
-
-  const normTarget = targetDirPath.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-  const normItem = item.path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-
-  // 1. 不能移动到自身
-  if (normTarget === normItem) return false;
-
-  // 2. 文件夹不能移动到自身的子孙目录下（防止循环嵌套死锁）
-  if (item.isDirectory) {
-    if (normTarget.startsWith(normItem + '/')) {
-      return false;
-    }
-  }
-
-  // 3. 原地移动无效（源项目的直接父级目录与目标目录相同）
-  const lastSlash = normItem.lastIndexOf('/');
-  const normItemParent = lastSlash !== -1 ? normItem.substring(0, lastSlash) : '';
-  if (normItemParent === normTarget) {
-    return false;
-  }
-
-  return true;
-};
-
-// 检查某个目标目录路径是否至少可接收当前被拖拽项目列表中的任一项
-const isValidDropTarget = (targetDirPath: string, items: LocalFileItem[]): boolean => {
-  if (!targetDirPath || !items || items.length === 0) return false;
-  return items.some(item => isValidDropTargetForItem(targetDirPath, item));
-};
-
-const resetDragState = () => {
-  dragState.value.isDragging = false;
-  dragState.value.items = [];
-  dragHoverTarget.value = null;
-};
-
-// 开始拖拽卡片
-const onCardDragStart = (e: DragEvent, item: LocalFileItem, _index: number) => {
-  closeContextMenu();
-
-  let itemsToDrag: LocalFileItem[] = [];
-  if (selectedPaths.value.has(item.path)) {
-    itemsToDrag = [...selectedItems.value];
-  } else {
-    selectedPaths.value = new Set([item.path]);
-    itemsToDrag = [item];
-  }
-
-  dragState.value.isDragging = true;
-  dragState.value.items = itemsToDrag;
-  dragHoverTarget.value = null;
-
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify(itemsToDrag.map(i => i.path)));
-
-    if (itemsToDrag.length > 1) {
-      const dragBadge = document.createElement('div');
-      dragBadge.className = 'custom-drag-ghost-badge';
-      dragBadge.innerText = `移动 ${itemsToDrag.length} 个项目`;
-      dragBadge.style.cssText = 'position:fixed;top:-1000px;left:-1000px;padding:6px 12px;background:#3b82f6;color:#ffffff;border-radius:16px;font-size:12px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);pointer-events:none;z-index:99999;';
-      document.body.appendChild(dragBadge);
-      e.dataTransfer.setDragImage(dragBadge, 20, 20);
-      setTimeout(() => {
-        try { document.body.removeChild(dragBadge); } catch {}
-      }, 0);
-    }
-  }
-};
-
-const onCardDragEnd = (_e: DragEvent) => {
-  resetDragState();
-};
-
-// 目标文件夹卡片悬停事件
-const onCardDragEnter = (e: DragEvent, targetItem: LocalFileItem) => {
-  if (!targetItem.isDirectory || !dragState.value.isDragging) return;
-  if (!isValidDropTarget(targetItem.path, dragState.value.items)) return;
-  e.preventDefault();
-  dragHoverTarget.value = targetItem.path;
-};
-
-const onCardDragOver = (e: DragEvent, targetItem: LocalFileItem) => {
-  if (!targetItem.isDirectory || !dragState.value.isDragging) return;
-  if (!isValidDropTarget(targetItem.path, dragState.value.items)) {
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
-    return;
-  }
-  e.preventDefault();
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'move';
-  }
-  dragHoverTarget.value = targetItem.path;
-};
-
-const onCardDragLeave = (e: DragEvent, targetItem: LocalFileItem) => {
-  const related = e.relatedTarget as Node | null;
-  const currentTarget = e.currentTarget as Node | null;
-  if (currentTarget && related && currentTarget.contains(related)) {
-    return;
-  }
-  if (dragHoverTarget.value === targetItem.path) {
-    dragHoverTarget.value = null;
-  }
-};
-
-const onCardDrop = async (e: DragEvent, targetItem: LocalFileItem) => {
-  e.preventDefault();
-  e.stopPropagation();
-  const targetPath = targetItem.path;
-  if (!targetItem.isDirectory || !targetPath) {
-    resetDragState();
-    return;
-  }
-  await executeDropMove(targetPath);
-};
-
-// 顶部面包屑导航项悬停与释放事件
-const onBreadcrumbDragEnter = (e: DragEvent, crumbPath?: string) => {
-  if (!crumbPath || !dragState.value.isDragging) return;
-  if (!isValidDropTarget(crumbPath, dragState.value.items)) return;
-  e.preventDefault();
-  dragHoverTarget.value = crumbPath;
-};
-
-const onBreadcrumbDragOver = (e: DragEvent, crumbPath?: string) => {
-  if (!crumbPath || !dragState.value.isDragging) return;
-  if (!isValidDropTarget(crumbPath, dragState.value.items)) {
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
-    return;
-  }
-  e.preventDefault();
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'move';
-  }
-  dragHoverTarget.value = crumbPath;
-};
-
-const onBreadcrumbDragLeave = (e: DragEvent, crumbPath?: string) => {
-  const related = e.relatedTarget as Node | null;
-  const currentTarget = e.currentTarget as Node | null;
-  if (currentTarget && related && currentTarget.contains(related)) {
-    return;
-  }
-  if (dragHoverTarget.value === crumbPath) {
-    dragHoverTarget.value = null;
-  }
-};
-
-const onBreadcrumbDrop = async (e: DragEvent, crumbPath?: string) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (!crumbPath) {
-    resetDragState();
-    return;
-  }
-  await executeDropMove(crumbPath);
-};
-
-// 执行拖拽移动操作（支持单项/多选批量、同名自动 (1) 编号保护）
-const executeDropMove = async (targetDirPath: string) => {
-  const itemsToMove = [...dragState.value.items];
-  resetDragState();
-
-  if (!itemsToMove.length || !targetDirPath || !window.electronAPI) return;
-
-  const validItems = itemsToMove.filter(item => isValidDropTargetForItem(targetDirPath, item));
-  if (validItems.length === 0) return;
-
-  for (const item of validItems) {
-    const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-    if (check.occupied) {
-      showMessage(`无法移动：项目 "${item.name}" 正在播放预览中，请先关闭播放器`, 'warning');
-      return;
-    }
-  }
-
-  const count = validItems.length;
-  const targetDirName = targetDirPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || '目标目录';
-
-  if (count === 1) {
-    const item = validItems[0];
-    const newPath = `${targetDirPath}/${item.name}`.replace(/\\/g, '/');
-    const msgId = showMessage(`正在移动 "${item.name}" 至 "${targetDirName}"`, 'loading', 0);
-    try {
-      const res = await window.electronAPI.moveFile(item.path, newPath, { autoRename: true });
-      removeMessage(msgId);
-      if (res && res.success) {
-        showMessage(`已将 "${item.name}" 移动至 "${targetDirName}"`, 'success');
-        selectedPaths.value.delete(item.path);
-        await loadDirectory(currentPath.value);
-      } else {
-        showMessage(res?.error || '移动失败', 'error');
-      }
-    } catch (err: any) {
-      removeMessage(msgId);
-      showMessage(`移动失败: ${err?.message}`, 'error');
-    }
-  } else {
-    const msgId = showMessage(`正在移动选中的 ${count} 个项目至 "${targetDirName}"`, 'loading', 0);
-    let successCount = 0;
-    let failCount = 0;
-    for (const item of validItems) {
-      const newPath = `${targetDirPath}/${item.name}`.replace(/\\/g, '/');
-      try {
-        const res = await window.electronAPI.moveFile(item.path, newPath, { autoRename: true });
-        if (res && res.success) {
-          successCount++;
-          selectedPaths.value.delete(item.path);
-        } else {
-          failCount++;
-          logger.error('LocalWorkspace', `[DragMove] 移动失败 "${item.name}": ${res?.error}`);
-        }
-      } catch (err: any) {
-        failCount++;
-        logger.error('LocalWorkspace', `[DragMove] 移动异常 "${item.name}": ${err?.message}`);
-      }
-    }
-    removeMessage(msgId);
-    if (failCount === 0) {
-      showMessage(`已成功移动 ${successCount} 个项目至 "${targetDirName}"`, 'success');
-    } else {
-      showMessage(`移动完成: 成功 ${successCount} 项，失败 ${failCount} 项`, 'warning');
-    }
-    await loadDirectory(currentPath.value);
-  }
-};
-
-// Single Compress
-const openCompressModal = (item: LocalFileItem) => {
-  closeContextMenu();
-  compressModal.value = {
-    visible: true,
-    task: {
-      id: `local-${Math.random().toString(36).substr(2, 8)}`,
-      name: item.name,
-      savePath: item.path,
-      totalBytes: item.size
-    }
-  };
-};
-
-const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any; targetBitrateKbps: number }) => {
-  if (!task || !window.electronAPI) return;
-  showMessage(`已开始压缩 "${task.name}"`, 'info');
-  try {
-    const res = await window.electronAPI.compressVideoTask(task.id, task.savePath, targetBitrateKbps);
-    if (res && res.success) {
-      showMessage(`视频 "${task.name}" 压缩完成`, 'success');
-      await loadDirectory(currentPath.value);
-    } else if (res && res.error) {
-      showMessage(`压缩失败: ${res.error}`, 'error');
-    }
-  } catch (err: any) {
-    showMessage(`压缩异常: ${err?.message}`, 'error');
-  }
-};
-
-// Directory Compress (Recursive)
-const handleCompressDirectory = async (item: LocalFileItem) => {
-  closeContextMenu();
-  if (!item || !window.electronAPI) return;
-  const msgId = showMessage(`正在扫描目录 "${item.name}" 中的视频文件`, 'loading', 0);
-  try {
-    const res = await window.electronAPI.scanLocalVideos([item.path]);
-    if (res && res.success && res.videos && res.videos.length > 0) {
-      removeMessage(msgId);
-      batchCompressTasks.value = res.videos.map(v => ({
-        id: `local-${Math.random().toString(36).substr(2, 8)}`,
-        name: v.name,
-        savePath: v.path,
-        totalBytes: v.size
-      }));
-      isBatchCompressDialogVisible.value = true;
-    } else {
-      showMessage(`目录 "${item.name}" 及其子目录中未发现可压缩的视频文件`, 'warning', 3000, undefined, msgId);
-    }
-  } catch (err: any) {
-    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
-  }
-};
-
-// Merge Videos (Multi-selection)
-const openMergeVideoModal = async () => {
-  closeContextMenu();
-  if (!window.electronAPI || selectedPaths.value.size === 0) return;
-  const msgId = showMessage('正在扫描所选项目中的视频文件', 'loading', 0);
-  try {
-    const paths = Array.from(selectedPaths.value);
-    const res = await window.electronAPI.scanLocalVideos(paths);
-    if (res && res.success && res.videos && res.videos.length >= 2) {
-      removeMessage(msgId);
-      mergeVideosList.value = res.videos.map(v => ({
-        name: v.name,
-        path: v.path,
-        size: v.size
-      }));
-      isMergeVideoDialogVisible.value = true;
-    } else if (res && res.success && res.videos && res.videos.length === 1) {
-      showMessage('请至少选择 2 个视频文件进行合并', 'warning', 3000, undefined, msgId);
-    } else {
-      showMessage('所选项目中未发现足够的视频文件进行合并', 'warning', 3000, undefined, msgId);
-    }
-  } catch (err: any) {
-    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
-  }
-};
-
-const handleMergeSuccess = async (_outputPath: string) => {
-  await loadDirectory(currentPath.value);
-};
-
-// Batch Compress (Multi-selection: files and directories)
-const openBatchCompressModal = async () => {
-  closeContextMenu();
-  if (!window.electronAPI || selectedPaths.value.size === 0) return;
-  const msgId = showMessage('正在扫描所选项目中的视频文件', 'loading', 0);
-  try {
-    const paths = Array.from(selectedPaths.value);
-    const res = await window.electronAPI.scanLocalVideos(paths);
-    if (res && res.success && res.videos && res.videos.length > 0) {
-      removeMessage(msgId);
-      batchCompressTasks.value = res.videos.map(v => ({
-        id: `local-${Math.random().toString(36).substr(2, 8)}`,
-        name: v.name,
-        savePath: v.path,
-        totalBytes: v.size
-      }));
-      isBatchCompressDialogVisible.value = true;
-    } else {
-      showMessage('所选项目及子目录中未发现可压缩的视频文件', 'warning', 3000, undefined, msgId);
-    }
-  } catch (err: any) {
-    showMessage(`扫描视频文件失败: ${err?.message}`, 'error', 3000, undefined, msgId);
-  }
-};
-
-const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbps }: { tasks: any[]; targetBitrateKbps: number }) => {
-  if (targetTasks.length === 0 || !window.electronAPI) return;
-  showMessage('已将选中的视频加入压缩处理队列', 'info');
-  for (const t of targetTasks) {
-    window.electronAPI.compressVideoTask(t.id, t.savePath, targetBitrateKbps).catch((err: any) => {
-      logger.error('LocalWorkspace', `[BatchCompress] 异常: ${err?.message}`);
-    });
-  }
-};
-
-// Single Delete
-const handleDelete = async (item: LocalFileItem) => {
-  closeContextMenu();
-  const check = isPathCurrentlyPlayingOrPreviewed(item.path);
-  if (check.occupied) {
-    showMessage(`无法删除：项目正在播放预览中（${check.mediaName}），请先关闭播放器`, 'warning');
-    return;
-  }
-
-  const isDir = item.isDirectory;
-  const confirmed = await confirm({
-    title: isDir ? '删除文件夹' : '删除文件',
-    message: `确定要永久删除 ${isDir ? '文件夹及其内部所有内容' : '文件'} "${item.name}" 吗？此操作不可恢复。`,
-    confirmText: '彻底删除',
-    cancelText: '取消',
-    type: 'danger'
-  });
-  if (!confirmed || !window.electronAPI) return;
-
-  try {
-    const res = await window.electronAPI.deleteLocalPath(item.path);
-    if (res && res.success) {
-      showMessage(`已删除 "${item.name}"`, 'success');
-      selectedPaths.value.delete(item.path);
-      await loadDirectory(currentPath.value);
-    } else {
-      showMessage(res?.error || '删除失败', 'error');
-    }
-  } catch (err: any) {
-    showMessage(`删除失败: ${err?.message}`, 'error');
-  }
-};
-
-// Batch Delete
-const handleBatchDelete = async () => {
-  closeContextMenu();
-  const count = selectedPaths.value.size;
-  if (count === 0 || !window.electronAPI) return;
-
-  for (const p of Array.from(selectedPaths.value)) {
-    const check = isPathCurrentlyPlayingOrPreviewed(p);
-    if (check.occupied) {
-      const parts = p.replace(/\\/g, '/').split('/');
-      const name = parts[parts.length - 1] || '文件';
-      showMessage(`无法删除：项目 "${name}" 正在播放预览中，请先关闭播放器`, 'warning');
-      return;
-    }
-  }
-
-  const confirmed = await confirm({
-    title: '批量删除',
-    message: '确定要永久删除选中的文件和文件夹吗？此操作不可恢复。',
-    confirmText: '彻底删除',
-    cancelText: '取消',
-    type: 'danger'
-  });
-  if (!confirmed) return;
-
-  let successCount = 0;
-  for (const p of Array.from(selectedPaths.value)) {
-    try {
-      const res = await window.electronAPI.deleteLocalPath(p);
-      if (res && res.success) successCount++;
-    } catch (err: any) {
-      logger.error('LocalWorkspace', `[BatchDelete] 删除失败: ${p}`);
-    }
-  }
-  showMessage('已成功删除选中项', 'success');
-  selectedPaths.value = new Set();
-  await loadDirectory(currentPath.value);
-};
-
-// Keyboard Shortcuts: Ctrl+A / Cmd+A, Delete
-const handleKeyDown = (e: KeyboardEvent) => {
-  const target = e.target as HTMLElement | null;
-  if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
-
-  if (e.key === 'Escape') {
-    if (contextMenu.value.visible) {
-      closeContextMenu();
-      return;
-    }
-  }
-
-  // Select all
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-    e.preventDefault();
-    selectedPaths.value = new Set(filteredItems.value.map(i => i.path));
-  } else if (e.key === 'Delete') {
-    if (selectedPaths.value.size > 1) {
-      handleBatchDelete();
-    } else if (selectedPaths.value.size === 1 && singleSelectedItem.value) {
-      handleDelete(singleSelectedItem.value);
-    }
-  }
-};
-
-const formatTime = (ts: number): string => {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const isRecentFile = (item: LocalFileItem): boolean => {
-  if (!item) return false;
-  if (item.isDirectory) {
-    return !!item.hasRecentFile;
-  }
-  if (!item.mtime) return false;
-  const diff = Date.now() - item.mtime;
-  return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
-};
 </script>
 
 <style scoped lang="less">

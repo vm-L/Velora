@@ -127,66 +127,22 @@
     </div>
 
     <!-- 编辑模式底部独立拼接操作面板 (拼接在原窗口下方，完全不遮挡视频画面) -->
-    <div v-if="isEditingMode && !isAudioMode" class="edit-dock-panel" @mousedown.stop>
-      <!-- 第一行：打点控制与片段统计 -->
-      <div class="dock-header-row">
-        <div class="dock-actions-left">
-          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsStart" title="将当前播放时间设为当前片段起点 (快捷键: Z)">
-            <VIcon name="segment-start" :size="12" />
-            起点
-          </VButton>
-          <VButton variant="secondary" class="dock-btn" @click="setCurrentAsEnd" title="将当前播放时间设为当前片段终点 (快捷键: C)">
-            <VIcon name="segment-end" :size="12" />
-            终点
-          </VButton>
-          <VButton variant="primary" class="dock-btn" @click="addSegment" title="添加新的剪辑选段 (快捷键: X)">
-            <VIcon name="plus" :size="12" />
-            添加选段
-          </VButton>
-        </div>
-
-        <div class="dock-actions-right">
-          <span class="summary-text"><strong>{{ editSegments.length }}</strong> 片段 / <strong>{{ formatTime(totalEditedDuration) }}</strong></span>
-          <VButton variant="icon" class="ctrl-btn" :active="true" @click="toggleEditingMode" title="退出编辑模式">
-            <VIcon name="close" :size="13" />
-          </VButton>
-        </div>
-      </div>
-
-      <!-- 第二行：片段列表 (支持自适应换行与纵向滚动) -->
-      <div ref="segmentsListRef" class="dock-segments-list">
-        <div v-for="(seg, idx) in editSegments" :key="seg.id"
-          class="dock-segment-item"
-          :class="{ 'is-selected': idx === activeSegmentIndex }"
-          @click="selectSegment(idx)"
-        >
-          <span class="seg-badge">#{{ idx + 1 }}</span>
-          <div class="seg-time-text">
-            <span>{{ formatTime(seg.start) }}</span>
-            <span class="seg-arrow">→</span>
-            <span>{{ formatTime(seg.end) }}</span>
-            <span class="seg-dur">({{ formatTime(Math.max(0, seg.end - seg.start)) }})</span>
-          </div>
-
-          <div class="seg-item-actions" @click.stop>
-            <VButton variant="icon" class="seg-icon-btn" :active="isSegmentPlaying && idx === activeSegmentIndex" @click="togglePreviewSegment(idx)" :title="isSegmentPlaying && idx === activeSegmentIndex ? '停止播放 (快捷键: S)' : '播放此片段 (快捷键: S)'">
-              <VIcon :name="(isSegmentPlaying && idx === activeSegmentIndex) ? 'pause' : 'play'" :size="10" />
-            </VButton>
-            <VButton v-if="editSegments.length > 1" variant="icon-danger" class="seg-icon-btn" @click="removeSegment(idx)" title="删除此选段 (快捷键: W)">
-              <VIcon name="close" :size="10" />
-            </VButton>
-          </div>
-        </div>
-      </div>
-
-      <!-- 第三行：保存与另存为操作栏 -->
-      <div class="dock-footer-row">
-        <div class="footer-save-btns">
-          <VButton variant="secondary" @click="handleSaveAs">另存为</VButton>
-          <VButton variant="secondary" @click="promptConfirmOverwrite">覆盖保存</VButton>
-        </div>
-      </div>
-    </div>
+    <VideoEditDockPanel
+      v-if="isEditingMode && !isAudioMode"
+      :segments="editSegments"
+      :active-segment-index="activeSegmentIndex"
+      :is-segment-playing="isSegmentPlaying"
+      :total-edited-duration="totalEditedDuration"
+      @set-start="setCurrentAsStart"
+      @set-end="setCurrentAsEnd"
+      @add-segment="addSegment"
+      @exit-edit="toggleEditingMode"
+      @select-segment="selectSegment"
+      @toggle-preview-segment="togglePreviewSegment"
+      @remove-segment="removeSegment"
+      @save-as="handleSaveAs"
+      @prompt-overwrite="promptConfirmOverwrite"
+    />
     
     <!-- 覆盖保存确认弹窗 -->
     <div v-if="showOverwriteConfirm" class="editor-modal-mask" @mousedown.stop>
@@ -211,13 +167,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
-import { logger } from '@/services/logger';
-import { useVideoEditQueue } from '@/composables/useVideoEditQueue';
+import VideoEditDockPanel from '@/components/features/VideoEditDockPanel.vue';
+import { formatPlayerTime, type EditSegment } from '@/composables/videoPlayer/types';
+import { usePlayerWindowLayout } from '@/composables/videoPlayer/usePlayerWindowLayout';
+import { useVideoPlayback } from '@/composables/videoPlayer/useVideoPlayback';
+import { useVideoEditSegments } from '@/composables/videoPlayer/useVideoEditSegments';
+import { usePlayerShortcuts } from '@/composables/videoPlayer/usePlayerShortcuts';
 
-const { enqueueTask } = useVideoEditQueue();
+export type { EditSegment };
 
 const props = defineProps<{
   url: string | null;
@@ -231,576 +191,182 @@ const emit = defineEmits<{
   (e: 'edit-complete', payload: { mode: 'replace' | 'saveAs'; outputPath: string; sourcePath: string }): void;
 }>();
 
-const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
-
-const effectiveReferer = computed(() => {
-  return (props.pageUrl || '').trim();
-});
-
-watch(() => [props.url, effectiveReferer.value], ([u, p]) => {
-  if (p && window.electronAPI && window.electronAPI.createMediaClient) {
-    window.electronAPI.createMediaClient({ clientId: previewClientId, referer: p });
-  }
-  if (u && p && window.electronAPI && window.electronAPI.setMediaReferer) {
-    window.electronAPI.setMediaReferer(u, p);
-  }
-}, { immediate: true });
-
-onUnmounted(() => {
-  if (window.electronAPI && window.electronAPI.destroyMediaClient) {
-    window.electronAPI.destroyMediaClient(previewClientId);
-  }
-});
-
 const dialogRef = ref<HTMLElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
+const formatTime = formatPlayerTime;
 
-const position = ref({ x: window.innerWidth / 2 - 320, y: window.innerHeight / 2 - 180 });
-const size = ref({ w: 640, h: 360 });
-const zIndex = ref(2000);
-const isDraggingWindow = ref(false);
-const isResizing = ref(false);
-let startPos = { x: 0, y: 0 };
-let startSize = { w: 0, h: 0 };
-let startMouse = { x: 0, y: 0 };
+// 严格按 A -> B -> C -> D 无环顺序装配 4 个 Composable
+let getPlaybackStateImpl = () => ({ isPlaying: false, isSeeking: false, videoRatio: null as number | null });
+let onEditModeEnterImpl = () => {};
+let onEditModeExitImpl = () => {};
+let onTimeUpdateSegmentCheckImpl = (_curTime: number) => {};
+let onMetadataDurationReadyImpl = (_dur: number) => {};
+let onPlaybackStoppedImpl = () => {};
 
-const isPlaying = ref(false);
-const currentTime = ref(0);
-const duration = ref(0);
-const playbackRate = ref(1);
-const volume = ref(1);
-const isMuted = ref(false);
-const isDragging = ref(false);
-const isFullscreen = ref(false);
-const isInAppFullscreen = ref(false);
-const showControls = ref(false);
-const isMouseInVideoArea = ref(false);
-const showVolume = ref(false);
-const isPip = ref(false);
-const supportsPip = ref(false);
-
-let hls: any = null;
-let controlsTimeout: number | null = null;
-const isHoveringControls = ref(false);
-
-const hideCursor = ref(false);
-let cursorTimeout: number | null = null;
-
-// ==============================
-// 模式状态机：听视频模式 & 编辑模式
-// ==============================
-const isAudioMode = ref(false);
-const isEditingMode = ref(false);
-const EDIT_DOCK_HEIGHT = 148;
-const prevVideoLayout = ref<{ position: { x: number; y: number }; size: { w: number; h: number } } | null>(null);
-const prevEditLayout = ref<{ position: { x: number; y: number }; size: { w: number; h: number } } | null>(null);
-
-// 解析真实本地路径
-const getLocalDiskPath = (rawUrl: string | null): string | null => {
-  if (!rawUrl) return null;
-  let clean = rawUrl.trim();
-  if (clean.startsWith('velora://local/')) {
-    return decodeURIComponent(clean.slice('velora://local/'.length));
-  }
-  if (clean.includes('/stream?path=')) {
-    try {
-      const u = new URL(clean);
-      const p = u.searchParams.get('path');
-      if (p) return p;
-    } catch {}
-  }
-  if (/^[a-zA-Z]:[\\\/]/.test(clean) || (clean.startsWith('/') && !clean.startsWith('//'))) {
-    return clean;
-  }
-  return null;
-};
-
-const localDiskPath = computed(() => getLocalDiskPath(props.url));
-const isLocalVideo = computed(() => !!localDiskPath.value);
-
-const videoTitle = computed(() => {
-  const disk = localDiskPath.value;
-  if (disk) {
-    const parts = disk.replace(/\\/g, '/').split('/');
-    return parts[parts.length - 1] || '本地视频';
-  }
-  if (props.url) {
-    try {
-      const u = new URL(props.url);
-      const pathname = u.pathname.split('/').pop();
-      return pathname || '视频播放器';
-    } catch {
-      return '视频播放器';
-    }
-  }
-  return '视频播放器';
+const {
+  position,
+  size,
+  zIndex,
+  isDraggingWindow,
+  isResizing,
+  isFullscreen,
+  isInAppFullscreen,
+  isAudioMode,
+  isEditingMode,
+  showControls,
+  isMouseInVideoArea,
+  hideCursor,
+  bringToFront,
+  startDrag,
+  startResize,
+  applyMetadataWindowSize,
+  toggleAudioMode,
+  toggleEditingMode,
+  toggleInAppFullscreen,
+  toggleFullscreen,
+  handleFullscreenChange,
+  onVideoAreaEnter,
+  onVideoAreaMouseMove,
+  onVideoAreaLeave,
+  onMouseMove,
+  onMouseLeave,
+  onControlsEnter,
+  onControlsLeave,
+  resetControlsTimeout,
+  cleanupWindowLayout
+} = usePlayerWindowLayout({
+  dialogRef,
+  videoRef,
+  getPlaybackState: () => getPlaybackStateImpl(),
+  onEditModeEnter: () => onEditModeEnterImpl(),
+  onEditModeExit: () => onEditModeExitImpl()
 });
 
-// 切换听视频模式
-const toggleAudioMode = () => {
+const {
+  playerSessionKey,
+  isPlaying,
+  currentTime,
+  duration,
+  playbackRate,
+  volume,
+  isMuted,
+  isDragging,
+  isPip,
+  supportsPip,
+  showVolume,
+  videoRatio,
+  localDiskPath,
+  isLocalVideo,
+  videoTitle,
+  releaseVideoMedia,
+  loadVideo,
+  togglePlay,
+  onTimeUpdate,
+  onVideoEnded,
+  onLoadedMetadata,
+  onSeek,
+  onSeekEnd,
+  onSpeedChange,
+  toggleMute,
+  onVolumeChange,
+  onVolumeSlider,
+  onVideoError,
+  togglePip,
+  seekBy,
+  changeVolume,
+  cleanupMediaClient
+} = useVideoPlayback({
+  url: () => props.url,
+  pageUrl: () => props.pageUrl,
+  videoRef,
+  isAudioMode,
+  isEditingMode,
+  isMouseInVideoArea,
+  showControls,
+  resetControlsTimeout,
+  applyMetadataWindowSize,
+  onTimeUpdateSegmentCheck: (t) => onTimeUpdateSegmentCheckImpl(t),
+  onMetadataDurationReady: (d) => onMetadataDurationReadyImpl(d),
+  onPlaybackStopped: () => onPlaybackStoppedImpl()
+});
+
+getPlaybackStateImpl = () => ({
+  isPlaying: isPlaying.value,
+  isSeeking: isDragging.value,
+  videoRatio: videoRatio.value
+});
+
+const {
+  editSegments,
+  activeSegmentIndex,
+  isSegmentPlaying,
+  totalEditedDuration,
+  showOverwriteConfirm,
+  initSegmentsIfEmpty,
+  syncInitialSegmentDuration,
+  resetEditSegments,
+  stopSegmentPlaying,
+  checkSegmentPlaybackEnd,
+  selectSegment,
+  setCurrentAsStart,
+  setCurrentAsEnd,
+  addSegment,
+  removeSegment,
+  togglePreviewSegment,
+  seekToSegmentStart,
+  seekToSegmentEnd,
+  selectPrevSegment,
+  selectNextSegment,
+  promptConfirmOverwrite,
+  executeOverwriteSave,
+  handleSaveAs
+} = useVideoEditSegments({
+  videoRef,
+  currentTime,
+  duration,
+  localDiskPath,
+  videoTitle,
+  releaseVideoMedia
+});
+
+onEditModeEnterImpl = initSegmentsIfEmpty;
+onEditModeExitImpl = stopSegmentPlaying;
+onTimeUpdateSegmentCheckImpl = (curTime) => {
   if (isEditingMode.value) {
-    toggleEditingMode();
-  }
-  if (!isAudioMode.value) {
-    prevVideoLayout.value = {
-      position: { ...position.value },
-      size: { ...size.value }
-    };
-    isAudioMode.value = true;
-    size.value = { w: 480, h: 104 };
-    if (position.value.x + 480 > window.innerWidth) {
-      position.value.x = Math.max(20, window.innerWidth - 500);
-    }
-    if (position.value.y + 104 > window.innerHeight) {
-      position.value.y = Math.max(20, window.innerHeight - 130);
-    }
-  } else {
-    isAudioMode.value = false;
-    if (prevVideoLayout.value) {
-      size.value = { ...prevVideoLayout.value.size };
-      position.value = { ...prevVideoLayout.value.position };
-      prevVideoLayout.value = null;
-    } else {
-      size.value = { w: 640, h: 360 };
-    }
+    checkSegmentPlaybackEnd(curTime);
   }
 };
-
-// ==============================
-// 多区间视频编辑状态与方法
-// ==============================
-export interface EditSegment {
-  id: string;
-  start: number;
-  end: number;
-}
-
-const editSegments = ref<EditSegment[]>([]);
-const activeSegmentIndex = ref(0);
-const isSegmentPlaying = ref(false);
-const segmentsListRef = ref<HTMLElement | null>(null);
-
-const scrollToActiveSegment = () => {
-  nextTick(() => {
-    if (!segmentsListRef.value) return;
-    const activeEl = segmentsListRef.value.querySelector('.dock-segment-item.is-selected') as HTMLElement;
-    if (activeEl) {
-      activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-    }
-  });
+onMetadataDurationReadyImpl = (dur) => {
+  if (isEditingMode.value) {
+    syncInitialSegmentDuration(dur);
+  }
 };
+onPlaybackStoppedImpl = stopSegmentPlaying;
 
-const totalEditedDuration = computed(() => {
-  return editSegments.value.reduce((acc, s) => acc + Math.max(0, s.end - s.start), 0);
+const { handleKeydown } = usePlayerShortcuts({
+  dialogRef,
+  zIndex,
+  isAudioMode,
+  isEditingMode,
+  isFullscreen,
+  isInAppFullscreen,
+  showOverwriteConfirm,
+  activeSegmentIndex,
+  togglePlay,
+  seekBy,
+  changeVolume,
+  toggleFullscreen,
+  toggleMute,
+  setCurrentAsStart,
+  setCurrentAsEnd,
+  addSegment,
+  seekToSegmentStart,
+  seekToSegmentEnd,
+  togglePreviewSegment,
+  selectPrevSegment,
+  selectNextSegment,
+  removeSegment
 });
-
-const toggleEditingMode = () => {
-  if (isAudioMode.value) {
-    toggleAudioMode();
-  }
-  if (!isEditingMode.value) {
-    prevEditLayout.value = {
-      position: { ...position.value },
-      size: { ...size.value }
-    };
-    isEditingMode.value = true;
-    const targetH = size.value.h + EDIT_DOCK_HEIGHT;
-    size.value = { w: size.value.w, h: targetH };
-    if (position.value.y + targetH > window.innerHeight - 20) {
-      position.value.y = Math.max(20, window.innerHeight - targetH - 20);
-    }
-    if (editSegments.value.length === 0) {
-      editSegments.value = [
-        {
-          id: 'seg_' + Date.now(),
-          start: 0,
-          end: duration.value > 0 ? duration.value : 10
-        }
-      ];
-      activeSegmentIndex.value = 0;
-    }
-    scrollToActiveSegment();
-  } else {
-    isEditingMode.value = false;
-    isSegmentPlaying.value = false;
-    if (prevEditLayout.value) {
-      size.value = { ...prevEditLayout.value.size };
-      position.value = { ...prevEditLayout.value.position };
-      prevEditLayout.value = null;
-    }
-  }
-};
-
-const selectSegment = (idx: number) => {
-  if (idx >= 0 && idx < editSegments.value.length) {
-    activeSegmentIndex.value = idx;
-    const seg = editSegments.value[idx];
-    if (videoRef.value) {
-      videoRef.value.currentTime = seg.start;
-      currentTime.value = seg.start;
-    }
-    scrollToActiveSegment();
-  }
-};
-
-const setCurrentAsStart = () => {
-  if (editSegments.value.length === 0) return;
-  const seg = editSegments.value[activeSegmentIndex.value];
-  if (!seg) return;
-  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
-  const maxDur = duration.value > 0 ? duration.value : (videoRef.value?.duration || 0);
-
-  if (cur >= seg.end) {
-    seg.start = cur;
-    const targetEnd = maxDur > 0 ? Math.min(maxDur, cur + 15) : cur + 15;
-    seg.end = Number(Math.max(cur + 0.1, targetEnd).toFixed(2));
-  } else {
-    seg.start = cur;
-  }
-};
-
-const setCurrentAsEnd = () => {
-  if (editSegments.value.length === 0) return;
-  const seg = editSegments.value[activeSegmentIndex.value];
-  if (!seg) return;
-  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
-
-  if (cur <= seg.start) {
-    seg.end = cur;
-    seg.start = Number(Math.max(0, cur - 15).toFixed(2));
-  } else {
-    seg.end = cur;
-  }
-};
-
-const addSegment = () => {
-  const cur = Number((videoRef.value?.currentTime ?? currentTime.value).toFixed(2));
-  const maxDur = duration.value > 0 ? duration.value : (videoRef.value?.duration || 0);
-
-  let newStart = cur;
-  let newEnd = maxDur > 0 ? Math.min(maxDur, cur + 15) : cur + 15;
-  if (maxDur > 0 && cur >= maxDur) {
-    newStart = Math.max(0, maxDur - 15);
-    newEnd = maxDur;
-  }
-
-  const newSeg: EditSegment = {
-    id: 'seg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-    start: Number(newStart.toFixed(2)),
-    end: Number(newEnd.toFixed(2))
-  };
-  editSegments.value.push(newSeg);
-  activeSegmentIndex.value = editSegments.value.length - 1;
-  scrollToActiveSegment();
-};
-
-const removeSegment = (idx: number) => {
-  if (editSegments.value.length <= 1) return;
-  editSegments.value.splice(idx, 1);
-  if (activeSegmentIndex.value >= editSegments.value.length) {
-    activeSegmentIndex.value = editSegments.value.length - 1;
-  }
-  scrollToActiveSegment();
-};
-
-const togglePreviewSegment = (idx: number) => {
-  if (isSegmentPlaying.value && activeSegmentIndex.value === idx) {
-    isSegmentPlaying.value = false;
-    videoRef.value?.pause();
-    return;
-  }
-  selectSegment(idx);
-  isSegmentPlaying.value = true;
-  videoRef.value?.play().catch(() => {});
-};
-
-// ==============================
-// 导出与保存处理 (接入全局任务队列)
-// ==============================
-const showOverwriteConfirm = ref(false);
-
-const promptConfirmOverwrite = () => {
-  showOverwriteConfirm.value = true;
-};
-
-const executeOverwriteSave = () => {
-  showOverwriteConfirm.value = false;
-  startExport('replace');
-};
-
-const handleSaveAs = async () => {
-  const disk = localDiskPath.value;
-  if (!disk || !window.electronAPI?.showSaveDialog) return;
-
-  const ext = disk.split('.').pop() || 'mp4';
-  const baseName = disk.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^/.]+$/, '') || 'video';
-  const defaultFileName = `${baseName}_edited.${ext}`;
-
-  const res = await window.electronAPI.showSaveDialog({
-    defaultPath: defaultFileName,
-    title: '另存剪辑视频为',
-    filters: [
-      { name: '视频文件 (*.' + ext + ')', extensions: [ext] },
-      { name: '所有文件', extensions: ['*'] }
-    ]
-  });
-
-  if (!res.canceled && res.filePath) {
-    startExport('saveAs', res.filePath);
-  }
-};
-
-const startExport = (mode: 'replace' | 'saveAs', saveAsPath?: string) => {
-  const disk = localDiskPath.value;
-  if (!disk || !window.electronAPI?.editVideoSegments) return;
-
-  // 覆盖导出前彻底释放当前播放器对原视频的读取流与句柄占用
-  if (mode === 'replace') {
-    releaseVideoMedia();
-  }
-
-  enqueueTask({
-    sourcePath: disk,
-    segments: editSegments.value.map(s => ({ start: s.start, end: s.end })),
-    outputPath: saveAsPath,
-    mode,
-    title: videoTitle.value
-  });
-};
-
-
-// ==============================
-// 鼠标与基础播放交互控制
-// ==============================
-const onVideoAreaEnter = () => {
-  isMouseInVideoArea.value = true;
-  showControls.value = true;
-  resetControlsTimeout();
-};
-
-const onVideoAreaMouseMove = () => {
-  isMouseInVideoArea.value = true;
-  showControls.value = true;
-  resetControlsTimeout();
-  resetCursorTimeout();
-};
-
-const onVideoAreaLeave = () => {
-  isMouseInVideoArea.value = false;
-  isHoveringControls.value = false;
-  if (controlsTimeout) clearTimeout(controlsTimeout);
-  if (!isDragging.value) {
-    showControls.value = false;
-  }
-};
-
-const resetCursorTimeout = () => {
-  if (cursorTimeout) clearTimeout(cursorTimeout);
-  hideCursor.value = false;
-  if (isPlaying.value && !isDragging.value && !isAudioMode.value) {
-    cursorTimeout = window.setTimeout(() => {
-      if (isPlaying.value && !isDragging.value) {
-        hideCursor.value = true;
-      }
-    }, 1500);
-  }
-};
-
-const onMouseMove = () => {
-  if (isDraggingWindow.value || isResizing.value) {
-    return;
-  }
-  resetCursorTimeout();
-};
-
-const onMouseLeave = () => {
-  if (cursorTimeout) clearTimeout(cursorTimeout);
-  hideCursor.value = false;
-};
-
-const onControlsEnter = () => {
-  isHoveringControls.value = true;
-  if (controlsTimeout) clearTimeout(controlsTimeout);
-  showControls.value = true;
-};
-
-const onControlsLeave = () => {
-  isHoveringControls.value = false;
-  resetControlsTimeout();
-};
-
-const resetControlsTimeout = () => {
-  if (controlsTimeout) clearTimeout(controlsTimeout);
-  if (isHoveringControls.value || isDragging.value || isAudioMode.value) return;
-  controlsTimeout = window.setTimeout(() => {
-    if (isPlaying.value && !isHoveringControls.value && !isDragging.value) {
-      showControls.value = false;
-    }
-  }, 2000);
-};
-
-const playerSessionKey = ref(Date.now());
-
-const releaseVideoMedia = () => {
-  if (videoRef.value) {
-    try {
-      videoRef.value.pause();
-      videoRef.value.removeAttribute('src');
-      videoRef.value.load();
-    } catch {}
-  }
-  if (hls) {
-    try {
-      hls.destroy();
-    } catch {}
-    hls = null;
-  }
-};
-
-const formatMediaSrc = (rawUrl: string): string => {
-  if (!rawUrl) return '';
-  let cleanPath = rawUrl.trim().replace(/\\/g, '/');
-  
-  if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(cleanPath)) {
-    return cleanPath;
-  }
-  
-  if (cleanPath.startsWith('velora://local/')) {
-    cleanPath = decodeURIComponent(cleanPath.slice('velora://local/'.length));
-  }
-  
-  const port = window.__SERVER_PORT__ || 0;
-  const token = window.__SERVER_TOKEN__ || '';
-  return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&_v=${playerSessionKey.value}&token=${encodeURIComponent(token)}`;
-};
-
-const loadVideo = async () => {
-  if (!videoRef.value || !props.url) return;
-  if ((!window.__SERVER_PORT__ || !window.__SERVER_TOKEN__) && window.electronAPI?.getServerInfo && !/^(http:\/\/|https:\/\/|blob:|data:)/i.test(props.url.trim())) {
-    try {
-      const info = await window.electronAPI.getServerInfo();
-      if (info?.port) window.__SERVER_PORT__ = info.port;
-      if (info?.token) window.__SERVER_TOKEN__ = info.token;
-    } catch {}
-  }
-  const video = videoRef.value;
-  const playUrl = formatMediaSrc(props.url);
-
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-
-  const checkM3U8Content = async (targetUrl: string): Promise<boolean> => {
-    if (!targetUrl) return false;
-    if (targetUrl.includes('127.0.0.1:') || targetUrl.includes('localhost:') || /^\/|^[a-zA-Z]:[\\/]/i.test(targetUrl)) {
-      return false;
-    }
-    if (/\.(mp4|webm|mkv|avi|flv|mp3|wav|ogg|aac|png|jpe?g|webp)$/i.test(targetUrl.split('?')[0])) {
-      return false;
-    }
-
-    try {
-      const res = await fetch(targetUrl, {
-        headers: {
-          'X-Velora-Client-Id': previewClientId,
-          'Range': 'bytes=0-512',
-          ...(effectiveReferer.value ? { 'X-Velora-Referer': effectiveReferer.value } : {})
-        }
-      });
-      if (!res.ok && res.status !== 206) return false;
-      const reader = res.body?.getReader();
-      if (!reader) return false;
-      const { value } = await reader.read();
-      reader.cancel();
-      if (!value) return false;
-      const text = new TextDecoder().decode(value);
-      return text.includes('#EXTM3U');
-    } catch {
-      return false;
-    }
-  };
-
-  const isM3U8 = playUrl.toLowerCase().includes('.m3u8') || await checkM3U8Content(playUrl);
-
-  if (isM3U8) {
-    try {
-      const HlsModule = await import('hls.js');
-      const Hls = HlsModule.default || HlsModule;
-      if (Hls.isSupported()) {
-        hls = new Hls({
-          autoStartLoad: true,
-          startPosition: -1,
-          capLevelToPlayerSize: false,
-          fetchSetup: (context: any, initParams: any) => {
-            initParams.headers = {
-              ...(initParams.headers || {}),
-              'X-Velora-Client-Id': previewClientId,
-              ...(effectiveReferer.value ? { 'X-Velora-Referer': effectiveReferer.value } : {})
-            };
-            return new Request(context.url, initParams);
-          }
-        });
-        
-        hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
-          const msg = `HLS Error: ${data.type} - ${data.details} (fatal: ${data.fatal})`;
-          logger.error('VideoPreview', msg);
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls?.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls?.recoverMediaError();
-                break;
-              default:
-                hls?.destroy();
-                if (video) {
-                  video.src = playUrl;
-                  video.play().catch(() => {});
-                }
-                break;
-            }
-          }
-        });
-
-        hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
-          let maxLevel = -1;
-          let maxBitrate = -1;
-          if (data && data.levels) {
-            for (let i = 0; i < data.levels.length; i++) {
-              if (data.levels[i].bitrate > maxBitrate) {
-                maxBitrate = data.levels[i].bitrate;
-                maxLevel = i;
-              }
-            }
-          }
-          if (maxLevel !== -1 && hls) {
-            hls.currentLevel = maxLevel;
-            logger.info('VideoPreview', `Locked to highest HLS quality level ${maxLevel} (${maxBitrate} bps)`);
-          }
-          video.play().catch(() => {});
-        });
-
-        hls.loadSource(playUrl);
-        hls.attachMedia(video);
-      } else {
-        video.src = playUrl;
-        video.play().catch(() => {});
-      }
-    } catch (err: any) {
-      video.src = playUrl;
-      video.play().catch(() => {});
-    }
-  } else {
-    video.src = playUrl;
-    video.play().catch(() => {});
-  }
-};
-
-function bringToFront() {
-  zIndex.value = 2000 + Date.now() % 1000;
-}
 
 watch(() => props.url, (newUrl) => {
   if (newUrl) {
@@ -808,7 +374,7 @@ watch(() => props.url, (newUrl) => {
     bringToFront();
     isAudioMode.value = false;
     isEditingMode.value = false;
-    editSegments.value = [];
+    resetEditSegments();
     setTimeout(() => {
       loadVideo();
       if (document.pictureInPictureEnabled) {
@@ -820,278 +386,10 @@ watch(() => props.url, (newUrl) => {
   }
 });
 
-const startDrag = (e: MouseEvent) => {
-  if (isFullscreen.value || isInAppFullscreen.value) return;
-  if ((e.target as HTMLElement)?.closest('.header-actions, button, input, select')) return;
-  isDraggingWindow.value = true;
-  if (isPlaying.value && !isAudioMode.value && !isEditingMode.value) showControls.value = false;
-  startPos = { x: position.value.x, y: position.value.y };
-  startMouse = { x: e.clientX, y: e.clientY };
-  document.addEventListener('mousemove', onDrag);
-  document.addEventListener('mouseup', stopDrag);
-};
-
-const onDrag = (e: MouseEvent) => {
-  if (!isDraggingWindow.value) return;
-  const dx = e.clientX - startMouse.x;
-  const dy = e.clientY - startMouse.y;
-  position.value = {
-    x: startPos.x + dx,
-    y: startPos.y + dy
-  };
-};
-
-const stopDrag = () => {
-  isDraggingWindow.value = false;
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', stopDrag);
-};
-
-const videoRatio = ref<number | null>(null);
-
-const startResize = (e: MouseEvent) => {
-  if (isFullscreen.value || isInAppFullscreen.value || isAudioMode.value) return;
-  e.preventDefault();
-  e.stopPropagation();
-  isResizing.value = true;
-  if (isPlaying.value && !isEditingMode.value) showControls.value = false;
-  startSize = { w: size.value.w, h: size.value.h };
-  startMouse = { x: e.clientX, y: e.clientY };
-  document.addEventListener('mousemove', onResize);
-  document.addEventListener('mouseup', stopResize);
-};
-
-const onResize = (e: MouseEvent) => {
-  if (!isResizing.value) return;
-  const dx = e.clientX - startMouse.x;
-  const dy = e.clientY - startMouse.y;
-  
-  if (isEditingMode.value) {
-    let ratio = videoRatio.value;
-    if (!ratio || isNaN(ratio) || ratio <= 0) {
-      if (videoRef.value && videoRef.value.videoWidth && videoRef.value.videoHeight) {
-        ratio = videoRef.value.videoWidth / videoRef.value.videoHeight;
-      }
-    }
-    if (!ratio || isNaN(ratio) || ratio <= 0) {
-      ratio = startSize.w / Math.max(1, (startSize.h - EDIT_DOCK_HEIGHT));
-    }
-    if (!ratio || isNaN(ratio) || ratio <= 0) {
-      ratio = 16 / 9;
-    }
-
-    const deltaW = (dx + dy * ratio) / 2;
-    const newW = Math.max(460, Math.round(startSize.w + deltaW));
-    const newVideoH = Math.max(200, Math.round(newW / ratio));
-    const newH = newVideoH + EDIT_DOCK_HEIGHT;
-
-    if (!isNaN(newW) && !isNaN(newH) && newW > 0 && newH > 0) {
-      size.value = { w: newW, h: newH };
-    }
-    return;
-  }
-
-  let ratio = videoRatio.value;
-  if (!ratio || isNaN(ratio) || ratio <= 0) {
-    if (videoRef.value && videoRef.value.videoWidth && videoRef.value.videoHeight) {
-      ratio = videoRef.value.videoWidth / videoRef.value.videoHeight;
-    }
-  }
-  if (!ratio || isNaN(ratio) || ratio <= 0) {
-    ratio = startSize.w / Math.max(1, startSize.h);
-  }
-  if (!ratio || isNaN(ratio) || ratio <= 0) {
-    ratio = 16 / 9;
-  }
-
-  const deltaW = (dx + dy * ratio) / 2;
-  const newW = Math.max(380, Math.round(startSize.w + deltaW));
-  const newH = Math.max(220, Math.round(newW / ratio));
-
-  if (!isNaN(newW) && !isNaN(newH) && newW > 0 && newH > 0) {
-    size.value = { w: newW, h: newH };
-  }
-};
-
-const stopResize = () => {
-  isResizing.value = false;
-  document.removeEventListener('mousemove', onResize);
-  document.removeEventListener('mouseup', stopResize);
-};
-
-const togglePlay = () => {
-  if (!videoRef.value) return;
-  if (isPlaying.value) {
-    videoRef.value.pause();
-    isSegmentPlaying.value = false;
-  } else {
-    videoRef.value.play().catch(() => {});
-  }
-};
-
-const onTimeUpdate = () => {
-  if (!isDragging.value && videoRef.value) {
-    currentTime.value = videoRef.value.currentTime;
-
-    // 播放到达终点自动暂停
-    if (isSegmentPlaying.value && isEditingMode.value) {
-      const seg = editSegments.value[activeSegmentIndex.value];
-      if (seg && currentTime.value >= seg.end) {
-        videoRef.value.pause();
-        isSegmentPlaying.value = false;
-      }
-    }
-  }
-};
-
-const onVideoEnded = () => {
-  isPlaying.value = false;
-  isSegmentPlaying.value = false;
-};
-
-const onLoadedMetadata = () => {
-  if (videoRef.value) {
-    duration.value = videoRef.value.duration;
-
-    // 如果未设置编辑选段，初始化为完整时长
-    if (isEditingMode.value && editSegments.value.length === 1 && editSegments.value[0].end === 10) {
-      editSegments.value[0].end = duration.value;
-    }
-
-    const vw = videoRef.value.videoWidth;
-    const vh = videoRef.value.videoHeight;
-
-    if (vw && vh && !isAudioMode.value && !isEditingMode.value) {
-      const ratio = vw / vh;
-      videoRatio.value = ratio;
-
-      let targetW = 600;
-      if (ratio < 1) {
-        targetW = 440;
-      } else {
-        targetW = Math.min(680, Math.round(window.innerWidth * 0.55));
-      }
-
-      const finalW = Math.max(440, targetW);
-      const finalH = Math.round(finalW / ratio);
-
-      size.value = { w: finalW, h: finalH };
-      position.value = {
-        x: Math.max(0, Math.round((window.innerWidth - finalW) / 2)),
-        y: Math.max(0, Math.round((window.innerHeight - finalH) / 2))
-      };
-    }
-  }
-};
-
-const onSeek = (e: Event) => {
-  isDragging.value = true;
-  const val = Number((e.target as HTMLInputElement).value);
-  currentTime.value = val;
-  if (videoRef.value) {
-    videoRef.value.currentTime = val;
-  }
-};
-
-const onSeekEnd = (e: Event) => {
-  isDragging.value = false;
-  const val = Number((e.target as HTMLInputElement).value);
-  if (videoRef.value && Math.abs(videoRef.value.currentTime - val) > 0.3) {
-    videoRef.value.currentTime = val;
-  }
-  if (!isMouseInVideoArea.value) {
-    showControls.value = false;
-  } else {
-    resetControlsTimeout();
-  }
-};
-
-const onSpeedChange = () => {
-  if (videoRef.value) {
-    videoRef.value.playbackRate = playbackRate.value;
-  }
-};
-
-const toggleMute = () => {
-  if (!videoRef.value) return;
-  videoRef.value.muted = !videoRef.value.muted;
-  isMuted.value = videoRef.value.muted;
-  if (!isMuted.value && volume.value === 0) {
-    volume.value = 1;
-    videoRef.value.volume = 1;
-  }
-};
-
-const onVolumeChange = () => {
-  if (videoRef.value) {
-    volume.value = videoRef.value.volume;
-    isMuted.value = videoRef.value.muted;
-  }
-};
-
-const onVolumeSlider = (e: Event) => {
-  if (videoRef.value) {
-    const val = Number((e.target as HTMLInputElement).value);
-    videoRef.value.volume = val;
-    if (val > 0) {
-      videoRef.value.muted = false;
-      isMuted.value = false;
-    }
-  }
-};
-
-const onVideoError = (e: Event) => {
-  const target = e.target as HTMLVideoElement;
-  logger.error('VideoPreview', `Native Video Error: ${target.error?.message || 'unknown'}`);
-};
-
-const toggleInAppFullscreen = () => {
-  if (!dialogRef.value || isAudioMode.value) return;
-  isInAppFullscreen.value = !isInAppFullscreen.value;
-};
-
-const toggleFullscreen = async () => {
-  if (!dialogRef.value || isAudioMode.value) return;
-  try {
-    if (!document.fullscreenElement) {
-      await dialogRef.value.requestFullscreen();
-      isFullscreen.value = true;
-    } else {
-      await document.exitFullscreen();
-      isInAppFullscreen.value = false;
-    }
-  } catch (err: any) {
-    logger.error('VideoPlayerDialog', `Fullscreen error: ${err?.message || err}`);
-  }
-};
-
-const togglePip = async () => {
-  if (!videoRef.value) return;
-  try {
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture();
-    } else {
-      await videoRef.value.requestPictureInPicture();
-    }
-  } catch (error) {
-    logger.error('VideoPreview', 'PiP failed: ' + error);
-  }
-};
-
-const formatTime = (secs: number) => {
-  if (isNaN(secs) || secs < 0) return '00:00';
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) {
-    return `${h}:${(m % 60).toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
 const close = () => {
-  if (isFullscreen.value) document.exitFullscreen().catch(()=>{}); isInAppFullscreen.value = false;
-  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{});
+  if (isFullscreen.value) document.exitFullscreen().catch(() => {});
+  isInAppFullscreen.value = false;
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   releaseVideoMedia();
   emit('close');
 };
@@ -1102,182 +400,14 @@ const downloadVideo = () => {
   }
 };
 
-const handleFullscreenChange = () => {
-  isFullscreen.value = !!document.fullscreenElement;
-};
-
-const seekBy = (delta: number) => {
-  if (!videoRef.value) return;
-  const maxDur = duration.value || videoRef.value.duration || 0;
-  const newTime = Math.max(0, Math.min(maxDur, videoRef.value.currentTime + delta));
-  videoRef.value.currentTime = newTime;
-  currentTime.value = newTime;
-  if (isMouseInVideoArea.value) {
-    resetControlsTimeout();
-  }
-};
-
-const changeVolume = (delta: number) => {
-  if (!videoRef.value) return;
-  const newVol = Math.max(0, Math.min(1, Number((volume.value + delta).toFixed(2))));
-  videoRef.value.volume = newVol;
-  volume.value = newVol;
-  if (newVol > 0 && isMuted.value) {
-    videoRef.value.muted = false;
-    isMuted.value = false;
-  }
-  showVolume.value = true;
-  resetControlsTimeout();
-};
-
-const seekToSegmentStart = () => {
-  if (editSegments.value.length === 0) return;
-  const seg = editSegments.value[activeSegmentIndex.value];
-  if (seg && videoRef.value) {
-    videoRef.value.currentTime = seg.start;
-    currentTime.value = seg.start;
-  }
-};
-
-const seekToSegmentEnd = () => {
-  if (editSegments.value.length === 0) return;
-  const seg = editSegments.value[activeSegmentIndex.value];
-  if (seg && videoRef.value) {
-    videoRef.value.currentTime = seg.end;
-    currentTime.value = seg.end;
-  }
-};
-
-const selectPrevSegment = () => {
-  if (editSegments.value.length === 0) return;
-  const targetIdx = Math.max(0, activeSegmentIndex.value - 1);
-  selectSegment(targetIdx);
-};
-
-const selectNextSegment = () => {
-  if (editSegments.value.length === 0) return;
-  const targetIdx = Math.min(editSegments.value.length - 1, activeSegmentIndex.value + 1);
-  selectSegment(targetIdx);
-};
-
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.target instanceof HTMLInputElement && e.target.type !== 'range') return;
-  if (e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable) return;
-
-  // 1. 若当前存在更高层级的独立模态框且焦点不在当前播放器内，不拦截按键
-  const activeModal = document.querySelector('.modal-overlay, .confirm-modal, .v-modal-overlay, .dialog-mask');
-  if (activeModal && !dialogRef.value?.contains(e.target as Node)) {
-    return;
-  }
-
-  // 2. 若存在其他浮窗处于更高层级，且当前播放器未包含激活焦点，不抢占快捷键
-  const myZ = zIndex.value;
-  const floatingDialogs = document.querySelectorAll('.video-player-dialog, .audio-player-dialog, .image-preview-dialog');
-  for (const el of floatingDialogs) {
-    if (el !== dialogRef.value) {
-      const otherZ = parseInt((el as HTMLElement).style.zIndex || '0', 10);
-      if (otherZ > myZ && !dialogRef.value?.contains(document.activeElement)) {
-        return;
-      }
-    }
-  }
-
-  // 3. 若用户焦点在外部按钮或可点击控件上，Space 键优先由该控件原生触发，不拦截
-  if (e.code === 'Space' && e.target && e.target !== document.body && !dialogRef.value?.contains(e.target as Node)) {
-    if ((e.target as HTMLElement)?.closest('button, a, [role="button"]')) {
-      return;
-    }
-  }
-
-  if (e.key === 'Escape') {
-    if (showOverwriteConfirm.value) {
-      showOverwriteConfirm.value = false;
-      return;
-    }
-    if (isFullscreen.value || isInAppFullscreen.value) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(()=>{});
-      }
-      isInAppFullscreen.value = false;
-    }
-  } else if (e.code === 'Space') {
-    e.preventDefault();
-    togglePlay();
-  } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
-    e.preventDefault();
-    if (e.shiftKey) {
-      seekBy(-60);
-    } else if (e.ctrlKey || e.metaKey) {
-      seekBy(-10);
-    } else {
-      seekBy(-1);
-    }
-  } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
-    e.preventDefault();
-    if (e.shiftKey) {
-      seekBy(60);
-    } else if (e.ctrlKey || e.metaKey) {
-      seekBy(10);
-    } else {
-      seekBy(1);
-    }
-  } else if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
-    e.preventDefault();
-    changeVolume(0.01);
-  } else if (e.key === 'ArrowDown' || e.code === 'ArrowDown') {
-    e.preventDefault();
-    changeVolume(-0.01);
-  } else if (e.key === 'f' || e.key === 'F' || e.code === 'KeyF') {
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && !isAudioMode.value) {
-      e.preventDefault();
-      toggleFullscreen();
-    }
-  } else if (e.key === 'm' || e.key === 'M' || e.code === 'KeyM') {
-    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      toggleMute();
-    }
-  } else if (isEditingMode.value && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    const key = e.key.toLowerCase();
-    if (key === 'z') {
-      e.preventDefault();
-      setCurrentAsStart();
-    } else if (key === 'c') {
-      e.preventDefault();
-      setCurrentAsEnd();
-    } else if (key === 'x') {
-      e.preventDefault();
-      addSegment();
-    } else if (key === 'a') {
-      e.preventDefault();
-      seekToSegmentStart();
-    } else if (key === 'd') {
-      e.preventDefault();
-      seekToSegmentEnd();
-    } else if (key === 's') {
-      e.preventDefault();
-      togglePreviewSegment(activeSegmentIndex.value);
-    } else if (key === 'q') {
-      e.preventDefault();
-      selectPrevSegment();
-    } else if (key === 'e') {
-      e.preventDefault();
-      selectNextSegment();
-    } else if (key === 'w') {
-      e.preventDefault();
-      removeSegment(activeSegmentIndex.value);
-    }
-  }
-};
-
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown);
   document.addEventListener('fullscreenchange', handleFullscreenChange);
-  
+
   if (props.url) {
     bringToFront();
   }
-  
+
   setTimeout(() => {
     loadVideo();
     if (document.pictureInPictureEnabled) {
@@ -1289,10 +419,8 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', stopDrag);
-  document.removeEventListener('mousemove', onResize);
-  document.removeEventListener('mouseup', stopResize);
+  cleanupWindowLayout();
+  cleanupMediaClient();
   releaseVideoMedia();
 });
 </script>
@@ -1471,11 +599,6 @@ onUnmounted(() => {
     color: var(--text-primary);
   }
 
-  &.active-mode-btn {
-    background: var(--color-accent);
-    color: var(--bg-surface);
-  }
-  
   &.close-btn:hover {
     background: var(--color-error);
     color: white;
@@ -1636,11 +759,6 @@ onUnmounted(() => {
     color: var(--text-primary);
     background: var(--bg-surface-active);
   }
-
-  &.active-ctrl-btn {
-    color: var(--bg-surface);
-    background: var(--color-accent);
-  }
 }
 
 .play-btn {
@@ -1720,226 +838,7 @@ onUnmounted(() => {
 }
 
 // ==============================
-// 编辑模式底部独立拼接操作面板样式
-// ==============================
-.edit-dock-panel {
-  flex-shrink: 0;
-  height: 148px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-color);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.dock-header-row {
-  padding: 6px 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg-surface-hover);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.dock-actions-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dock-actions-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.summary-text {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-
-  strong {
-    color: var(--text-primary);
-  }
-}
-
-.dock-segments-list {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: center;
-  gap: 6px 8px;
-  padding: 8px 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  background: var(--bg-app);
-  min-height: 48px;
-
-  &::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 2px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
-  }
-}
-
-.dock-segment-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-
-  &:hover {
-    border-color: var(--text-secondary);
-    background: var(--bg-surface-hover);
-  }
-
-  &.is-selected {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 1px var(--color-accent);
-    background: var(--bg-surface-hover);
-  }
-}
-
-.seg-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 4px;
-  background: var(--border-color);
-  border-radius: 3px;
-  color: var(--text-primary);
-}
-
-.seg-time-text {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  font-weight: 500;
-  white-space: nowrap;
-
-  .seg-arrow {
-    color: var(--text-secondary);
-    font-size: 10px;
-  }
-  .seg-dur {
-    color: var(--text-secondary);
-    font-size: 10px;
-  }
-}
-
-.seg-item-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.seg-icon-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover {
-    color: var(--text-primary);
-    border-color: var(--text-secondary);
-    background: var(--bg-surface-active);
-  }
-
-  &.is-previewing {
-    background: var(--color-accent);
-    color: var(--bg-surface);
-    border-color: var(--color-accent);
-  }
-
-  &.danger:hover {
-    background: var(--color-error);
-    color: white;
-    border-color: var(--color-error);
-  }
-}
-
-.dock-footer-row {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 6px 12px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-color);
-}
-
-.edit-btn {
-  font-size: 11px;
-  font-weight: 500;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-
-  &:hover {
-    background: var(--bg-surface-active);
-    border-color: var(--text-secondary);
-  }
-
-  &.primary {
-    background: var(--color-accent);
-    color: var(--bg-surface);
-    border-color: var(--color-accent);
-
-    &:hover {
-      background: var(--color-accent-hover);
-    }
-  }
-
-  &.secondary {
-    background: var(--bg-surface-hover);
-    color: var(--text-secondary);
-
-    &:hover {
-      background: var(--bg-surface-active);
-      color: var(--text-primary);
-    }
-  }
-}
-
-.footer-save-btns {
-  display: flex;
-  gap: 8px;
-}
-
-// ==============================
-// 弹窗与进度遮罩样式
+// 弹窗与确认遮罩样式
 // ==============================
 .editor-modal-mask {
   position: absolute;
@@ -1956,7 +855,7 @@ onUnmounted(() => {
   padding: 20px;
 }
 
-.editor-confirm-card, .editor-progress-card {
+.editor-confirm-card {
   width: 360px;
   background: var(--bg-surface);
   border-radius: 12px;
@@ -1988,65 +887,11 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.export-progress-bar-track {
-  width: 100%;
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.export-progress-fill {
-  height: 100%;
-  background: var(--color-accent);
-  border-radius: 3px;
-  transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-
-  &.success {
-    background: var(--color-success, #10b981);
-  }
-
-  &.error {
-    background: var(--color-error, #ef4444);
-  }
-}
-
-.progress-info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-secondary);
-
-  .status-pct {
-    font-weight: 600;
-    color: var(--color-accent);
-    font-variant-numeric: tabular-nums;
-  }
-}
-
-.error-msg {
-  font-size: 12px;
-  color: var(--color-error);
-  padding: 6px 8px;
-  background: rgba(255, 0, 0, 0.08);
-  border-radius: 6px;
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
-}
-
-.spin-icon {
-  animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .resize-handle {
