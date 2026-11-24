@@ -110,6 +110,7 @@
 import { ref, computed, watch } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
+import { notifyPanDirectoryChanged } from '@/composables/pan/usePanRefreshBus';
 
 interface FolderEntry {
   id: string;
@@ -218,6 +219,11 @@ const handleCreateFolder = async () => {
     if (res && res.success) {
       showNewFolder.value = false;
       newFolderName.value = '';
+      notifyPanDirectoryChanged({
+        panType: props.panType,
+        dirFids: [currentFolder.value.id],
+        refreshQuota: false
+      });
       await loadCurrentFolders();
     } else {
       errorMsg.value = res?.error || '创建文件夹失败';

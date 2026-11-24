@@ -229,10 +229,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue';
+import { defineAsyncComponent, onMounted } from 'vue';
 import { useDownloads } from '@/composables/useDownloads';
-import { useMessage } from '@/composables/useMessage';
-import { useConfirm } from '@/composables/useConfirm';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
@@ -244,554 +242,82 @@ const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/featur
 const EditTaskDialog = defineAsyncComponent(() => import('@/components/features/EditTaskDialog.vue'));
 const CompressVideoDialog = defineAsyncComponent(() => import('@/components/features/CompressVideoDialog.vue'));
 const BatchCompressVideoDialog = defineAsyncComponent(() => import('@/components/features/BatchCompressVideoDialog.vue'));
-import { useNotification } from '@/composables/useNotification';
-import { useSettings } from '@/composables/useSettings';
-import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
-import { logger } from '@/services/logger';
 import { formatBytes } from '@/utils/format';
+import {
+  getStatusText,
+  getDirectory,
+  formatSecondsETA,
+  formatETA,
+  isImageTask,
+  isAudioTask,
+  isVideoTask
+} from '@/composables/home/taskHelpers';
+import { useHomeSelectionAndFilter } from '@/composables/home/useHomeSelectionAndFilter';
+import { useHomeTaskActions } from '@/composables/home/useHomeTaskActions';
 
 const { tasks, pauseTask, resumeTask, skipFailedSegmentsTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
-const { showMessage } = useMessage();
-const { showNotification } = useNotification();
-const { confirm } = useConfirm();
-const { state: settingsState } = useSettings();
-const { openSaveMediaDialog } = useSaveMediaDialog();
 
-const showNewDownloadModal = ref(false);
-const showPanParseModal = ref(false);
-const activeImagePreviewUrl = ref<string | null>(null);
-const activeAudioPreviewUrl = ref<string | null>(null);
-const activeVideoPreviewUrl = ref<string | null>(null);
-
-const handleVideoEditComplete = async (payload: { mode: 'replace' | 'saveAs'; outputPath: string; sourcePath: string }) => {
-  if (!window.electronAPI?.getVideoMediaInfo) return;
-  try {
-    const targetPath = payload.mode === 'replace' ? payload.sourcePath : payload.outputPath;
-    const task = tasks.value.find(t => t.savePath === targetPath || t.savePath === payload.sourcePath);
-    if (task && payload.mode === 'replace') {
-      const info = await window.electronAPI.getVideoMediaInfo(payload.sourcePath);
-      if (info && info.size > 0) {
-        task.totalBytes = info.size;
-        task.receivedBytes = info.size;
-        await updateTaskDb(task);
-      }
-    }
-  } catch (err: any) {
-    logger.error('HomeView', `Failed to update edited task file size: ${err?.message}`);
-  }
-};
-
-const editTaskDialogVisible = ref(false);
-const editingTask = ref<any>(null);
-
-const openEditTask = (task: any) => {
-  editingTask.value = task;
-  editTaskDialogVisible.value = true;
-};
-
-const isCompressDialogVisible = ref(false);
-const compressingTask = ref<any>(null);
-
-const openCompressDialog = (task: any) => {
-  compressingTask.value = task;
-  isCompressDialogVisible.value = true;
-};
-
-const isBatchCompressDialogVisible = ref(false);
-
-const selectedCompressibleTasks = computed(() => {
-  return tasks.value.filter(t => selectedTasks.value.includes(t.id) && t.status === 'completed' && isVideoTask(t));
+const {
+  activeFilter,
+  selectedTasks,
+  toggleFilter,
+  sortedTasks,
+  isAllSelected,
+  toggleSelectAll,
+  startSelection,
+  enterSelection,
+  batchPause,
+  batchResume,
+  batchDelete,
+  inProgressCount,
+  completedCount,
+  errorCount,
+  globalSpeed,
+  globalReceivedBytes,
+  selectedCompressibleTasks
+} = useHomeSelectionAndFilter({
+  tasks,
+  pauseTask,
+  resumeTask,
+  deleteTask
 });
 
-const openBatchCompressDialog = () => {
-  if (selectedCompressibleTasks.value.length === 0) return;
-  isBatchCompressDialogVisible.value = true;
-};
-
-const handleConfirmBatchCompress = async ({ tasks: targetTasks, targetBitrateKbps }: { tasks: any[], targetBitrateKbps: number }) => {
-  if (targetTasks.length === 0 || !window.electronAPI) return;
-
-  selectedTasks.value = [];
-  showMessage('已将选中的视频加入压缩处理队列', 'info');
-
-  for (const t of targetTasks) {
-    t.speed = 0;
-    delete t.speedText;
-    delete t.etaSeconds;
-    // 后台触发，downloader.ts 单并发压缩队列会自动管理排队与运行
-    window.electronAPI.compressVideoTask(t.id, t.savePath, targetBitrateKbps).catch((err: any) => {
-      logger.error('Home', `[BatchCompress] 任务 ${t.id} 压缩触发异常: ${err?.message}`);
-    });
-  }
-};
-
-const handleConfirmCompress = async ({ task, targetBitrateKbps }: { task: any, targetBitrateKbps: number }) => {
-  if (!task || !window.electronAPI) return;
-  task.status = 'compressing';
-  task.progress = 0;
-  task.speed = 0;
-  delete task.speedText;
-  delete task.etaSeconds;
-  await updateTaskDb(task);
-  showMessage(`已开始压缩视频 "${task.name}"`, 'info');
-
-  try {
-    const res = await window.electronAPI.compressVideoTask(task.id, task.savePath, targetBitrateKbps);
-    if (res && res.success && res.newSize) {
-      task.status = 'completed';
-      task.progress = 100;
-      task.receivedBytes = res.newSize;
-      task.totalBytes = res.newSize;
-      delete task.speedText;
-      delete task.etaSeconds;
-      await updateTaskDb(task);
-    } else if (res && !res.success) {
-      task.status = 'completed';
-      delete task.speedText;
-      delete task.etaSeconds;
-      await updateTaskDb(task);
-      if (res.error && res.error !== '压缩已取消') {
-        showNotification({
-          type: 'error',
-          title: '视频压缩失败',
-          message: task.name,
-          detail: res.error,
-          sourceRoute: '/'
-        });
-      }
-    }
-  } catch (err: any) {
-    task.status = 'completed';
-    delete task.speedText;
-    delete task.etaSeconds;
-    await updateTaskDb(task);
-    showNotification({
-      type: 'error',
-      title: '视频压缩失败',
-      message: task.name,
-      detail: err.message || '压缩发生未知异常',
-      sourceRoute: '/'
-    });
-  }
-};
-const onDownloadAudio = (url: string) => {
-  let name = '';
-  try {
-    const u = new URL(url);
-    const parts = u.pathname.split('/');
-    name = parts[parts.length - 1] || 'audio.mp3';
-  } catch {
-    name = 'audio.mp3';
-  }
-
-  openSaveMediaDialog({
-    url,
-    defaultName: name,
-    defaultDir: settingsState.audioDirectory,
-    type: 'audio'
-  });
-};
-
-const handleMouseUp = () => {
-  isSelecting.value = false;
-};
+const {
+  showNewDownloadModal,
+  showPanParseModal,
+  activeImagePreviewUrl,
+  activeAudioPreviewUrl,
+  activeVideoPreviewUrl,
+  handleVideoEditComplete,
+  editTaskDialogVisible,
+  editingTask,
+  openEditTask,
+  isCompressDialogVisible,
+  compressingTask,
+  openCompressDialog,
+  isBatchCompressDialogVisible,
+  openBatchCompressDialog,
+  handleConfirmBatchCompress,
+  handleConfirmCompress,
+  onDownloadAudio,
+  openTask,
+  confirmSkipFailedSegments,
+  openDirectory,
+  confirmDeleteTask
+} = useHomeTaskActions({
+  tasks,
+  selectedTasks,
+  selectedCompressibleTasks,
+  updateTaskDb,
+  skipFailedSegmentsTask,
+  deleteTask
+});
 
 onMounted(async () => {
-  window.addEventListener('mouseup', handleMouseUp);
   if (!isInitialized.value) {
     await loadTasks();
   }
 });
-
-onUnmounted(() => {
-  window.removeEventListener('mouseup', handleMouseUp);
-});
-
-const getStatusWeight = (status: string) => {
-  switch (status) {
-    case 'compressing': return 7;
-    case 'converting': return 6;
-    case 'processing': return 6;
-    case 'downloading': return 5;
-    case 'resolving': return 4;
-    case 'waiting': return 4;
-    case 'paused': return 3;
-    case 'error': 
-    case 'file_removed':
-    case 'file_corrupted':
-      return 2;
-    case 'completed': return 1;
-    default: return 0;
-  }
-};
-
-const activeFilter = ref<string | null>(null);
-const selectedTasks = ref<string[]>([]);
-
-const toggleFilter = (status: string | null) => {
-  if (activeFilter.value === status) {
-    activeFilter.value = null;
-  } else {
-    activeFilter.value = status;
-  }
-  selectedTasks.value = []; // Reset selection on filter change
-};
-
-const isAllSelected = computed(() => {
-  return sortedTasks.value.length > 0 && selectedTasks.value.length === sortedTasks.value.length;
-});
-
-const toggleSelectAll = () => {
-  if (isAllSelected.value) {
-    selectedTasks.value = [];
-  } else {
-    selectedTasks.value = sortedTasks.value.map(t => t.id);
-  }
-};
-
-const isSelecting = ref(false);
-const selectMode = ref(true);
-
-const startSelection = (id: string, event: MouseEvent) => {
-  if (event.button !== 0) return;
-  const target = event.target as HTMLElement;
-  if (target.closest('button') || target.closest('.task-checkbox')) return;
-
-  isSelecting.value = true;
-  const index = selectedTasks.value.indexOf(id);
-  selectMode.value = index === -1;
-
-  if (selectMode.value) {
-    selectedTasks.value.push(id);
-  } else {
-    selectedTasks.value.splice(index, 1);
-  }
-};
-
-const enterSelection = (id: string) => {
-  if (!isSelecting.value) return;
-
-  const index = selectedTasks.value.indexOf(id);
-  if (selectMode.value && index === -1) {
-    selectedTasks.value.push(id);
-  } else if (!selectMode.value && index !== -1) {
-    selectedTasks.value.splice(index, 1);
-  }
-};
-
-const batchPause = () => {
-  if (selectedTasks.value.length === 0) return;
-
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['downloading', 'compressing', 'converting', 'processing', 'waiting', 'resolving'].includes(t.status));
-
-  eligibleTasks.forEach(t => pauseTask(t.id));
-
-  if (eligibleTasks.length > 0) {
-    showMessage(`已成功暂停 ${eligibleTasks.length} 个任务`, 'success');
-  }
-};
-
-const batchResume = () => {
-  if (selectedTasks.value.length === 0) return;
-
-  const eligibleTasks = tasks.value.filter(t => selectedTasks.value.includes(t.id) && ['paused', 'error', 'file_removed', 'file_corrupted'].includes(t.status));
-
-  eligibleTasks.forEach(t => resumeTask(t.id));
-
-  if (eligibleTasks.length > 0) {
-    showMessage(`已成功继续 ${eligibleTasks.length} 个任务`, 'success');
-  }
-};
-
-const batchDelete = async () => {
-  if (selectedTasks.value.length === 0) return;
-
-  const { confirmed, checked } = await confirm({
-    title: '批量删除',
-    message: '确定要删除选中的任务记录吗？',
-    confirmText: '删除',
-    cancelText: '取消',
-    type: 'danger',
-    checkboxLabel: '是否同时删除文件',
-    defaultChecked: true
-  });
-
-  if (confirmed) {
-    for (const id of selectedTasks.value) {
-      await deleteTask(id, checked);
-    }
-    if (checked) {
-      showMessage('已删除选中的任务及对应文件', 'success');
-    } else {
-      showMessage('已删除选中的任务记录', 'success');
-    }
-    selectedTasks.value = [];
-  }
-};
-
-const inProgressCount = computed(() => tasks.value.filter(t => ['resolving', 'downloading', 'converting', 'compressing', 'processing', 'waiting', 'paused'].includes(t.status)).length);
-const completedCount = computed(() => tasks.value.filter(t => t.status === 'completed').length);
-const errorCount = computed(() => tasks.value.filter(t => ['error', 'file_removed', 'file_corrupted'].includes(t.status)).length);
-
-const globalSpeed = computed(() => {
-  return tasks.value
-    .filter(t => t.status === 'downloading')
-    .reduce((sum, t) => sum + (t.speed || 0), 0);
-});
-
-const globalReceivedBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.receivedBytes || 0), 0));
-// const globalTotalBytes = computed(() => tasks.value.reduce((sum, t) => sum + (t.totalBytes || 0), 0));
-
-const isImageTask = (task: any) => {
-  const path = task.savePath || task.name || '';
-  const ext = path.split('.').pop()?.toLowerCase();
-  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'].includes(ext || '');
-};
-
-const isAudioTask = (task: any) => {
-  const path = task.savePath || task.name || '';
-  const ext = path.split('.').pop()?.toLowerCase();
-  return ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext || '');
-};
-
-const isVideoTask = (task: any) => {
-  const path = task.savePath || task.name || '';
-  const ext = path.split('.').pop()?.toLowerCase();
-  return ['mp4', 'webm', 'mkv', 'avi', 'mov', 'm3u8', 'ts'].includes(ext || '');
-};
-
-const openTask = async (task: any) => {
-  logger.info('HomeView', `openTask invoked for task ID: ${task.id}, name: ${task.name}, savePath: ${task.savePath}`);
-  if (!task.savePath) {
-    showMessage('文件路径不存在', 'error');
-    return;
-  }
-  
-  if (window.electronAPI) {
-    const exists = await window.electronAPI.fileExists(task.savePath);
-    if (!exists) {
-      task.status = 'file_removed';
-      showMessage('本地文件已移除', 'error');
-      await updateTaskDb(task);
-      return;
-    }
-
-    if (task.status === 'file_removed' || task.status === 'file_corrupted') {
-      task.status = 'completed';
-      task.progress = 100;
-      await updateTaskDb(task);
-      showMessage('已识别到本地文件，状态恢复为已完成', 'success');
-    }
-
-    if (isImageTask(task)) {
-      logger.info('HomeView', `Opening ImagePreviewDialog for path: ${task.savePath}`);
-      activeImagePreviewUrl.value = task.savePath;
-      return;
-    } else if (isAudioTask(task)) {
-      logger.info('HomeView', `Opening AudioPlayerDialog for path: ${task.savePath}`);
-      activeAudioPreviewUrl.value = task.savePath;
-      return;
-    } else if (isVideoTask(task)) {
-      logger.info('HomeView', `Opening VideoPlayerDialog for path: ${task.savePath}`);
-      activeVideoPreviewUrl.value = task.savePath;
-      return;
-    }
-
-    const userConfirmed = await confirm({
-      title: '使用系统应用打开',
-      message: '当前应用不支持该格式，是否使用系统默认应用打开该文件？',
-      confirmText: '打开',
-      cancelText: '取消'
-    });
-
-    if (userConfirmed) {
-      const res = await window.electronAPI.openFile(task.savePath);
-      if (!res.success) {
-        if (res.code === 'NOT_FOUND') {
-          task.status = 'file_removed';
-          showMessage('本地文件已移除', 'error');
-        } else {
-          task.status = 'file_corrupted';
-          showMessage('本地文件已损坏或无法打开', 'error');
-        }
-        await updateTaskDb(task);
-      }
-    }
-  }
-};
-
-const sortedTasks = computed(() => {
-  let filtered = tasks.value;
-  if (activeFilter.value) {
-    filtered = filtered.filter(t => {
-      if (activeFilter.value === 'processing' || activeFilter.value === 'downloading') {
-        return ['resolving', 'downloading', 'converting', 'compressing', 'processing', 'waiting', 'paused'].includes(t.status);
-      }
-      if (activeFilter.value === 'error') {
-        return ['error', 'file_removed', 'file_corrupted'].includes(t.status);
-      }
-      return t.status === activeFilter.value;
-    });
-  }
-  return [...filtered].sort((a, b) => {
-    const wa = getStatusWeight(a.status);
-    const wb = getStatusWeight(b.status);
-    if (wa !== wb) return wb - wa;
-    return b.createdAt - a.createdAt;
-  });
-});
-
-const getStatusText = (status: string, task?: any) => {
-  if (status === 'waiting') {
-    return task?.speedText === '等待压缩' ? '等待压缩' : '排队中';
-  }
-  switch (status) {
-    case 'resolving': return '解析中';
-    case 'downloading': return '下载中';
-    case 'converting': return '格式转换中';
-    case 'compressing': return '压缩中';
-    case 'processing': return '处理中';
-    case 'paused': return '已暂停';
-    case 'completed': return '已完成';
-    case 'error': return '下载失败';
-    case 'file_removed': return '本地文件已移除';
-    case 'file_corrupted': return '本地文件已损坏';
-    default: return '未知状态';
-  }
-};
-
-const getDirectory = (savePath: string) => {
-  if (!savePath) return '';
-  const lastIndex = Math.max(savePath.lastIndexOf('\\'), savePath.lastIndexOf('/'));
-  return lastIndex === -1 ? savePath : savePath.substring(0, lastIndex);
-};
-
-const formatSecondsETA = (seconds: number) => {
-  if (seconds <= 0) return '即将完成';
-  if (seconds < 60) return `${seconds}秒`;
-  const minutes = Math.floor(seconds / 60);
-  const remSec = seconds % 60;
-  if (minutes < 60) return remSec > 0 ? `${minutes}分${remSec}秒` : `${minutes}分`;
-  const hours = Math.floor(minutes / 60);
-  const remMin = minutes % 60;
-  return `${hours}小时${remMin}分`;
-};
-
-const formatETA = (total: number, received: number, speed: number) => {
-  if (speed === 0 && received > 0) return 'N/A';
-  if (!speed || !total) return '计算中';
-  const remaining = total - received;
-  if (remaining <= 0) return '即将完成';
-
-  const seconds = Math.floor(remaining / speed);
-  return formatSecondsETA(seconds);
-};
-
-
-
-const confirmSkipFailedSegments = async (task: any) => {
-  if (!task?.id) return;
-  const userConfirmed = await confirm({
-    title: '跳过失效分片并封装',
-    message: '确定要跳过当前无法下载的失败分片，直接合并封装已完成部分吗？缺失位置在播放时可能会有短暂跳帧。',
-    confirmText: '跳过并封装',
-    cancelText: '取消',
-    type: 'warning'
-  });
-  if (!userConfirmed) return;
-
-  const res = await skipFailedSegmentsTask(task.id);
-  if (!res?.success && res?.error) {
-    showMessage(`跳过封装失败: ${res.error}`, 'error', 3000);
-  }
-};
-
-const openDirectory = async (task: any) => {
-  if (!task.savePath) {
-    showMessage('任务路径未知', 'error');
-    return;
-  }
-  
-  const normalizedPath = task.savePath.replace(/\\/g, '/');
-  const dir = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
-
-  // 正在下载、处理、等待或暂停的任务，最终文件尚未落地，直接打开所在目录即可
-  const isUnfinished = ['downloading', 'compressing', 'converting', 'processing', 'resolving', 'waiting', 'paused'].includes(task.status);
-
-  if (isUnfinished) {
-    if (window.electronAPI) {
-      const dirExists = await window.electronAPI.fileExists(dir);
-      if (dirExists) {
-        if (window.electronAPI.openFile) {
-          window.electronAPI.openFile(dir);
-        } else {
-          window.electronAPI.showItemInFolder(dir);
-        }
-      } else {
-        showMessage('保存目录尚未创建', 'warning');
-      }
-    }
-    return;
-  }
-
-  // 已完成或异常任务，进行文件精准校验
-  if (window.electronAPI && window.electronAPI.showItemInFolder) {
-    const exists = await window.electronAPI.fileExists(task.savePath);
-    if (exists) {
-      if (task.status === 'file_removed' || task.status === 'file_corrupted') {
-        task.status = 'completed';
-        task.progress = 100;
-        await updateTaskDb(task);
-        showMessage('已识别到本地文件，状态恢复为已完成', 'success');
-      }
-      // 文件真实存在，高亮选中文件
-      window.electronAPI.showItemInFolder(task.savePath);
-    } else {
-      // 文件不存在，标为本地文件已移除并更新数据库
-      task.status = 'file_removed';
-      await updateTaskDb(task);
-      showMessage('本地文件已移除', 'error');
-
-      const dirExists = await window.electronAPI.fileExists(dir);
-      if (dirExists) {
-        if (window.electronAPI.openFile) {
-          window.electronAPI.openFile(dir);
-        } else {
-          window.electronAPI.showItemInFolder(dir);
-        }
-      } else {
-        showMessage('文件所在目录尚未创建或已被删除', 'error');
-      }
-    }
-  }
-};
-
-const confirmDeleteTask = async (task: any) => {
-  let fileExists = false;
-  if (task.savePath && window.electronAPI && window.electronAPI.fileExists) {
-    fileExists = await window.electronAPI.fileExists(task.savePath);
-  }
-
-  const { confirmed, checked } = await confirm({
-    title: '删除任务',
-    message: `确定要删除任务 "${task.name}" 的记录吗？`,
-    confirmText: '删除',
-    cancelText: '取消',
-    type: 'danger',
-    checkboxLabel: '是否同时删除文件',
-    defaultChecked: true
-  });
-
-  if (confirmed) {
-    const shouldDeleteFile = checked && fileExists;
-    await deleteTask(task.id, shouldDeleteFile);
-    if (shouldDeleteFile) {
-      showMessage('已删除任务记录及本地文件', 'success');
-    } else {
-      showMessage('已删除任务记录', 'success');
-    }
-  }
-};
 </script>
 
 <style scoped lang="less">

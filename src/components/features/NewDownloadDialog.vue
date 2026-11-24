@@ -74,7 +74,7 @@ import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import { useDownloads } from '@/composables/useDownloads';
-import { useNotification } from '@/composables/useNotification';
+import { useMessage } from '@/composables/useMessage';
 import { sanitizeFileName } from '@/utils/pathSanitizer';
 
 const props = defineProps<{
@@ -88,7 +88,7 @@ const emit = defineEmits<{
 }>();
 
 const { addDownload } = useDownloads();
-const { showNotification } = useNotification();
+const { showMessage } = useMessage();
 
 const inputUrl = ref('');
 const taskName = ref('');
@@ -227,20 +227,12 @@ const handleSubmit = async () => {
   try {
     const added = await addDownload(url, name, fullSavePath);
     if (added) {
-      showNotification({
-        type: 'success',
-        title: '新建下载',
-        message: `任务已创建: ${name}`
-      });
+      showMessage(`任务已创建: ${name}`, 'success');
       emit('success');
       handleClose();
     }
   } catch (err: any) {
-    showNotification({
-      type: 'error',
-      title: '创建任务失败',
-      message: err.message || '未知错误'
-    });
+    showMessage(err.message ? `创建任务失败: ${err.message}` : '创建任务失败', 'error');
   }
 };
 </script>

@@ -105,7 +105,7 @@
           @click="handleOpenSavePicker"
         >
           <VIcon name="folder-enter" :size="14" />
-          <span>{{ isSavingToDrive ? '转存中...' : '转存到网盘' }}</span>
+          <span>{{ isSavingToDrive ? '转存中' : '转存到网盘' }}</span>
         </VButton>
         <VButton
           variant="primary"
@@ -138,8 +138,9 @@ import VIcon from '@/components/base/VIcon.vue';
 import FileTree from '@/components/features/FileTree.vue';
 import PanFolderPickerDialog from '@/components/features/PanFolderPickerDialog.vue';
 import { useDownloads } from '@/composables/useDownloads';
-import { useNotification } from '@/composables/useNotification';
+import { useMessage } from '@/composables/useMessage';
 import { usePanAccounts } from '@/composables/usePanAccounts';
+import { notifyPanDirectoryChanged } from '@/composables/pan/usePanRefreshBus';
 import { sanitizeFileName, sanitizeRelativePath } from '@/utils/pathSanitizer';
 
 interface PanFileWithUrl {
@@ -163,7 +164,7 @@ const emit = defineEmits<{
 }>();
 
 const { addDownloadsBatch } = useDownloads();
-const { showNotification } = useNotification();
+const { showMessage } = useMessage();
 const { getAccount, loadAccounts, getPanName } = usePanAccounts();
 
 // 表单状态
@@ -502,8 +503,14 @@ const getNormalizedRaw = (file: PanFileWithUrl): {
       : Object.keys(r).length > 0
         ? r
         : {};
+  let safeBaseExtra: Record<string, any> = {};
+  try {
+    safeBaseExtra = JSON.parse(JSON.stringify(baseExtra));
+  } catch {
+    safeBaseExtra = { ...baseExtra };
+  }
   const extra: Record<string, any> = {
-    ...baseExtra,
+    ...safeBaseExtra,
     relativePath
   };
   return {
@@ -524,26 +531,14 @@ const handleOpenSavePicker = async () => {
   let account = getAccount(pt);
   if (!account) {
     if (!window.electronAPI?.loginPanAccount) {
-      showNotification({
-        type: 'error',
-        title: '无法登录',
-        message: '当前客户端不支持网盘账号登录'
-      });
+      showMessage('当前客户端不支持网盘账号登录', 'error');
       return;
     }
-    showNotification({
-      type: 'info',
-      title: `需要登录${panName}`,
-      message: `请先在弹出的窗口中登录${panName}账号后再转存`
-    });
+    showMessage(`请先在弹出的窗口中登录${panName}账号后再转存`, 'info');
     const loginRes = await window.electronAPI.loginPanAccount(pt);
     if (!loginRes || !loginRes.success) {
       if (loginRes?.error && loginRes.error !== '用户取消登录') {
-        showNotification({
-          type: 'error',
-          title: '登录失败',
-          message: loginRes.error
-        });
+        showMessage(`登录失败: ${loginRes.error}`, 'error');
       }
       return;
     }
@@ -568,36 +563,30 @@ const handleConfirmSaveToDrive = async (targetFid: string, targetName: string) =
     );
 
   if (items.length === 0) {
-    showNotification({ type: 'error', title: '转存失败', message: '未找到有效的分享文件标识' });
+    showMessage('未找到有效的分享文件标识', 'error');
     return;
   }
 
+  const pt = detectedPanType.value || 'quark';
   isSavingToDrive.value = true;
   try {
     const res = await window.electronAPI.savePanShare({
-      type: detectedPanType.value || 'quark',
+      type: pt,
       items,
       targetDirFid: targetFid
     });
     if (res && res.success) {
-      showNotification({
-        type: 'success',
-        title: '转存成功',
-        message: `已转存 ${res.savedCount ?? items.length} 项到「${targetName}」`
+      notifyPanDirectoryChanged({
+        panType: pt,
+        dirFids: [targetFid],
+        refreshQuota: true
       });
+      showMessage(`已转存到「${targetName}」`, 'success');
     } else {
-      showNotification({
-        type: 'error',
-        title: '转存失败',
-        message: res?.error || '转存未成功'
-      });
+      showMessage(res?.error || '转存未成功', 'error');
     }
   } catch (err: any) {
-    showNotification({
-      type: 'error',
-      title: '转存异常',
-      message: err?.message || '未知错误'
-    });
+    showMessage(err?.message ? `转存失败: ${err.message}` : '转存失败', 'error');
   } finally {
     isSavingToDrive.value = false;
   }
@@ -709,11 +698,7 @@ const handleSubmit = async () => {
     batchDispatched = true;
 
     if (successCount > 0) {
-      showNotification({
-        type: 'success',
-        title: '网盘下载已启动',
-        message: `已成功添加 ${successCount} 个下载任务`
-      });
+      showMessage('已添加到下载队列', 'success');
       emit('success');
       handleClose();
     }
@@ -726,18 +711,23 @@ const handleSubmit = async () => {
             .filter((fid): fid is string => Boolean(fid))
         )
       );
+      const cleanupPanType = detectedPanType.value || 'quark';
       for (const dirFid of dirFids) {
         window.electronAPI?.cleanupPanTempDir?.({
-          type: detectedPanType.value || 'quark',
+          type: cleanupPanType,
           cleanupDirFid: dirFid
+        }).then((cleanRes) => {
+          if (cleanRes?.success) {
+            notifyPanDirectoryChanged({
+              panType: cleanupPanType,
+              dirFids: ['0'],
+              refreshQuota: true
+            });
+          }
         }).catch(() => {});
       }
     }
-    showNotification({
-      type: 'error',
-      title: '创建网盘下载任务失败',
-      message: err.message || '未知错误'
-    });
+    showMessage(err.message ? `创建下载任务失败: ${err.message}` : '创建下载任务失败', 'error');
   } finally {
     isSubmitting.value = false;
   }

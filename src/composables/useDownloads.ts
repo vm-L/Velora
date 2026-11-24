@@ -2,6 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { db, type DownloadTask, type PanTaskContext } from '@/db'
 import { logger } from '@/services/logger'
 import { useFileDeduplication } from '@/composables/useFileDeduplication'
+import { notifyPanDirectoryChanged } from '@/composables/pan/usePanRefreshBus'
 
 const tasks = ref<DownloadTask[]>([])
 const isInitialized = ref(false)
@@ -83,7 +84,13 @@ const releaseUnusedCleanupDirs = (contexts: Array<PanTaskContext | undefined>) =
         t.panContext?.cleanupDirFid === cleanupDirFid
     )
     if (!stillInUse) {
-      void window.electronAPI.cleanupPanTempDir({ type: panType, cleanupDirFid }).catch(() => {})
+      void window.electronAPI.cleanupPanTempDir({ type: panType, cleanupDirFid })
+        .then((res) => {
+          if (res?.success) {
+            notifyPanDirectoryChanged({ panType, dirFids: ['0'], refreshQuota: true })
+          }
+        })
+        .catch(() => {})
     }
   }
 }

@@ -29,6 +29,11 @@ export interface MessageOptions {
 
 const messages = ref<MessageData[]>([])
 
+const getDefaultDuration = (type: MessageType): number => {
+  if (type === 'error' || type === 'warning') return 3000
+  return 2000
+}
+
 // 确保页面可见性变化监听只绑定一次
 let visibilityListenerRegistered = false
 
@@ -99,7 +104,7 @@ export const useMessage = () => {
   const showMessage = (
     textOrOptions: string | MessageOptions,
     type: MessageType = 'info',
-    duration = 2000,
+    duration?: number,
     action?: MessageAction,
     id?: string
   ): string => {
@@ -117,13 +122,13 @@ export const useMessage = () => {
     if (typeof textOrOptions === 'object') {
       msgText = textOrOptions.text
       msgType = textOrOptions.type || 'info'
-      msgDuration = textOrOptions.duration !== undefined ? textOrOptions.duration : 2000
+      msgDuration = textOrOptions.duration !== undefined ? textOrOptions.duration : getDefaultDuration(msgType)
       msgAction = textOrOptions.action
       msgId = textOrOptions.id || id
     } else {
       msgText = textOrOptions
       msgType = type
-      msgDuration = duration
+      msgDuration = duration !== undefined ? duration : getDefaultDuration(msgType)
       msgAction = action
     }
 
