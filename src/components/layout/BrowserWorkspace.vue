@@ -281,48 +281,33 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed, nextTick, defineAsyncComponent } from 'vue';
 import { useWorkspaces } from '@/composables/useWorkspaces';
-import { useSettings, type ParseRule, type ParseRuleItem } from '@/composables/useSettings';
-import { logger } from '@/services/logger';
-import { sanitizeFilename } from '@/utils/filename';
+import { useSettings } from '@/composables/useSettings';
+import { useElementPickerSession } from '@/composables/useElementPickerSession';
+import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
+import { getSitePartition } from '@/utils/sitePartition';
+
+import { useBrowserMediaSniffer } from '@/composables/browser/useBrowserMediaSniffer';
+import { useBrowserCustomization } from '@/composables/browser/useBrowserCustomization';
+import { useBrowserSilentParser } from '@/composables/browser/useBrowserSilentParser';
+import { useBrowserWaterfall } from '@/composables/browser/useBrowserWaterfall';
+import { useBrowserDuplicateMark } from '@/composables/browser/useBrowserDuplicateMark';
+import { useBrowserContextMenu } from '@/composables/browser/useBrowserContextMenu';
+import { useBrowserWebviewBridge } from '@/composables/browser/useBrowserWebviewBridge';
 
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
+import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
+import WaterfallDropdown from '@/components/features/WaterfallDropdown.vue';
+
 const InspectorDialog = defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'));
 const ScriptInjectorDialog = defineAsyncComponent(() => import('@/components/features/ScriptInjectorDialog.vue'));
 const DuplicateMarkDialog = defineAsyncComponent(() => import('@/components/features/DuplicateMarkDialog.vue'));
 const ParseRuleDialog = defineAsyncComponent(() => import('@/components/features/ParseRuleDialog.vue'));
 const ParseRuleSelectDialog = defineAsyncComponent(() => import('@/components/features/ParseRuleSelectDialog.vue'));
-import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
-import WaterfallDropdown from '@/components/features/WaterfallDropdown.vue';
 const WaterfallWizardModal = defineAsyncComponent(() => import('@/components/features/WaterfallWizardModal.vue'));
 const ImagePreviewDialog = defineAsyncComponent(() => import('@/components/features/ImagePreviewDialog.vue'));
 const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
 const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
-import { APP_PREFIX } from '@/constants';
-import { getPickerScript, getPickerCancelScript } from '@/utils/elementPicker';
-import {
-  getWaterfallParentInitScript,
-  getWaterfallBackgroundExtractScript,
-  getWaterfallQueryInitialNextUrlScript,
-  getWaterfallDestroyScript,
-  type WaterfallExtractResult
-} from '@/utils/waterfallEngine';
-import {
-  getDuplicateMarkScript,
-  getDuplicateMarkCleanupScript
-} from '@/utils/duplicateMarkEngine';
-import { getVideoQuickDownloadScript } from '@/utils/videoQuickDownloadEngine';
-import { isUrlMatchPattern, getDefaultUrlPattern } from '@/utils/urlMatcher';
-import type { WaterfallRule, DuplicateMarkRule } from '@/composables/useSettings';
-import { useFileDeduplication } from '@/composables/useFileDeduplication';
-import { useElementPickerSession } from '@/composables/useElementPickerSession';
-import { isSimilarExistingFile } from '@/utils/similarity';
-import { getSitePartition } from '@/utils/sitePartition';
-
-
-import { useMessage } from '@/composables/useMessage';
-import { useConfirm } from '@/composables/useConfirm';
-import { useSaveMediaDialog } from '@/composables/useSaveMediaDialog';
 
 const props = defineProps<{
   resourceId: string;
@@ -331,764 +316,124 @@ const props = defineProps<{
 
 const sitePartition = computed(() => getSitePartition(props.resourceId));
 
-const parseRuleVisible = ref(false);
-const toggleParseRule = () => {
-  parseRuleVisible.value = !parseRuleVisible.value;
-};
-
-const { showMessage } = useMessage();
-const { confirm } = useConfirm();
-const { openSaveMediaDialog, isDraggingAnyDialog } = useSaveMediaDialog();
-const { isElementPickingActive, startElementPickingSession, endElementPickingSession } = useElementPickerSession();
+const { isDraggingAnyDialog } = useSaveMediaDialog();
+const { isElementPickingActive, endElementPickingSession } = useElementPickerSession();
 const { initWorkspace, getWorkspace, addTab, closeTab, updateTab } = useWorkspaces();
-const { state: settingsState, saveCustomStyles, saveCustomScripts, saveCustomWaterfallRules, saveCustomDuplicateRules, saveExternalSites, saveCmsResources } = useSettings();
-const { fileIndexMap, isReady: isDupIndexReady } = useFileDeduplication();
+const { state: settingsState } = useSettings();
 
-const contextMenuVisible = ref(false);
-const contextMenuPos = ref({ x: 0, y: 0 });
-const contextMenuTabId = ref('');
-const contextMenuTargetUrl = ref('');
-const isContextMenuTargetLink = ref(false);
-const contextMenuRef = ref<HTMLElement | null>(null);
-const silentParseTargets = ref<Array<{ url: string; id: string }>>([]);
+const isInteracting = ref(false);
+const addressInputUrl = ref('');
 
-const handleWebviewContextMenu = (e: any, tabId: string) => {
-  if (isPickingElementImage.value || isPickingElementText.value) return;
-  if (e.preventDefault && typeof e.preventDefault === 'function') e.preventDefault();
-
-  const params = e.params || (e as any).detail?.params || (e as any).nativeEvent?.params || e;
-  const px = typeof params?.x === 'number' ? params.x : (typeof e.clientX === 'number' ? e.clientX : 0);
-  const py = typeof params?.y === 'number' ? params.y : (typeof e.clientY === 'number' ? e.clientY : 0);
-
-  const link = params?.linkURL || params?.linkUrl;
-  const page = params?.pageURL || params?.pageUrl;
-  const tab = workspace.value?.tabs.find(t => t.id === tabId);
-
-  if (link) {
-    isContextMenuTargetLink.value = true;
-    contextMenuTargetUrl.value = link;
-  } else {
-    isContextMenuTargetLink.value = false;
-    contextMenuTargetUrl.value = page || tab?.url || '';
-  }
-
-  contextMenuPos.value = {
-    x: px,
-    y: py
-  };
-  contextMenuTabId.value = tabId;
-  contextMenuVisible.value = true;
-  nextTick(() => {
-    if (contextMenuRef.value) {
-      contextMenuRef.value.focus();
-      const menuWidth = contextMenuRef.value.offsetWidth || 150;
-      const menuHeight = contextMenuRef.value.offsetHeight || 120;
-      const winWidth = window.innerWidth;
-      const winHeight = window.innerHeight;
-
-      let finalX = px;
-      let finalY = py;
-
-      // 防止超出右视界：如果向右展开超出视界右边缘，向左翻转展开
-      if (px + menuWidth > winWidth - 12) {
-        finalX = Math.max(12, px - menuWidth);
-      }
-
-      // 防止超出下视界：如果向下展开超出视界下边缘，向上翻转展开
-      if (py + menuHeight > winHeight - 12) {
-        finalY = Math.max(12, py - menuHeight);
-      }
-
-      contextMenuPos.value = {
-        x: finalX,
-        y: finalY
-      };
-    }
-  });
-};
-
-const hideAllContextMenus = (e?: Event) => {
-  if (e && e instanceof MouseEvent && e.button !== 0) return;
-  contextMenuVisible.value = false;
-};
-
-const triggerPickImage = () => {
-  contextMenuVisible.value = false;
-  pickElementImage();
-};
-
-const triggerCopyText = () => {
-  contextMenuVisible.value = false;
-  pickElementText();
-};
-
-
-// 规则选择排队队列项类型
-interface PendingRuleSelectItem {
-  targetUrl: string;
-  htmlText: string;
-  toastId: string;
-  shortLabel: string;
-  matchedRules: ParseRule[];
-  evaluator?: (expr: string) => Promise<any>;
-}
-
-const ruleSelectModalVisible = ref(false);
-const pendingMatchingRules = ref<ParseRule[]>([]);
-const pendingRuleSelectQueue: PendingRuleSelectItem[] = [];
-let currentRuleSelectItem: PendingRuleSelectItem | null = null;
-
-// 最大并发解析任务数限制（防止短时间拉起过多后台 webview 导致内存与 CPU 负载过高）
-const MAX_CONCURRENT_PARSE = 3;
-let activeParseCount = 0;
-const parseTaskQueue: Array<() => Promise<void>> = [];
-
-const enqueueParseTask = (task: () => Promise<void>) => {
-  if (activeParseCount < MAX_CONCURRENT_PARSE) {
-    runParseTask(task);
-  } else {
-    parseTaskQueue.push(task);
-  }
-};
-
-const runParseTask = async (task: () => Promise<void>) => {
-  activeParseCount++;
-  try {
-    await task();
-  } finally {
-    activeParseCount--;
-    if (parseTaskQueue.length > 0) {
-      const nextTask = parseTaskQueue.shift()!;
-      runParseTask(nextTask);
-    }
-  }
-};
-
-// 统一 URL 通配符匹配
-const matchDomainPattern = (urlStr: string, domainPattern: string): boolean => {
-  return isUrlMatchPattern(domainPattern, urlStr);
-};
-
-// 解析单个 Rule Item (支持 /正则/、'固定常量' 及 全局变量名/JS表达式)
-const evaluateParseItem = async (
-  htmlText: string,
-  item: ParseRuleItem,
-  evaluator?: (expr: string) => Promise<any>
-): Promise<string | string[] | null> => {
-  const valPattern = (item.value ?? item.regex ?? '').trim();
-  if (!valPattern) return null;
-
-  // 1. 以 '/' 包裹：正则匹配，例如 /pattern/flags
-  const isRegexPattern = /^\/(.+)\/([gimsuy]*)$/.test(valPattern);
-  if (isRegexPattern) {
-    const match = valPattern.match(/^\/(.+)\/([gimsuy]*)$/);
-    if (match) {
-      try {
-        let patternStr = match[1];
-        let flagsStr = match[2] || '';
-        if (!flagsStr.includes('g')) flagsStr += 'g';
-
-        const reg = new RegExp(patternStr, flagsStr);
-        const matches: string[] = [];
-        let m: RegExpExecArray | null;
-
-        while ((m = reg.exec(htmlText)) !== null) {
-          const val = m[1] !== undefined ? m[1] : m[0];
-          matches.push(val);
-          if (!reg.global) break;
-        }
-
-        if (matches.length === 0) return null;
-        if (matches.length === 1) return matches[0];
-        return matches;
-      } catch {
-        return null;
-      }
-    }
-  }
-
-  // 2. 以单引号或双引号包裹：固定常量值，例如 'demo' 或 "hello world"
-  const isQuotedString = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(valPattern);
-  if (isQuotedString) {
-    const match = valPattern.match(/^'([\s\S]*)'$|^"([\s\S]*)"$/);
-    if (match) {
-      return match[1] !== undefined ? match[1] : match[2];
-    }
-  }
-
-  // 3. 直接输入：读取全局变量 / 执行 JS 表达式 (如 window.__playinfo__)
-  if (evaluator) {
-    try {
-      const res = await evaluator(valPattern);
-      if (res === undefined || res === null) return null;
-      if (Array.isArray(res)) return res.map(v => (typeof v === 'object' ? JSON.stringify(v) : String(v)));
-      if (typeof res === 'object') return JSON.stringify(res);
-      return String(res);
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-};
-
-// 执行特定匹配URL规则的所有行为类型
-const executeMatchedRulesForDomain = async (
-  _targetUrl: string,
-  htmlText: string,
-  selectedDomain: string,
-  toastId: string,
-  evaluator?: (expr: string) => Promise<any>,
-  shortLabel?: string
-) => {
-  const allRules = settingsState.customParseRules[props.resourceId] || [];
-  const domainRules = allRules.filter(r => r.domain === selectedDomain);
-
-  let hasExec = false;
-
-  for (const rule of domainRules) {
-    if (rule.actionType === 'download') {
-      hasExec = true;
-      let nameResult: string | string[] | null = null;
-      let urlResult: string | string[] | null = null;
-
-      for (const it of rule.items) {
-        if (it.key === '文件名称') {
-          nameResult = await evaluateParseItem(htmlText, it, evaluator);
-        } else if (it.key === '文件链接') {
-          urlResult = await evaluateParseItem(htmlText, it, evaluator);
-        }
-      }
-
-      const rawNameOptions = Array.isArray(nameResult) ? nameResult : (nameResult ? [nameResult] : []);
-      const nameOptions = rawNameOptions.map(n => sanitizeFilename(n)).filter(Boolean);
-      const urlOptions = Array.isArray(urlResult) ? urlResult : (urlResult ? [urlResult] : []);
-
-      // 当下载类型没有匹配到文件名或文件链接时，弹出错误提示
-      if (nameOptions.length === 0 || urlOptions.length === 0) {
-        showMessage({
-          id: toastId,
-          text: `解析失败：未从页面匹配到有效的文件名或文件链接${shortLabel ? ` (${shortLabel})` : ''}`,
-          type: 'error',
-          duration: 3000
-        });
-        return;
-      }
-
-      // 配置并弹出全局下载保存弹窗
-      openSaveMediaDialog({
-        url: urlOptions[0],
-        defaultName: nameOptions[0],
-        defaultDir: settingsState.videoDirectory || settingsState.fileDirectory || '',
-        type: 'video',
-        nameOptions,
-        urlOptions,
-        pageUrl: getCurrentPageOrigin()
-      });
-
-      showMessage({
-        id: toastId,
-        text: `解析成功${shortLabel ? `: ${shortLabel}` : ''}`,
-        type: 'success',
-        duration: 2000
-      });
-    } else if (rule.actionType === 'copy') {
-      hasExec = true;
-      const copyObj: Record<string, any> = {};
-
-      for (const it of rule.items) {
-        const res = await evaluateParseItem(htmlText, it, evaluator);
-        // 复制类型没有匹配到则不用提示，直接 value 值为空，当匹配到多个则使用数组
-        copyObj[it.key] = res !== null ? res : '';
-      }
-
-      const jsonString = JSON.stringify(copyObj, null, 2);
-
-      try {
-        await navigator.clipboard.writeText(jsonString);
-        showMessage({
-          id: toastId,
-          text: `解析成功，数据已复制到剪切板！${shortLabel ? ` (${shortLabel})` : ''}`,
-          type: 'success',
-          duration: 2000
-        });
-      } catch (err: any) {
-        showMessage({
-          id: toastId,
-          text: `复制到剪切板失败: ${err.message || err}`,
-          type: 'error',
-          duration: 3000
-        });
-      }
-    }
-  }
-
-  if (!hasExec) {
-    showMessage({
-      id: toastId,
-      text: `所选规则暂无配置解析项${shortLabel ? ` (${shortLabel})` : ''}`,
-      type: 'error',
-      duration: 2000
-    });
-  }
-};
-
-// 规则选择排队调度管理
-const requestRuleSelection = (item: PendingRuleSelectItem) => {
-  if (ruleSelectModalVisible.value) {
-    pendingRuleSelectQueue.push(item);
-  } else {
-    openNextRuleSelection(item);
-  }
-};
-
-const openNextRuleSelection = (item: PendingRuleSelectItem) => {
-  currentRuleSelectItem = item;
-  pendingMatchingRules.value = item.matchedRules;
-  ruleSelectModalVisible.value = true;
-};
-
-const onRuleSelected = async (selectedDomain: string) => {
-  const current = currentRuleSelectItem;
-  currentRuleSelectItem = null;
-  ruleSelectModalVisible.value = false;
-
-  if (current) {
-    showMessage({
-      id: current.toastId,
-      text: `正在执行选定的解析规则 (${current.shortLabel})`,
-      type: 'loading',
-      duration: 0
-    });
-    executeMatchedRulesForDomain(
-      current.targetUrl,
-      current.htmlText,
-      selectedDomain,
-      current.toastId,
-      current.evaluator,
-      current.shortLabel
-    ).catch(err => {
-      logger.error('BrowserWorkspace', `执行选定规则失败: ${err}`);
-    });
-  }
-
-  // 若队列中还有待确认任务，继续弹出下一个
-  if (pendingRuleSelectQueue.length > 0) {
-    const nextItem = pendingRuleSelectQueue.shift()!;
-    nextTick(() => {
-      openNextRuleSelection(nextItem);
-    });
-  }
-};
-
-const onRuleSelectCancelled = () => {
-  const current = currentRuleSelectItem;
-  currentRuleSelectItem = null;
-  ruleSelectModalVisible.value = false;
-
-  if (current) {
-    showMessage({
-      id: current.toastId,
-      text: `已取消规则选择 (${current.shortLabel})`,
-      type: 'info',
-      duration: 2000
-    });
-  }
-
-  // 若队列中还有待确认任务，继续弹出下一个
-  if (pendingRuleSelectQueue.length > 0) {
-    const nextItem = pendingRuleSelectQueue.shift()!;
-    nextTick(() => {
-      openNextRuleSelection(nextItem);
-    });
-  }
-};
-
-// 单个任务的独立执行逻辑
-const executeSingleParseTask = async (task: {
-  parseId: string;
-  toastId: string;
-  targetUrl: string;
-  isLink: boolean;
-  tabId: string;
-  shortLabel: string;
-}) => {
-  const { parseId, toastId, targetUrl, isLink, tabId, shortLabel } = task;
-  try {
-    let htmlText = '';
-    let evaluator: ((expr: string) => Promise<any>) | undefined;
-
-    if (isLink) {
-      // 解析超链接：在后台挂载独立静默 webview 容器
-      silentParseTargets.value.push({ url: targetUrl, id: parseId });
-      await nextTick();
-
-      const hiddenWebview = document.getElementById(`silent-webview-${parseId}`) as any;
-      if (!hiddenWebview) {
-        throw new Error('创建后台解析容器失败');
-      }
-
-      // 等待 Webview 触发 dom-ready 事件（20 秒超时）
-      await new Promise<void>((resolve, reject) => {
-        let timer: any = null;
-        let isDone = false;
-        const onDomReady = () => {
-          if (isDone) return;
-          isDone = true;
-          if (timer) clearTimeout(timer);
-          hiddenWebview.removeEventListener('dom-ready', onDomReady);
-          resolve();
-        };
-
-        hiddenWebview.addEventListener('dom-ready', onDomReady);
-
-        timer = setTimeout(() => {
-          if (isDone) return;
-          isDone = true;
-          hiddenWebview.removeEventListener('dom-ready', onDomReady);
-          reject(new Error('页面加载超时（20秒）'));
-        }, 20000);
-      });
-
-      // 匹配当前 Workspace 下与目标链接 URL 符合的自定义 JS 脚本并自动注入
-      const workspaceScripts = settingsState.customScripts[props.resourceId] || [];
-      const matchedScripts = workspaceScripts
-        .filter(s => s.code && s.code.trim() && matchDomainPattern(targetUrl, s.domain))
-        .map(s => s.code);
-
-      for (const scriptCode of matchedScripts) {
-        try {
-          await hiddenWebview.executeJavaScript(scriptCode);
-        } catch (e) {
-          logger.warn('BrowserWorkspace', `注入自定义脚本失败: ${e}`);
-        }
-      }
-
-      // 等待 600ms 以便动态 JS 渲染与 DOM 更新
-      await new Promise(r => setTimeout(r, 600));
-
-      // 收集可能需要求值的全局变量表达式
-      const allRules = settingsState.customParseRules[props.resourceId] || [];
-      const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
-      const evalExprs: string[] = [];
-      matchedRules.forEach(r => {
-        r.items.forEach(it => {
-          const val = (it.value ?? it.regex ?? '').trim();
-          const isRegex = /^\/(.+)\/([gimsuy]*)$/.test(val);
-          const isQuoted = /^'([\s\S]*)'$|^"([\s\S]*)"$/.test(val);
-          if (val && !isRegex && !isQuoted) {
-            evalExprs.push(val);
-          }
-        });
-      });
-
-      const evaluatedVars: Record<string, any> = {};
-      for (const expr of evalExprs) {
-        try {
-          evaluatedVars[expr] = await hiddenWebview.executeJavaScript(expr);
-        } catch {
-          evaluatedVars[expr] = null;
-        }
-      }
-
-      // 提取完整的 outerHTML，绑定求值器
-      htmlText = await hiddenWebview.executeJavaScript('document.documentElement.outerHTML');
-      evaluator = async (expr: string) => {
-        if (expr in evaluatedVars) {
-          return evaluatedVars[expr];
-        }
-        try {
-          return await hiddenWebview.executeJavaScript(expr);
-        } catch {
-          return null;
-        }
-      };
-
-      // 解析数据读取完毕，立即关闭销毁后台临时 webview
-      silentParseTargets.value = silentParseTargets.value.filter(t => t.id !== parseId);
-    } else {
-      // 解析当前页面：直接获取当前活动 webview 的 DOM HTML，并在网页内部执行 JS 读取全局变量
-      const webview = document.getElementById(`webview-${tabId}`) as any;
-      if (webview && typeof webview.executeJavaScript === 'function') {
-        try {
-          htmlText = await webview.executeJavaScript('document.documentElement.outerHTML');
-          evaluator = async (code: string) => {
-            return await webview.executeJavaScript(code);
-          };
-        } catch (err: any) {
-          showMessage({
-            id: toastId,
-            text: `获取当前页面内容失败: ${err.message || err}`,
-            type: 'error',
-            duration: 3000
-          });
-          return;
-        }
-      } else {
-        throw new Error('未找到当前页面的浏览器实例');
-      }
-    }
-
-    const allRules = settingsState.customParseRules[props.resourceId] || [];
-    const matchedRules = allRules.filter(r => matchDomainPattern(targetUrl, r.domain));
-
-    if (matchedRules.length === 0) {
-      showMessage({
-        id: toastId,
-        text: `未匹配到任何解析规则 (${shortLabel})`,
-        type: 'error',
-        duration: 3000
-      });
-      return;
-    }
-
-    const matchedDomainSet = new Set<string>();
-    matchedRules.forEach(r => matchedDomainSet.add(r.domain));
-    const uniqueMatchedDomains = Array.from(matchedDomainSet);
-
-    if (uniqueMatchedDomains.length === 1) {
-      // 单个匹配URL：直接执行规则
-      await executeMatchedRulesForDomain(targetUrl, htmlText, uniqueMatchedDomains[0], toastId, evaluator, shortLabel);
-    } else {
-      // 多个匹配URL：加入选择排队队列
-      showMessage({
-        id: toastId,
-        text: `匹配到多个解析规则，请在弹窗中选择 (${shortLabel})`,
-        type: 'info',
-        duration: 2000
-      });
-      requestRuleSelection({
-        targetUrl,
-        htmlText,
-        toastId,
-        shortLabel,
-        matchedRules,
-        evaluator
-      });
-    }
-  } catch (err: any) {
-    showMessage({
-      id: toastId,
-      text: `解析发生异常 (${shortLabel}): ${err.message || err}`,
-      type: 'error',
-      duration: 3000
-    });
-  } finally {
-    if (isLink) {
-      silentParseTargets.value = silentParseTargets.value.filter(t => t.id !== parseId);
-    }
-  }
-};
-
-// 触发静默解析入口：支持多任务并发与队列调度
-const triggerSilentParse = () => {
-  const isLink = isContextMenuTargetLink.value;
-  const targetUrl = contextMenuTargetUrl.value || activeTab.value?.url;
-  const tabId = contextMenuTabId.value || workspace.value?.activeTabId || '';
-  contextMenuVisible.value = false;
-
-  if (!targetUrl) {
-    showMessage({ text: '未找到可解析的目标链接', type: 'error' });
-    return;
-  }
-
-  const parseId = Math.random().toString(36).substring(2, 9);
-  const toastId = `silent-parse-${props.resourceId}-${parseId}`;
-
-  let shortLabel = '';
-  try {
-    const u = new URL(targetUrl);
-    shortLabel = u.hostname + (u.pathname.length > 1 ? (u.pathname.slice(0, 15) + (u.pathname.length > 15 ? '...' : '')) : '');
-  } catch {
-    shortLabel = isLink ? '链接' : '页面';
-  }
-
-  showMessage({
-    id: toastId,
-    text: `正在解析: ${shortLabel}`,
-    type: 'loading',
-    duration: 0
-  });
-
-  enqueueParseTask(async () => {
-    await executeSingleParseTask({
-      parseId,
-      toastId,
-      targetUrl,
-      isLink,
-      tabId,
-      shortLabel
-    });
-  });
-};
 const workspace = computed(() => getWorkspace(props.resourceId));
 const activeTab = computed(() => workspace.value?.tabs.find(t => t.id === workspace.value?.activeTabId));
+
+const currentResourceUrl = computed(() => {
+  const site = settingsState.externalSites.find(r => r.id === props.resourceId);
+  if (site && site.url) return site.url;
+  return props.resourceUrl;
+});
 
 const getResourceIcon = () => {
   const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
   return isExt?.icon;
 };
 
-const init = () => {
-  if (props.resourceId && currentResourceUrl.value) {
-    initWorkspace(props.resourceId, currentResourceUrl.value, getResourceIcon());
+const activeWebview = () => {
+  if (!workspace.value?.activeTabId) return null;
+  return document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
+};
+
+const getCurrentPageUrl = (): string => {
+  const wv = activeWebview();
+  if (wv && typeof wv.getURL === 'function') {
+    try {
+      const u = wv.getURL();
+      if (u && u !== 'about:blank') return u;
+    } catch {}
+  }
+  return activeTab.value?.url || props.resourceUrl || '';
+};
+
+const getCurrentPageOrigin = (): string => {
+  const url = getCurrentPageUrl();
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return (u.origin && u.origin !== 'null') ? u.origin : url;
+  } catch {
+    return url;
   }
 };
 
-let offWebviewNewWindowFn: (() => void) | undefined;
-let offMediaSniffedFn: (() => void) | undefined;
+const syncAddressBar = () => {
+  if (activeTab.value?.isBlank) {
+    addressInputUrl.value = '';
+    return;
+  }
+  const wv = activeWebview();
+  if (wv && wv.getURL) {
+    addressInputUrl.value = wv.getURL();
+  } else if (activeTab.value?.url) {
+    addressInputUrl.value = activeTab.value.url;
+  }
+};
 
-onMounted(() => {
-  init();
-  document.addEventListener('click', hideAllContextMenus);
-  if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
-    offWebviewNewWindowFn = window.electronAPI.onWebviewNewWindow((data: { url: string, webContentsId: number } | string) => {
-      const url = typeof data === 'string' ? data : data.url;
-      const webContentsId = typeof data === 'string' ? -1 : data.webContentsId;
-      
-      if (!workspace.value) return;
-      
-      let isOurs = false;
-      if (workspace.value.tabs.some(t => t.webContentsId === webContentsId)) {
-        isOurs = true;
-      } else {
-        const webviews = document.querySelectorAll('webview') as NodeListOf<any>;
-        for (const wv of webviews) {
-          if (wv.getWebContentsId && wv.getWebContentsId() === webContentsId) {
-            const tabId = wv.id.replace('webview-', '');
-            if (workspace.value.tabs.some(t => t.id === tabId)) {
-              isOurs = true;
-              break;
-            }
-          }
-        }
-      }
-      
-      if (isOurs || webContentsId === -1) {
-        addTab(props.resourceId, url, getResourceIcon());
-      }
+const handleAddressBarFocus = (e: FocusEvent) => {
+  (e.target as HTMLInputElement).select();
+};
+
+const handleAddressBarEnter = () => {
+  if (!addressInputUrl.value) return;
+  let url = addressInputUrl.value.trim();
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  addressInputUrl.value = url;
+
+  if (activeTab.value?.isBlank) {
+    updateTab(props.resourceId, activeTab.value.id, {
+      url,
+      title: 'Loading...',
+      loading: true,
+      isBlank: false
     });
-  }
-
-  if (window.electronAPI && window.electronAPI.onMediaSniffed) {
-    offMediaSniffedFn = window.electronAPI.onMediaSniffed((data: any) => {
-      // data: { webContentsId: number, url: string, type: 'image'|'video', timestamp: number }
-      if (!workspace.value) return;
-
-      let matchedTab = workspace.value.tabs.find(t => t.webContentsId === data.webContentsId);
-
-      if (!matchedTab) {
-        const webviews = document.querySelectorAll('webview') as NodeListOf<any>;
-        for (const wv of webviews) {
-          try {
-            if (wv.getWebContentsId && wv.getWebContentsId() === data.webContentsId) {
-              const tabId = wv.id.replace('webview-', '');
-              matchedTab = workspace.value.tabs.find(t => t.id === tabId);
-              if (matchedTab) {
-                updateTab(props.resourceId, tabId, { webContentsId: data.webContentsId });
-              }
-              break;
-            }
-          } catch(e) {}
-        }
-      }
-
-      if (!matchedTab) {
-         const win = window as any;
-         if (!win._sniffedBuffer) win._sniffedBuffer = new Map();
-         if (!win._sniffedBuffer.has(data.webContentsId)) {
-           if (win._sniffedBuffer.size >= 20) {
-             const oldestKey = win._sniffedBuffer.keys().next().value;
-             if (oldestKey !== undefined) win._sniffedBuffer.delete(oldestKey);
-           }
-           win._sniffedBuffer.set(data.webContentsId, []);
-         }
-         const buf = win._sniffedBuffer.get(data.webContentsId);
-         buf.push(data);
-         if (buf.length > 50) {
-           buf.shift();
-         }
-         return;
-      }
-
-      if (data.type === 'image') {
-        if (!matchedTab.sniffedImages.some(m => m.url === data.url)) {
-          matchedTab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
-        }
-      } else if (data.type === 'video') {
-        if (!matchedTab.sniffedVideos.some(m => m.url === data.url)) {
-          matchedTab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
-        }
-      } else if (data.type === 'audio') {
-        if (!matchedTab.sniffedAudios.some(m => m.url === data.url)) {
-          matchedTab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
-        }
-      }
-    });
-  }
-
-  // Click-away to close context menu
-  window.addEventListener('click', handleWindowClick);
-  // Global hotkeys
-  window.addEventListener('keydown', handleGlobalKeydown);
-});
-
-onUnmounted(() => {
-  document.removeEventListener('click', hideAllContextMenus);
-  window.removeEventListener('click', handleWindowClick);
-  window.removeEventListener('keydown', handleGlobalKeydown);
-  offWebviewNewWindowFn?.();
-  offMediaSniffedFn?.();
-  offWebviewNewWindowFn = undefined;
-  offMediaSniffedFn = undefined;
-  endElementPickingSession();
-  activeWaterfallSessions.value.forEach((_, tabId) => {
-    destroyWaterfallSession(tabId);
-  });
-});
-
-const handleWindowClick = (e: MouseEvent) => {
-  if (e && e.button !== 0) return;
-  contextMenuVisible.value = false;
-};
-
-const handleGlobalKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'F5') {
-    e.preventDefault();
-    onRefresh();
-  } else if (e.key === 'F12') {
-    e.preventDefault();
-  }
-};
-
-watch(() => props.resourceId, () => {
-  init();
-});
-
-watch(() => workspace.value?.tabs.length, (newLen) => {
-  if (newLen === 0) {
-    // 当标签页完全清空时，默认打开一个空白标签页
-    addTab(props.resourceId, '', undefined, true, true);
-  }
-});
-
-watch(() => activeTab.value?.id, async (_newTabId, oldTabId) => {
-  if (oldTabId) {
-    const webview = document.getElementById(`webview-${oldTabId}`) as any;
-    if (webview) {
-      try {
-
-        if (isPickingElementImage.value) {
-          await webview.executeJavaScript(`
-            if (window.__imgElementPickerCancel) window.__imgElementPickerCancel();
-          `);
-        }
-      } catch (e) { }
+  } else {
+    const wv = activeWebview();
+    if (wv && wv.loadURL) {
+      wv.loadURL(url);
     }
   }
+};
 
-  isPickingElementImage.value = false;
-});
+const onBack = () => {
+  if (activeTab.value?.isBlank) return;
+  const wv = activeWebview();
+  if (wv && wv.canGoBack()) wv.goBack();
+};
+
+const onForward = () => {
+  if (activeTab.value?.isBlank) return;
+  const wv = activeWebview();
+  if (wv && wv.canGoForward()) wv.goForward();
+};
+
+const onRefresh = () => {
+  if (activeTab.value?.isBlank) return;
+  const wv = activeWebview();
+  if (wv) wv.reload();
+};
+
+const onDevTools = () => {
+  if (activeTab.value?.isBlank) return;
+  const wv = activeWebview();
+  if (wv) {
+    if (typeof wv.isDevToolsOpened === 'function' && wv.isDevToolsOpened()) {
+      wv.closeDevTools();
+    } else if (typeof wv.openDevTools === 'function') {
+      wv.openDevTools();
+    }
+  }
+};
 
 const setActiveTab = (tabId: string) => {
   if (workspace.value) {
@@ -1096,76 +441,11 @@ const setActiveTab = (tabId: string) => {
   }
 };
 
-const onCloseTab = (tabId: string) => {
-  if (!workspace.value) return;
-
-  // 如果当前只剩最后一个标签页，转为空白页
-  if (workspace.value.tabs.length === 1 && workspace.value.tabs[0].id === tabId) {
-    const currentTab = workspace.value.tabs[0];
-    // 如果已经处于空白页，静默保持，避免重载
-    if (currentTab.isBlank) {
-      return;
-    }
-    const wv = document.getElementById(`webview-${tabId}`) as any;
-    if (wv) {
-      if (typeof wv.closeDevTools === 'function') {
-        try { wv.closeDevTools(); } catch (e) {}
-      }
-      if (typeof wv.stop === 'function') {
-        try { wv.stop(); } catch (e) {}
-      }
-    }
-    destroyWaterfallSession(tabId);
-    updateTab(props.resourceId, tabId, {
-      url: '',
-      title: '新标签页',
-      loading: false,
-      favicon: undefined,
-      isBlank: true,
-      sniffedImages: [],
-      sniffedVideos: [],
-      sniffedAudios: []
-    });
-    addressInputUrl.value = '';
-    nextTick(() => {
-      const input = document.querySelector('.address-bar-input') as HTMLInputElement | null;
-      input?.focus();
-    });
-    return;
-  }
-
-  const wv = document.getElementById(`webview-${tabId}`) as any;
-  if (wv) {
-    if (typeof wv.closeDevTools === 'function') {
-      try { wv.closeDevTools(); } catch (e) {}
-    }
-    if (typeof wv.stop === 'function') {
-      try { wv.stop(); } catch (e) {}
-    }
-  }
-  destroyWaterfallSession(tabId);
-  closeTab(props.resourceId, tabId);
-};
-
 const onTabMouseDown = (e: MouseEvent) => {
   if (e.button === 1) {
     e.preventDefault();
   }
 };
-
-const onTabAuxClick = (e: MouseEvent, tabId: string) => {
-  if (e.button === 1) {
-    e.preventDefault();
-    e.stopPropagation();
-    onCloseTab(tabId);
-  }
-};
-
-const currentResourceUrl = computed(() => {
-  const site = settingsState.externalSites.find(r => r.id === props.resourceId);
-  if (site && site.url) return site.url;
-  return props.resourceUrl;
-});
 
 const onAddDefaultTab = () => {
   addTab(props.resourceId, '', undefined, true, true);
@@ -1218,808 +498,143 @@ const onGoHomeAux = (e: MouseEvent) => {
   }
 };
 
-// Webview Events
-const injectTabBaseScripts = async (tabId: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-
-  if (!webview.__veloraConsoleBound) {
-    webview.__veloraConsoleBound = true;
-    webview.addEventListener('console-message', (e: any) => {
-      if (e.message === '__webview_click__') {
-        contextMenuVisible.value = false;
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_bg_tab__:')) {
-        const targetUrl = e.message.slice('__velora_open_bg_tab__:'.length);
-        if (targetUrl && targetUrl !== 'about:blank') {
-          addTab(props.resourceId, targetUrl, getResourceIcon(), false);
-        }
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_open_fg_tab__:')) {
-        const targetUrl = e.message.slice('__velora_open_fg_tab__:'.length);
-        if (targetUrl && targetUrl !== 'about:blank') {
-          addTab(props.resourceId, targetUrl, getResourceIcon(), true);
-        }
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_wf_bottom__:')) {
-        const triggerTabId = e.message.slice('__velora_wf_bottom__:'.length);
-        onWaterfallTriggerBottom(triggerTabId || tabId);
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_wf_retry__:')) {
-        const triggerTabId = e.message.slice('__velora_wf_retry__:'.length);
-        retryWaterfall(triggerTabId || tabId);
-      } else if (typeof e.message === 'string' && e.message.startsWith('__velora_video_quick_download__:')) {
-        const rawJson = e.message.slice('__velora_video_quick_download__:'.length);
-        handleVideoQuickDownload(rawJson, tabId);
-      }
-    });
-  }
-
-  const script = `
-    (function() {
-      // 1. Hide custom context menu on webview left click
-      if (!window.__clickInjected) {
-        window.__clickInjected = true;
-        window.addEventListener('mousedown', (e) => {
-          if (e.button === 0) {
-            console.log('__webview_click__');
-          }
-        }, true);
-      }
-
-      // 2. 鼠标中键 / Ctrl+左键 / Meta+左键：在新标签页打开 (与 Chrome 行为完全一致)
-      if (!window.__veloraLinkShortcutInjected) {
-        window.__veloraLinkShortcutInjected = true;
-
-        function findAnchor(e) {
-          try {
-            const path = e.composedPath ? e.composedPath() : [];
-            for (let i = 0; i < path.length; i++) {
-              const el = path[i];
-              if (el && el.tagName) {
-                const tag = el.tagName.toLowerCase();
-                if (tag === 'a' || tag === 'area') {
-                  return el;
-                }
-              }
-            }
-          } catch (err) {}
-
-          if (e.target && typeof e.target.closest === 'function') {
-            try {
-              return e.target.closest('a, area');
-            } catch (err) {}
-          }
-          return null;
-        }
-
-        function handleLinkShortcutClick(e) {
-          const isMiddleClick = (e.button === 1);
-          const isCtrlOrMetaLeftClick = (e.button === 0 && (e.ctrlKey || e.metaKey));
-
-          if (!isMiddleClick && !isCtrlOrMetaLeftClick) {
-            return;
-          }
-
-          const anchor = findAnchor(e);
-          if (!anchor) return;
-
-          let rawHref = anchor.getAttribute('href');
-          if (!rawHref && anchor.getAttribute('xlink:href')) {
-            rawHref = anchor.getAttribute('xlink:href');
-          }
-          if (!rawHref) return;
-
-          const trimmed = rawHref.trim();
-          if (!trimmed || trimmed === '#' || trimmed.startsWith('#') || trimmed.toLowerCase().startsWith('javascript:')) {
-            return;
-          }
-
-          let hrefStr = '';
-          if (typeof anchor.href === 'string') {
-            hrefStr = anchor.href;
-          } else if (anchor.href && typeof anchor.href.baseVal === 'string') {
-            hrefStr = anchor.href.baseVal;
-          } else {
-            hrefStr = trimmed;
-          }
-
-          let targetUrlObj;
-          try {
-            targetUrlObj = new URL(hrefStr, window.location.href);
-          } catch (err) {
-            return;
-          }
-
-          if (targetUrlObj.protocol !== 'http:' && targetUrlObj.protocol !== 'https:') {
-            return;
-          }
-
-          e.preventDefault();
-          e.stopPropagation();
-          if (typeof e.stopImmediatePropagation === 'function') {
-            e.stopImmediatePropagation();
-          }
-
-          if (e.shiftKey) {
-            console.log('__velora_open_fg_tab__:' + targetUrlObj.href);
-          } else {
-            console.log('__velora_open_bg_tab__:' + targetUrlObj.href);
-          }
-        }
-
-        window.addEventListener('click', handleLinkShortcutClick, true);
-        window.addEventListener('auxclick', handleLinkShortcutClick, true);
-        window.addEventListener('mousedown', (e) => {
-          if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
-            const anchor = findAnchor(e);
-            if (anchor) {
-              e.preventDefault();
-            }
-          }
-        }, true);
-      }
-    })();
-  `;
-
-  try {
-    await webview.executeJavaScript(script);
-  } catch (e) {}
-};
-
-const onDomReady = async (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: false });
-  refreshWebviewScripts(tabId, 'dom-ready');
-  await injectTabBaseScripts(tabId);
-  await applyDuplicateMarksToTab(tabId);
-  await applyVideoQuickDownloadToTab(tabId);
-
-  // 检查并自动应用已开启的瀑布流规则
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (webview) {
-    try {
-      const urlStr = webview.getURL();
-      if (urlStr) {
-        const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
-        const matchedRule = allRules.find(r => {
-          if (r.enabled === false || !r.domain) return false;
-          return isUrlMatchPattern(r.domain, urlStr);
-        });
-        if (matchedRule) {
-          await applyWaterfallToTab(tabId, matchedRule);
-        }
-      }
-    } catch (e) {}
+const init = () => {
+  if (props.resourceId && currentResourceUrl.value) {
+    initWorkspace(props.resourceId, currentResourceUrl.value, getResourceIcon());
   }
 };
 
-const applyCustomStylesToWebview = async (webview: any, customUrl?: string) => {
-  if (!webview) return;
-  try {
-    let urlStr = customUrl;
-    if (!urlStr && typeof webview.getURL === 'function') {
-      try { urlStr = webview.getURL(); } catch (e) {}
-    }
-    if (!urlStr || urlStr === 'about:blank') return;
+// 功能互斥调度前置转发，确保 7 个 Composable 按无环顺序装配
+let deactivateOtherFeaturesImpl: (exclude: string) => Promise<void> = async () => {};
+const deactivateOtherFeatures = (exclude: string) => deactivateOtherFeaturesImpl(exclude);
 
-    const stylesObj = settingsState.customStyles[props.resourceId];
-    let cssText = '';
-
-    if (stylesObj) {
-      for (const [pattern, rules] of Object.entries(stylesObj)) {
-        if (isUrlMatchPattern(pattern, urlStr)) {
-          cssText += `${rules}\n`;
-        }
-      }
-    }
-
-    if (cssText && typeof webview.insertCSS === 'function') {
-      await webview.insertCSS(cssText, { cssOrigin: 'user' });
-    }
-  } catch (e) {
-    logger.warn('BrowserWorkspace', 'Failed to inject custom CSS: ' + e);
-  }
-};
-
-const applyCustomScriptsToWebview = async (webview: any, runAt: string, customUrl?: string) => {
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-  try {
-    let urlStr = customUrl;
-    if (!urlStr && typeof webview.getURL === 'function') {
-      try { urlStr = webview.getURL(); } catch (e) {}
-    }
-    if (!urlStr || urlStr === 'about:blank') return;
-
-    const scriptsArr = settingsState.customScripts[props.resourceId] || [];
-    
-    for (const script of scriptsArr) {
-      if (runAt && script.runAt !== runAt) continue;
-      if (isUrlMatchPattern(script.domain, urlStr) && script.code) {
-        try {
-          await webview.executeJavaScript(script.code);
-        } catch (scriptErr) {
-          logger.warn('BrowserWorkspace', 'Custom script execution error: ' + scriptErr);
-        }
-      }
-    }
-  } catch(e) {}
-};
-
-const onLoadCommit = async (event: any, tabId: string) => {
-  if (event.isMainFrame) {
-    refreshWebviewStyles(tabId);
-    refreshWebviewScripts(tabId, 'document-start');
-    await injectTabBaseScripts(tabId);
-  }
-};
-
-const refreshWebviewStyles = async (tabId: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) return;
-
-  try {
-    let baseScrollbarCss = `
-      /* Global Scrollbar Beautification */
-      ::-webkit-scrollbar {
-        width: 14px !important;
-        height: 14px !important;
-        background: transparent !important;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.15) !important;
-        border-radius: 10px !important;
-        background-clip: padding-box !important;
-        border: 4px solid transparent !important;
-        min-height: 40px !important;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.3) !important;
-        border-radius: 10px !important;
-        background-clip: padding-box !important;
-        border: 4px solid transparent !important;
-      }
-      ::-webkit-scrollbar-corner {
-        background: transparent !important;
-      }
-    `;
-
-    if (typeof webview.insertCSS === 'function') {
-      await webview.insertCSS(baseScrollbarCss, { cssOrigin: 'user' });
-    }
-    await applyCustomStylesToWebview(webview);
-  } catch (e) {
-    logger.warn('BrowserWorkspace', 'Failed to inject CSS via insertCSS: ' + e);
-  }
-};
-
-const refreshWebviewScripts = async (tabId: string, runAt: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) return;
-  await applyCustomScriptsToWebview(webview, runAt);
-};
-
-const onStartLoading = (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: true });
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (webview && webview.getWebContentsId) {
-    try {
-      const wcId = webview.getWebContentsId();
-      updateTab(props.resourceId, tabId, { webContentsId: wcId });
-      
-      const win = window as any;
-      if (win._sniffedBuffer && win._sniffedBuffer.has(wcId)) {
-        const buffered = win._sniffedBuffer.get(wcId);
-        const tab = workspace.value?.tabs.find(t => t.id === tabId);
-        if (tab) {
-          for (const data of buffered) {
-            if (data.type === 'image') {
-              if (!tab.sniffedImages.some((m: any) => m.url === data.url)) {
-                tab.sniffedImages.push({ url: data.url, timestamp: data.timestamp });
-              }
-            } else if (data.type === 'video') {
-              if (!tab.sniffedVideos.some((m: any) => m.url === data.url)) {
-                tab.sniffedVideos.push({ url: data.url, timestamp: data.timestamp });
-              }
-            } else if (data.type === 'audio') {
-              if (!tab.sniffedAudios.some((m: any) => m.url === data.url)) {
-                tab.sniffedAudios.push({ url: data.url, timestamp: data.timestamp });
-              }
-            }
-          }
-          win._sniffedBuffer.delete(wcId);
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-};
-
-
-const getCurrentPageUrl = (): string => {
-  const wv = activeWebview();
-  if (wv && typeof wv.getURL === 'function') {
-    try {
-      const u = wv.getURL();
-      if (u && u !== 'about:blank') return u;
-    } catch {}
-  }
-  return activeTab.value?.url || props.resourceUrl || '';
-};
-
-const getCurrentPageOrigin = (): string => {
-  const url = getCurrentPageUrl();
-  if (!url) return '';
-  try {
-    const u = new URL(url);
-    return (u.origin && u.origin !== 'null') ? u.origin : url;
-  } catch {
-    return url;
-  }
-};
-
-const onDidNavigate = (event?: any, tabId?: string) => {
-  const targetId = tabId || workspace.value?.activeTabId;
-  if (targetId) {
-    destroyWaterfallSession(targetId);
-    let newUrl = event?.url;
-    if (!newUrl) {
-      const wv = activeWebview();
-      if (wv && typeof wv.getURL === 'function') {
-        try { newUrl = wv.getURL(); } catch {}
-      }
-    }
-    if (newUrl && newUrl !== 'about:blank') {
-      updateTab(props.resourceId, targetId, { url: newUrl });
-    }
-  }
-  syncAddressBar();
-};
-
-const onStopLoading = (tabId: string) => {
-  updateTab(props.resourceId, tabId, { loading: false });
-  refreshWebviewScripts(tabId, 'document-end');
-  checkAutoApplyWaterfall(tabId);
-  applyDuplicateMarksToTab(tabId);
-  applyVideoQuickDownloadToTab(tabId);
-};
-
-const onTitleUpdated = (event: any, tabId: string) => {
-  updateTab(props.resourceId, tabId, { title: event.title });
-};
-
-const onFaviconUpdated = async (event: any, tabId: string) => {
-  if (event.favicons && event.favicons.length > 0) {
-    const faviconUrl = event.favicons[0];
-    updateTab(props.resourceId, tabId, { favicon: faviconUrl });
-
-    // Ensure electronAPI is available
-    if (!window.electronAPI || !window.electronAPI.fetchImageBase64) return;
-
-    let updated = false;
-    const isExt = settingsState.externalSites.find(r => r.id === props.resourceId);
-
-    if (isExt && (!isExt.icon || isExt.icon.length < 50)) {
-      const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
-      if (base64) {
-        isExt.icon = base64;
-        isExt.iconOriginalUrl = faviconUrl;
-        await saveExternalSites([...settingsState.externalSites]);
-        updated = true;
-      }
-    }
-
-    if (!updated) {
-      const isCms = settingsState.cmsResources.find(r => r.id === props.resourceId);
-      if (isCms && (!isCms.icon || isCms.icon.length < 50)) {
-        const base64 = await window.electronAPI.fetchImageBase64(faviconUrl);
-        if (base64) {
-          isCms.icon = base64;
-          isCms.iconOriginalUrl = faviconUrl;
-          await saveCmsResources([...settingsState.cmsResources]);
-        }
-      }
-    }
-  }
-};
-
-// Function Bar Actions
-const activeWebview = () => {
-  if (!workspace.value?.activeTabId) return null;
-  return document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-};
-
-const onBack = () => {
-  if (activeTab.value?.isBlank) return;
-  const wv = activeWebview();
-  if (wv && wv.canGoBack()) wv.goBack();
-};
-
-const onForward = () => {
-  if (activeTab.value?.isBlank) return;
-  const wv = activeWebview();
-  if (wv && wv.canGoForward()) wv.goForward();
-};
-
-const onRefresh = () => {
-  if (activeTab.value?.isBlank) return;
-  const wv = activeWebview();
-  if (wv) wv.reload();
-};
-
-const onDevTools = () => {
-  if (activeTab.value?.isBlank) return;
-  const wv = activeWebview();
-  if (wv) {
-    if (typeof wv.isDevToolsOpened === 'function' && wv.isDevToolsOpened()) {
-      wv.closeDevTools();
-    } else if (typeof wv.openDevTools === 'function') {
-      wv.openDevTools();
-    }
-  }
-};
-
-const addressInputUrl = ref('');
-
-const syncAddressBar = () => {
-  if (activeTab.value?.isBlank) {
-    addressInputUrl.value = '';
-    return;
-  }
-  const wv = activeWebview();
-  if (wv && wv.getURL) {
-    addressInputUrl.value = wv.getURL();
-  } else if (activeTab.value?.url) {
-    addressInputUrl.value = activeTab.value.url;
-  }
-};
-
-const handleAddressBarFocus = (e: FocusEvent) => {
-  (e.target as HTMLInputElement).select();
-};
-
-const handleAddressBarEnter = () => {
-  if (!addressInputUrl.value) return;
-  let url = addressInputUrl.value.trim();
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url;
-  }
-  addressInputUrl.value = url;
-  
-  if (activeTab.value?.isBlank) {
-    updateTab(props.resourceId, activeTab.value.id, {
-      url,
-      title: 'Loading...',
-      loading: true,
-      isBlank: false
-    });
-  } else {
-    const wv = activeWebview();
-    if (wv && wv.loadURL) {
-      wv.loadURL(url);
-    }
-  }
-};
-
-watch(() => workspace.value?.activeTabId, () => {
-  setTimeout(syncAddressBar, 50);
+const {
+  activeImagePreviews,
+  addImagePreview,
+  onClosePreview,
+  onFocusPreview,
+  activeAudioPreview,
+  activeVideoPreview,
+  onPreviewSniffedAudio,
+  onPreviewSniffedVideo,
+  onClearSniffed,
+  onDownloadAudio,
+  onDownloadVideo,
+  applyVideoQuickDownloadToTab,
+  handleVideoQuickDownload,
+  flushSniffedBufferForTab,
+  setupMediaSniffedListener
+} = useBrowserMediaSniffer({
+  resourceId: () => props.resourceId,
+  workspace,
+  activeTab,
+  getCurrentPageOrigin,
+  updateTab
 });
 
+const {
+  inspectorVisible,
+  toggleInspector,
+  onApplyPreview,
+  onSaveRules,
+  onDeleteStyle,
+  refreshWebviewStyles,
+  scriptInjectorVisible,
+  toggleScriptInjector,
+  onExecuteScript,
+  onSaveScript,
+  onDeleteScript,
+  applyCustomScriptsToWebview,
+  refreshWebviewScripts,
+  isPickingElementImage,
+  isPickingElementText,
+  pickElementImage,
+  pickElementText,
+  cancelActivePickers
+} = useBrowserCustomization({
+  resourceId: () => props.resourceId,
+  workspace,
+  activeTab,
+  activeWebview,
+  onRefresh,
+  addImagePreview,
+  deactivateOtherFeatures
+});
 
+const {
+  parseRuleVisible,
+  toggleParseRule,
+  onSaveParseRule,
+  silentParseTargets,
+  ruleSelectModalVisible,
+  pendingMatchingRules,
+  onRuleSelected,
+  onRuleSelectCancelled,
+  startSilentParse
+} = useBrowserSilentParser({
+  resourceId: () => props.resourceId,
+  activeTab,
+  getCurrentPageOrigin,
+  onRefresh
+});
 
+const {
+  waterfallWizardVisible,
+  waterfallWizardStep,
+  waterfallPickingStep,
+  wizardTempDomain,
+  wizardTempNextSelector,
+  wizardTempContentSelector,
+  activeWaterfallSessionsList,
+  currentDomainWaterfallRules,
+  selectedWaterfallRuleId,
+  isCurrentTabWaterfallActive,
+  onStartWaterfallWizard,
+  onStartPickingNext,
+  onRestartPicking,
+  cancelWaterfallPicking,
+  onConfirmWaterfallRule,
+  onSelectWaterfallRule,
+  onDeleteWaterfallRule,
+  onWaterfallBgStopLoading,
+  onWaterfallBgFailLoad,
+  onWaterfallTriggerBottom,
+  retryWaterfall,
+  destroyWaterfallSession,
+  destroyAllWaterfallSessions,
+  checkDomReadyWaterfall,
+  checkAutoApplyWaterfall,
+  toggleWaterfallActive
+} = useBrowserWaterfall({
+  resourceId: () => props.resourceId,
+  workspace,
+  activeTab,
+  applyCustomScriptsToWebview,
+  onRefresh,
+  deactivateOtherFeatures
+});
 
-const onClearSniffed = (type: 'image' | 'video' | 'audio') => {
-  if (activeTab.value) {
-    if (type === 'image') {
-      activeTab.value.sniffedImages = [];
-    } else if (type === 'video') {
-      activeTab.value.sniffedVideos = [];
-    } else if (type === 'audio') {
-      activeTab.value.sniffedAudios = [];
-    }
-  }
-};
+const {
+  duplicateMarkVisible,
+  duplicatePickingType,
+  duplicateMarkDialogRef,
+  currentResourceDuplicateRules,
+  toggleDuplicateMark,
+  onPickMountElement,
+  cancelDuplicatePicking,
+  onPreviewDuplicateRule,
+  onSaveDuplicateRules,
+  onDeleteDuplicateRule,
+  onTestDuplicateRule,
+  applyDuplicateMarksToTab
+} = useBrowserDuplicateMark({
+  resourceId: () => props.resourceId,
+  workspace,
+  activeTab,
+  deactivateOtherFeatures
+});
 
-// Image Preview Logic
-interface PreviewImage {
-  id: string;
-  url: string;       // 第一张或唯一图片的 URL（向下兼容）
-  urls?: string[];   // 多图模式时传入的完整 URL 列表
-  zIndex: number;
-  x?: number;
-  y?: number;
-}
-
-const activeImagePreviews = ref<PreviewImage[]>([]);
-let highestZIndex = 1000;
-
-const onClosePreview = (id: string) => {
-  activeImagePreviews.value = activeImagePreviews.value.filter(img => img.id !== id);
-};
-
-const onFocusPreview = (id: string) => {
-  const img = activeImagePreviews.value.find(img => img.id === id);
-  if (img) {
-    highestZIndex++;
-    img.zIndex = highestZIndex;
-  }
-};
-
-const activeAudioPreview = ref<string | null>(null);
-const activeVideoPreview = ref<string | null>(null);
-
-const onPreviewSniffedAudio = (url: string) => {
-  activeAudioPreview.value = url;
-};
-
-const onPreviewSniffedVideo = (url: string) => {
-  activeVideoPreview.value = url;
-};
-
-const onDownloadAudio = (url: string) => {
-  let name = '';
-  try {
-    const u = new URL(url);
-    const parts = u.pathname.split('/');
-    name = parts[parts.length - 1] || 'audio.mp3';
-  } catch {
-    name = 'audio.mp3';
-  }
-  openSaveMediaDialog({
-    url,
-    defaultName: name,
-    defaultDir: settingsState.audioDirectory,
-    type: 'audio',
-    pageUrl: getCurrentPageOrigin()
-  });
-};
-
-const onDownloadVideo = (url: string) => {
-  let name = '';
-  try {
-    const u = new URL(url);
-    const parts = u.pathname.split('/');
-    name = parts[parts.length - 1] || 'video.mp4';
-  } catch {
-    name = 'video.mp4';
-  }
-  openSaveMediaDialog({
-    url,
-    defaultName: name,
-    defaultDir: settingsState.videoDirectory,
-    type: 'video',
-    pageUrl: getCurrentPageOrigin()
-  });
-};
-
-const applyVideoQuickDownloadToTab = async (tabId: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-
-  try {
-    const isDark = settingsState.theme === 'dark' || document.documentElement.classList.contains('dark');
-    const script = getVideoQuickDownloadScript({
-      theme: isDark ? 'dark' : 'light'
-    });
-    await webview.executeJavaScript(script);
-  } catch (err: any) {
-    logger.warn('BrowserWorkspace', `执行视频快捷下载脚本失败: ${err?.message || err}`);
-  }
-};
-
-const getBestSniffedVideo = (sniffedVideos: Array<{ url: string; timestamp: number }>): { url: string; timestamp: number } | null => {
-  if (!sniffedVideos || sniffedVideos.length === 0) return null;
-
-  // 1. 优先过滤掉单一的音视频切片片段（如 .m4s, .ts）
-  const nonFragments = sniffedVideos.filter(item => {
-    try {
-      const pathname = new URL(item.url).pathname.toLowerCase();
-      if (pathname.endsWith('.m4s') || pathname.endsWith('.ts')) return false;
-    } catch {}
-    return true;
-  });
-
-  const candidates = nonFragments.length > 0 ? nonFragments : sniffedVideos;
-
-  // 2. 严格优先查找 .m3u8 完整播放列表
-  const m3u8List = candidates.filter(item => {
-    try {
-      const u = new URL(item.url);
-      return u.pathname.toLowerCase().endsWith('.m3u8') || u.href.toLowerCase().includes('.m3u8');
-    } catch {
-      return false;
-    }
-  });
-
-  if (m3u8List.length > 0) {
-    // 优先选择包含完整主播放源特征（如 time=0、master、playlist）的 m3u8，若无则取最新的一条 m3u8
-    const preferred = m3u8List.find(m => m.url.includes('time=0') || m.url.includes('master') || m.url.includes('playlist')) || m3u8List[m3u8List.length - 1];
-    return preferred;
-  }
-
-  // 3. 其次查找主流直链视频格式
-  const directVideos = candidates.filter(item => {
-    try {
-      const pathname = new URL(item.url).pathname.toLowerCase();
-      return /\.(mp4|webm|flv|f4v|mkv|mov|avi|wmv|3gp)$/i.test(pathname);
-    } catch {
-      return false;
-    }
-  });
-
-  if (directVideos.length > 0) {
-    return directVideos[directVideos.length - 1];
-  }
-
-  // 4. 回退到候选列表中最新的一项
-  return candidates[candidates.length - 1];
-};
-
-const handleVideoQuickDownload = (rawJson: string, tabId: string) => {
-  let payload: { src?: string; title?: string; pageUrl?: string } = {};
-  try {
-    payload = JSON.parse(rawJson);
-  } catch {
-    payload = { src: rawJson };
-  }
-
-  const rawSrc = (payload.src || '').trim();
-  const pageTitle = (payload.title || '').trim();
-  const currentTab = workspace.value?.tabs?.find(t => t.id === tabId);
-  const sniffedVideos = currentTab?.sniffedVideos || [];
-  const bestSniffed = getBestSniffedVideo(sniffedVideos);
-
-  let targetUrl = '';
-  const isRawFragment = rawSrc && (rawSrc.toLowerCase().includes('.m4s') || rawSrc.toLowerCase().includes('.ts'));
-
-  // 1. 若原始 src 是非 blob 直链且不是局部切片（.m4s/.ts），直接使用
-  if (rawSrc && (rawSrc.startsWith('http://') || rawSrc.startsWith('https://')) && !rawSrc.startsWith('blob:') && !isRawFragment) {
-    targetUrl = rawSrc;
-  } else if (bestSniffed) {
-    // 2. 否则从嗅探器列表中提取最优的完整视频流（如 .m3u8 完整主播放列表）
-    targetUrl = bestSniffed.url;
-  } else if (rawSrc && !rawSrc.startsWith('blob:')) {
-    targetUrl = rawSrc;
-  }
-
-  if (targetUrl) {
-    let name = '';
-    try {
-      const u = new URL(targetUrl);
-      const parts = u.pathname.split('/');
-      name = parts[parts.length - 1] || '';
-    } catch {}
-
-    const isHls = targetUrl.toLowerCase().includes('.m3u8');
-    if (isHls || !name || !name.includes('.')) {
-      name = (pageTitle ? sanitizeFilename(pageTitle) : 'video') + '.mp4';
-    } else {
-      const hasValidExt = /\.(mp4|webm|mkv|flv|f4v|mov|avi|wmv|3gp)$/i.test(name);
-      if (!hasValidExt) {
-        name = name.replace(/\.[^.]+$/, '') + '.mp4';
-      }
-    }
-
-    openSaveMediaDialog({
-      url: targetUrl,
-      defaultName: name,
-      defaultDir: settingsState.videoDirectory,
-      type: 'video',
-      pageUrl: payload.pageUrl || getCurrentPageOrigin()
-    });
-    return;
-  }
-
-  // 3. 若为 blob 协议且暂未在嗅探器中捕获到直链，弹出 Toast 提示
-  showMessage('未捕获到视频直链，请等待视频缓冲或在嗅探器中查看', 'info');
-};
-
-// Element Picker Logic
-const inspectorVisible = ref(false);
-
-const scriptInjectorVisible = ref(false);
-
-const toggleScriptInjector = async () => {
-  if (scriptInjectorVisible.value) {
-    scriptInjectorVisible.value = false;
-  } else {
-    await deactivateOtherFeatures('js');
-    scriptInjectorVisible.value = true;
-  }
-};
-
-const onExecuteScript = async (code: string) => {
-  const webview = activeWebview();
-  if (webview && code) {
-    try {
-      await webview.executeJavaScript(code);
-    } catch (e: any) {
-      logger.error('BrowserWorkspace', `JS Execute Error: ${e?.message || e}`);
-    }
-  }
-};
-
-const onSaveScript = async (script: any) => {
-  if (!script.domain || !script.code) return;
-  const currentScripts = { ...settingsState.customScripts };
-  if (!currentScripts[props.resourceId]) {
-    currentScripts[props.resourceId] = [];
-  }
-  
-  const targetArray = currentScripts[props.resourceId];
-  const trimmedDomain = script.domain.trim();
-  if (!script.id) {
-    script.id = 'script_' + Date.now() + Math.random().toString(36).slice(2, 6);
-  }
-
-  // 查找原脚本（如果存在）
-  const originalScript = targetArray.find((s: any) => s.id === script.id);
-  const isDomainChanged = originalScript ? (originalScript.domain || '').trim() !== trimmedDomain : true;
-
-  // 1. 只有当修改了匹配URL（或新建脚本）时，才检查是否存在其他同匹配URL脚本
-  if (isDomainChanged) {
-    const duplicateScript = targetArray.find((s: any) => s.id !== script.id && (s.domain || '').trim() === trimmedDomain);
-
-    if (duplicateScript) {
-      const confirmed = await confirm({
-        title: '匹配URL重复',
-        message: `已存在相同匹配URL的脚本 "${duplicateScript.name || duplicateScript.domain}"，是否合并脚本内容？`,
-        confirmText: '合并',
-        cancelText: '取消',
-        type: 'warning'
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
-      // 用户确认合并：将代码追加合并到已有脚本中
-      duplicateScript.code = (duplicateScript.code || '').trim() + '\n\n' + script.code.trim();
-      if (script.name && !duplicateScript.name.includes(script.name)) {
-        duplicateScript.name = duplicateScript.name ? `${duplicateScript.name} & ${script.name}` : script.name;
-      }
-
-      // 如果当前正在编辑的脚本原本在列表中，将其移除（合二为一）
-      const curIdx = targetArray.findIndex((s: any) => s.id === script.id);
-      if (curIdx !== -1) {
-        targetArray.splice(curIdx, 1);
-      }
-
-      await saveCustomScripts(currentScripts);
-      showMessage('脚本已成功合并保存！', 'success');
-      scriptInjectorVisible.value = false;
-      onRefresh();
-      return;
-    }
-  }
-
-  // 2. 没有重复：在当前脚本上保存修改（通过 id 原地更新，绝不新建脚本）
-  const existingIdx = targetArray.findIndex((s: any) => s.id === script.id);
-  if (existingIdx !== -1) {
-    targetArray[existingIdx] = { ...script, domain: trimmedDomain };
-  } else {
-    targetArray.push({ ...script, domain: trimmedDomain });
-  }
-
-  await saveCustomScripts(currentScripts);
-  showMessage('脚本保存成功', 'success');
-  scriptInjectorVisible.value = false;
-  onRefresh();
-};
-
-const onDeleteScript = async (scriptId: string) => {
-  const currentScripts = { ...settingsState.customScripts };
-  if (currentScripts[props.resourceId]) {
-    currentScripts[props.resourceId] = currentScripts[props.resourceId].filter((s: any) => s.id !== scriptId);
-    await saveCustomScripts(currentScripts);
-    showMessage('自定义脚本已删除', 'success');
-  }
-};
-
-
-
-
-const isInteracting = ref(false);
-const isPickingElementImage = ref(false);
-const isPickingElementText = ref(false);
-
-const deactivateOtherFeatures = async (exclude: string) => {
+deactivateOtherFeaturesImpl = async (exclude: string) => {
   if (exclude !== 'js' && scriptInjectorVisible.value) {
     scriptInjectorVisible.value = false;
   }
@@ -2032,1024 +647,199 @@ const deactivateOtherFeatures = async (exclude: string) => {
   if (exclude !== 'duplicatePicking' && duplicatePickingType.value) {
     cancelDuplicatePicking();
   }
-  const webview = activeWebview();
-  if (exclude !== 'image' && isPickingElementImage.value) {
-    isPickingElementImage.value = false;
-    endElementPickingSession();
-    if (webview) {
-      try {
-        await webview.executeJavaScript(getPickerCancelScript());
-      } catch (e) {}
-    }
-  }
-  if (exclude !== 'text' && isPickingElementText.value) {
-    isPickingElementText.value = false;
-    endElementPickingSession();
-    if (webview) {
-      try {
-        await webview.executeJavaScript(getPickerCancelScript());
-      } catch (e) {}
-    }
-  }
+  await cancelActivePickers(exclude);
   if (exclude !== 'waterfall' && waterfallPickingStep.value > 0) {
     cancelWaterfallPicking();
   }
 };
 
-// ==================== 瀑布模式 (Waterfall Flow) ====================
-interface WaterfallSession {
-  tabId: string;
-  parentUrl: string;
-  domain: string;
-  rule: WaterfallRule;
-  currentPage: number;
-  nextUrl: string;
-  status: 'preloading' | 'loaded' | 'processing' | 'finished' | 'error';
-  isWaitingAtBottom: boolean;
-  bottomTimeoutTimer?: any;
-}
-
-const waterfallWizardVisible = ref(false);
-const waterfallWizardStep = ref(1);
-const waterfallPickingStep = ref(0); // 0: none, 2: picking next, 3: picking content
-const wizardTempDomain = ref('');
-const wizardTempNextSelector = ref('');
-const wizardTempContentSelector = ref('');
-const activeWaterfallTabs = ref<Set<string>>(new Set());
-const activeWaterfallSessions = ref<Map<string, WaterfallSession>>(new Map());
-const selectedWaterfallRuleId = ref('');
-
-const activeWaterfallSessionsList = computed(() => {
-  return Array.from(activeWaterfallSessions.value.values());
+const {
+  contextMenuVisible,
+  contextMenuPos,
+  isContextMenuTargetLink,
+  contextMenuRef,
+  handleWebviewContextMenu,
+  hideAllContextMenus,
+  handleWindowClick,
+  triggerPickImage,
+  triggerCopyText,
+  triggerSilentParse
+} = useBrowserContextMenu({
+  workspace,
+  isPickingElementImage,
+  isPickingElementText,
+  pickElementImage,
+  pickElementText,
+  startSilentParse
 });
 
-const currentDomainWaterfallRules = computed<WaterfallRule[]>(() => {
-  const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
-  const currentUrl = activeTab.value?.url || '';
-  if (!currentUrl) return allRules;
-
-  const matched = allRules.filter(r => {
-    if (!r.domain) return false;
-    return isUrlMatchPattern(r.domain, currentUrl);
-  });
-
-  return matched.length > 0 ? matched : allRules;
+const {
+  onDomReady,
+  onLoadCommit,
+  onStartLoading,
+  onDidNavigate,
+  onStopLoading,
+  onTitleUpdated,
+  onFaviconUpdated
+} = useBrowserWebviewBridge({
+  resourceId: () => props.resourceId,
+  workspace,
+  activeWebview,
+  getResourceIcon,
+  addTab,
+  updateTab,
+  contextMenuVisible,
+  syncAddressBar,
+  refreshWebviewStyles,
+  refreshWebviewScripts,
+  applyDuplicateMarksToTab,
+  applyVideoQuickDownloadToTab,
+  handleVideoQuickDownload,
+  flushSniffedBufferForTab,
+  checkDomReadyWaterfall,
+  checkAutoApplyWaterfall,
+  onWaterfallTriggerBottom,
+  retryWaterfall,
+  destroyWaterfallSession
 });
 
-watch(currentDomainWaterfallRules, (rules) => {
-  if (rules.length > 0 && (!selectedWaterfallRuleId.value || !rules.some(r => r.id === selectedWaterfallRuleId.value))) {
-    const enabledRule = rules.find(r => r.enabled === true);
-    selectedWaterfallRuleId.value = enabledRule ? enabledRule.id : rules[0].id;
-  }
-}, { immediate: true });
+const onCloseTab = (tabId: string) => {
+  if (!workspace.value) return;
 
-const isCurrentTabWaterfallActive = computed(() => {
-  const currentId = activeTab.value?.id;
-  return !!currentId && activeWaterfallTabs.value.has(currentId);
-});
-
-const onStartWaterfallWizard = async () => {
-  await deactivateOtherFeatures('waterfall');
-  const initialUrlPattern = getDefaultUrlPattern(activeTab.value?.url);
-
-  wizardTempDomain.value = initialUrlPattern;
-  wizardTempNextSelector.value = '';
-  wizardTempContentSelector.value = '';
-  waterfallWizardStep.value = 1;
-  waterfallWizardVisible.value = true;
-};
-
-const onStartPickingNext = async () => {
-  waterfallWizardVisible.value = false;
-  waterfallPickingStep.value = 2;
-  startElementPickingSession();
-
-  const tabId = activeTab.value?.id;
-  if (!tabId) {
-    cancelWaterfallPicking();
-    return;
-  }
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) {
-    cancelWaterfallPicking();
-    return;
-  }
-
-  try {
-    const nextSel: string = await webview.executeJavaScript(getPickerScript('selector'));
-    if (!nextSel) {
-      cancelWaterfallPicking();
+  // 如果当前只剩最后一个标签页，转为空白页
+  if (workspace.value.tabs.length === 1 && workspace.value.tabs[0].id === tabId) {
+    const currentTab = workspace.value.tabs[0];
+    // 如果已经处于空白页，静默保持，避免重载
+    if (currentTab.isBlank) {
       return;
     }
-    wizardTempNextSelector.value = nextSel;
-
-    // 进入步骤 3: 拾取内容区
-    waterfallPickingStep.value = 3;
-    const contentSel: string = await webview.executeJavaScript(getPickerScript('selector'));
-    if (!contentSel) {
-      cancelWaterfallPicking();
-      return;
+    const wv = document.getElementById(`webview-${tabId}`) as any;
+    if (wv) {
+      if (typeof wv.closeDevTools === 'function') {
+        try { wv.closeDevTools(); } catch {}
+      }
+      if (typeof wv.stop === 'function') {
+        try { wv.stop(); } catch {}
+      }
     }
-    wizardTempContentSelector.value = contentSel;
-
-    // 拾取完毕，回到步骤 4 确认
-    waterfallPickingStep.value = 0;
-    waterfallWizardStep.value = 4;
-    waterfallWizardVisible.value = true;
-    endElementPickingSession();
-  } catch (e) {
-    cancelWaterfallPicking();
-  }
-};
-
-const onRestartPicking = () => {
-  onStartPickingNext();
-};
-
-const cancelWaterfallPicking = async () => {
-  waterfallPickingStep.value = 0;
-  waterfallWizardVisible.value = false;
-  endElementPickingSession();
-  const tabId = activeTab.value?.id;
-  if (tabId) {
-    const webview = document.getElementById(`webview-${tabId}`) as any;
-    if (webview) {
-      try {
-        await webview.executeJavaScript(getPickerCancelScript());
-      } catch (e) {}
-    }
-  }
-};
-
-const onSaveParseRule = async () => {
-  parseRuleVisible.value = false;
-  onRefresh();
-};
-
-const onConfirmWaterfallRule = async (ruleData: Omit<WaterfallRule, 'id'>) => {
-  const newRule: WaterfallRule = {
-    id: 'wf_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-    ...ruleData,
-    enabled: true
-  };
-
-  const allRulesObj = { ...settingsState.customWaterfallRules };
-  const currentList = [...(allRulesObj[props.resourceId] || [])];
-  currentList.push(newRule);
-  allRulesObj[props.resourceId] = currentList;
-
-  await saveCustomWaterfallRules(allRulesObj);
-  selectedWaterfallRuleId.value = newRule.id;
-  showMessage('瀑布流规则已保存并开启！', 'success');
-  waterfallWizardVisible.value = false;
-  onRefresh();
-};
-
-const onSelectWaterfallRule = async (id: string) => {
-  selectedWaterfallRuleId.value = id;
-  const tabId = activeTab.value?.id;
-  if (!tabId) return;
-
-  const currentRules = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
-  const selectedRule = currentRules.find(r => r.id === id);
-
-  if (selectedRule) {
-    if (selectedRule.enabled !== false) {
-      await applyWaterfallToTab(tabId, selectedRule);
-    } else if (activeWaterfallTabs.value.has(tabId)) {
-      await destroyWaterfallSession(tabId);
-    }
-  }
-};
-
-const onDeleteWaterfallRule = async (id: string) => {
-  const confirmed = await confirm({
-    title: '删除瀑布流规则',
-    message: '确认删除该瀑布流规则吗？',
-    type: 'danger',
-    confirmText: '删除'
-  });
-  if (!confirmed) return;
-
-  const allRulesObj = { ...settingsState.customWaterfallRules };
-  const currentList = (allRulesObj[props.resourceId] || []).filter(r => r.id !== id);
-  allRulesObj[props.resourceId] = currentList;
-  await saveCustomWaterfallRules(allRulesObj);
-
-  if (selectedWaterfallRuleId.value === id) {
-    selectedWaterfallRuleId.value = currentList[0]?.id || '';
-  }
-  showMessage('规则已删除', 'success');
-};
-
-const applyWaterfallToTab = async (tabId: string, rule: WaterfallRule) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-  try {
-    await destroyWaterfallSession(tabId);
-
-    // 1. 在主标签页注入监听与拼接脚本
-    const initScript = getWaterfallParentInitScript({
-      contentSelector: rule.contentSelector,
-      nextSelector: rule.nextSelector,
-      tabId
+    destroyWaterfallSession(tabId);
+    updateTab(props.resourceId, tabId, {
+      url: '',
+      title: '新标签页',
+      loading: false,
+      favicon: undefined,
+      isBlank: true,
+      sniffedImages: [],
+      sniffedVideos: [],
+      sniffedAudios: []
     });
-    await webview.executeJavaScript(initScript);
+    addressInputUrl.value = '';
+    nextTick(() => {
+      const input = document.querySelector('.address-bar-input') as HTMLInputElement | null;
+      input?.focus();
+    });
+    return;
+  }
 
-    // 2. 提取当前主标签页的初始下一页链接
-    const initialNextUrl: string = await webview.executeJavaScript(
-      getWaterfallQueryInitialNextUrlScript(rule.nextSelector)
-    );
-
-    if (!initialNextUrl) {
-      showMessage('当前页面未检测到下一页链接', 'info');
-      try {
-        await webview.executeJavaScript(`if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');`);
-      } catch (e) {}
-      return;
+  const wv = document.getElementById(`webview-${tabId}`) as any;
+  if (wv) {
+    if (typeof wv.closeDevTools === 'function') {
+      try { wv.closeDevTools(); } catch {}
     }
+    if (typeof wv.stop === 'function') {
+      try { wv.stop(); } catch {}
+    }
+  }
+  destroyWaterfallSession(tabId);
+  closeTab(props.resourceId, tabId);
+};
 
-    // 3. 注册会话并启动后台 Webview 加载下一页
-    const session: WaterfallSession = {
-      tabId,
-      parentUrl: activeTab.value?.url || '',
-      domain: rule.domain,
-      rule,
-      currentPage: 1,
-      nextUrl: initialNextUrl,
-      status: 'preloading',
-      isWaitingAtBottom: false
-    };
-    activeWaterfallSessions.value.set(tabId, session);
-    activeWaterfallTabs.value.add(tabId);
-  } catch (e) {
-    logger.warn('BrowserWorkspace', 'Failed to apply waterfall: ' + e);
+const onTabAuxClick = (e: MouseEvent, tabId: string) => {
+  if (e.button === 1) {
+    e.preventDefault();
+    e.stopPropagation();
+    onCloseTab(tabId);
   }
 };
 
-const onWaterfallBgStopLoading = async (tabId: string) => {
-  const session = activeWaterfallSessions.value.get(tabId);
-  if (!session || session.status !== 'preloading') return;
-
-  session.status = 'loaded';
-
-  // 若主标签页在后台加载期间已经触发触底等待，立即执行处理并拼接
-  if (session.isWaitingAtBottom) {
-    await processAndAppendWaterfall(tabId);
+const handleGlobalKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'F5') {
+    e.preventDefault();
+    onRefresh();
+  } else if (e.key === 'F12') {
+    e.preventDefault();
   }
 };
 
-const onWaterfallBgFailLoad = async (event: any, tabId: string) => {
-  if (event.isMainFrame) {
-    const session = activeWaterfallSessions.value.get(tabId);
-    if (session) {
-      if (session.bottomTimeoutTimer) {
-        clearTimeout(session.bottomTimeoutTimer);
-        session.bottomTimeoutTimer = undefined;
-      }
-      session.status = 'error';
-      session.isWaitingAtBottom = false;
-      const targetPage = session.currentPage + 1;
-      const parentWebview = document.getElementById(`webview-${tabId}`) as any;
-      if (parentWebview) {
-        try {
-          await parentWebview.executeJavaScript(`
-            if (window.__veloraWaterfallSetSkeletonError) {
-              window.__veloraWaterfallSetSkeletonError(${targetPage}, '网络请求失败');
-            } else if (window.__veloraWaterfallSetStatus) {
-              window.__veloraWaterfallSetStatus('error', '下一页网络请求失败');
-            }
-          `);
-        } catch (e) {}
-      }
-    }
-  }
-};
+let offWebviewNewWindowFn: (() => void) | undefined;
+let offMediaSniffedFn: (() => void) | undefined;
 
-const onWaterfallTriggerBottom = async (tabId: string) => {
-  const session = activeWaterfallSessions.value.get(tabId);
-  if (!session || session.status === 'finished' || session.status === 'processing' || session.status === 'error') return;
+onMounted(() => {
+  init();
+  document.addEventListener('click', hideAllContextMenus);
+  if (window.electronAPI && window.electronAPI.onWebviewNewWindow) {
+    offWebviewNewWindowFn = window.electronAPI.onWebviewNewWindow((data: { url: string, webContentsId: number } | string) => {
+      const url = typeof data === 'string' ? data : data.url;
+      const webContentsId = typeof data === 'string' ? -1 : data.webContentsId;
 
-  const targetPage = session.currentPage + 1;
-  if (session.status === 'loaded') {
-    if (session.bottomTimeoutTimer) {
-      clearTimeout(session.bottomTimeoutTimer);
-      session.bottomTimeoutTimer = undefined;
-    }
-    await processAndAppendWaterfall(tabId);
-  } else if (session.status === 'preloading') {
-    session.isWaitingAtBottom = true;
-    const parentWebview = document.getElementById(`webview-${tabId}`) as any;
-    if (parentWebview) {
-      try {
-        await parentWebview.executeJavaScript(`if (window.__veloraWaterfallShowSkeleton) window.__veloraWaterfallShowSkeleton(${targetPage});`);
-      } catch (e) {}
-    }
+      if (!workspace.value) return;
 
-    // 设置触底等待安全超时兜底（15秒）
-    if (session.bottomTimeoutTimer) clearTimeout(session.bottomTimeoutTimer);
-    session.bottomTimeoutTimer = setTimeout(async () => {
-      if (session.status === 'preloading' && session.isWaitingAtBottom) {
-        session.status = 'error';
-        session.isWaitingAtBottom = false;
-        const pw = document.getElementById(`webview-${tabId}`) as any;
-        if (pw) {
-          try {
-            await pw.executeJavaScript(`
-              if (window.__veloraWaterfallSetSkeletonError) {
-                window.__veloraWaterfallSetSkeletonError(${targetPage}, '加载超时');
-              }
-            `);
-          } catch (e) {}
-        }
-      }
-    }, 15000);
-  }
-};
-
-const retryWaterfall = async (tabId: string) => {
-  const session = activeWaterfallSessions.value.get(tabId);
-  if (!session || !session.nextUrl) return;
-
-  if (session.bottomTimeoutTimer) {
-    clearTimeout(session.bottomTimeoutTimer);
-    session.bottomTimeoutTimer = undefined;
-  }
-
-  const targetPage = session.currentPage + 1;
-  session.status = 'preloading';
-  session.isWaitingAtBottom = true;
-
-  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
-  if (parentWebview) {
-    try {
-      await parentWebview.executeJavaScript(`if (window.__veloraWaterfallShowSkeleton) window.__veloraWaterfallShowSkeleton(${targetPage});`);
-    } catch (e) {}
-  }
-
-  const bgWebview = document.getElementById(`waterfall-bg-webview-${tabId}`) as any;
-  if (bgWebview) {
-    try {
-      if (typeof bgWebview.reload === 'function') {
-        bgWebview.reload();
+      let isOurs = false;
+      if (workspace.value.tabs.some(t => t.webContentsId === webContentsId)) {
+        isOurs = true;
       } else {
-        bgWebview.src = session.nextUrl;
-      }
-    } catch (e) {}
-  }
-};
-
-const processAndAppendWaterfall = async (tabId: string) => {
-  const session = activeWaterfallSessions.value.get(tabId);
-  if (!session || session.status === 'processing') return;
-
-  if (session.bottomTimeoutTimer) {
-    clearTimeout(session.bottomTimeoutTimer);
-    session.bottomTimeoutTimer = undefined;
-  }
-
-  const targetPage = session.currentPage + 1;
-  session.status = 'processing';
-  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
-  const bgWebview = document.getElementById(`waterfall-bg-webview-${tabId}`) as any;
-
-  if (!parentWebview || !bgWebview || typeof bgWebview.executeJavaScript !== 'function') {
-    session.status = 'error';
-    return;
-  }
-
-  try {
-    // 1. 拼接前在后台专属隐藏 Webview 中执行匹配到的自定义注入脚本
-    await applyCustomScriptsToWebview(bgWebview, '', session.nextUrl);
-
-    // 2. 执行提取脚本获取内容 DOM 与后续下一页链接
-    const extractScript = getWaterfallBackgroundExtractScript(session.rule.contentSelector, session.rule.nextSelector);
-    const rawResult: string = await bgWebview.executeJavaScript(extractScript);
-    const result: WaterfallExtractResult = JSON.parse(rawResult || '{}');
-
-    if (result && result.hasContent && result.contentHtml) {
-      session.currentPage = targetPage;
-      const contentHtml = result.contentHtml;
-      const nextUrl = result.nextUrl;
-
-      // 3. 在主标签页注入拼接新内容（就地替换骨架屏或直接追加）
-      const appendScript = `
-        (function() {
-          if (window.__veloraWaterfallAppend) {
-            window.__veloraWaterfallAppend(${JSON.stringify(contentHtml)}, ${targetPage});
-            if (window.__veloraWaterfallSetStatus) {
-              window.__veloraWaterfallSetStatus('idle');
-            }
-          }
-        })();
-      `;
-      await parentWebview.executeJavaScript(appendScript);
-
-      // 4. 检查是否有后续下一页
-      if (nextUrl && nextUrl !== session.nextUrl) {
-        session.nextUrl = nextUrl;
-        session.status = 'preloading';
-        session.isWaitingAtBottom = false;
-      } else {
-        session.status = 'finished';
-        session.nextUrl = '';
-        session.isWaitingAtBottom = false;
-        try {
-          await parentWebview.executeJavaScript(`if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');`);
-        } catch (e) {}
-      }
-    } else {
-      session.status = 'finished';
-      session.nextUrl = '';
-      session.isWaitingAtBottom = false;
-      try {
-        await parentWebview.executeJavaScript(`
-          if (window.__veloraWaterfallRemoveSkeleton) window.__veloraWaterfallRemoveSkeleton(${targetPage});
-          if (window.__veloraWaterfallSetStatus) window.__veloraWaterfallSetStatus('finished');
-        `);
-      } catch (e) {}
-    }
-  } catch (e) {
-    logger.warn('BrowserWorkspace', 'Waterfall process and append error: ' + e);
-    session.status = 'error';
-    session.isWaitingAtBottom = false;
-    if (parentWebview) {
-      try {
-        await parentWebview.executeJavaScript(`
-          if (window.__veloraWaterfallSetSkeletonError) {
-            window.__veloraWaterfallSetSkeletonError(${targetPage}, '加载下一页异常');
-          } else if (window.__veloraWaterfallSetStatus) {
-            window.__veloraWaterfallSetStatus('error', '加载下一页异常');
-          }
-        `);
-      } catch (err) {}
-    }
-  }
-};
-
-const destroyWaterfallSession = async (tabId: string) => {
-  const session = activeWaterfallSessions.value.get(tabId);
-  if (session && session.bottomTimeoutTimer) {
-    clearTimeout(session.bottomTimeoutTimer);
-    session.bottomTimeoutTimer = undefined;
-  }
-  activeWaterfallSessions.value.delete(tabId);
-  activeWaterfallTabs.value.delete(tabId);
-  const parentWebview = document.getElementById(`webview-${tabId}`) as any;
-  if (parentWebview) {
-    try {
-      await parentWebview.executeJavaScript(getWaterfallDestroyScript());
-    } catch (e) {}
-  }
-};
-
-const checkAutoApplyWaterfall = (tabId: string) => {
-  if (activeWaterfallTabs.value.has(tabId)) return;
-  const tab = workspace.value?.tabs?.find(t => t.id === tabId);
-  const url = tab?.url;
-  if (!url || url === 'about:blank') return;
-
-  const allRules: WaterfallRule[] = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
-  const matchedRule = allRules.find(r => r.enabled === true && r.domain && isUrlMatchPattern(r.domain, url));
-
-  if (matchedRule) {
-    applyWaterfallToTab(tabId, matchedRule);
-  }
-};
-
-const toggleWaterfallActive = async () => {
-  const tabId = activeTab.value?.id;
-  if (!tabId) return;
-
-  const currentRules = (settingsState.customWaterfallRules && settingsState.customWaterfallRules[props.resourceId]) || [];
-  const rule = currentRules.find(r => r.id === selectedWaterfallRuleId.value) || currentDomainWaterfallRules.value[0];
-
-  if (activeWaterfallTabs.value.has(tabId)) {
-    if (rule) {
-      const allRulesObj = { ...settingsState.customWaterfallRules };
-      allRulesObj[props.resourceId] = currentRules.map(r => r.id === rule.id ? { ...r, enabled: false } : r);
-      await saveCustomWaterfallRules(allRulesObj);
-    }
-    await destroyWaterfallSession(tabId);
-    showMessage('已关闭瀑布模式', 'info');
-  } else {
-    if (!rule) {
-      onStartWaterfallWizard();
-      return;
-    }
-    const allRulesObj = { ...settingsState.customWaterfallRules };
-    allRulesObj[props.resourceId] = currentRules.map(r => r.id === rule.id ? { ...r, enabled: true } : r);
-    await saveCustomWaterfallRules(allRulesObj);
-
-    await applyWaterfallToTab(tabId, rule);
-    showMessage('瀑布模式已开启', 'success');
-  }
-};
-
-
-const toggleInspector = async () => {
-  if (inspectorVisible.value) {
-    inspectorVisible.value = false;
-  } else {
-    await deactivateOtherFeatures('css');
-    inspectorVisible.value = true;
-  }
-};
-
-/**
- * 选取文本：完全复刻“捕获图片”的操作逻辑，支持鼠标悬停定位、
- * 鼠标滚轮(Wheel)滑动向上放大或缩小选取的 DOM 容器层级，点击抽取 selectedEl.innerText。
- */
-const pickElementText = async () => {
-  if (!workspace.value?.activeTabId) return;
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-  if (!webview) return;
-
-  if (isPickingElementText.value) {
-    try {
-      await webview.executeJavaScript(getPickerCancelScript());
-    } catch (e) { }
-    isPickingElementText.value = false;
-    endElementPickingSession();
-    return;
-  }
-
-  await deactivateOtherFeatures('text');
-  isPickingElementText.value = true;
-  startElementPickingSession();
-
-  try {
-    const text = await webview.executeJavaScript(getPickerScript('text'));
-    isPickingElementText.value = false;
-    endElementPickingSession();
-    if (text) {
-      showMessage('已成功复制文本到剪贴板', 'success');
-    }
-  } catch (e: any) {
-    isPickingElementText.value = false;
-    endElementPickingSession();
-  }
-};
-
-/**
- * 选取图片：与选取元素操作流程相同，但点击后收集元素内所有图片资源，
- * 清洗 URL（去 query/fragment/@ 后内容），去重后展示在 ImagePreviewDialog 中。
- */
-const pickElementImage = async () => {
-  if (!workspace.value?.activeTabId) return;
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-  if (!webview) return;
-
-  // 再次点击则取消拾取模式
-  if (isPickingElementImage.value) {
-    try {
-      await webview.executeJavaScript(getPickerCancelScript());
-    } catch (e) { }
-    isPickingElementImage.value = false;
-    endElementPickingSession();
-    return;
-  }
-
-  await deactivateOtherFeatures('image');
-  isPickingElementImage.value = true;
-  startElementPickingSession();
-
-  try {
-    const urls: string[] = await webview.executeJavaScript(getPickerScript('image'));
-    isPickingElementImage.value = false;
-    endElementPickingSession();
-    if (urls && urls.length > 0) {
-      highestZIndex++;
-      const id = 'preview_img_' + Math.random().toString(36).substr(2, 9);
-      const offset = (activeImagePreviews.value.length % 5) * 30;
-      activeImagePreviews.value.push({
-        id,
-        url: urls[0],
-        urls,
-        zIndex: highestZIndex,
-        x: (window.innerWidth / 2 - 200) + offset,
-        y: (window.innerHeight / 2 - 150) + offset
-      });
-    }
-  } catch (e) {
-    isPickingElementImage.value = false;
-  }
-};
-
-
-const onApplyPreview = async (cssString: string) => {
-  if (!workspace.value?.activeTabId) return;
-  const webview = document.getElementById(`webview-${workspace.value.activeTabId}`) as any;
-  if (!webview) return;
-
-  const code = `
-    (function() {
-      let style = document.getElementById('${APP_PREFIX}-live-style');
-      if (!style) {
-        style = document.createElement('style');
-        style.id = '${APP_PREFIX}-live-style';
-        document.head.appendChild(style);
-      }
-      style.innerHTML = ${JSON.stringify(cssString || '')};
-    })();
-  `;
-  webview.executeJavaScript(code);
-};
-
-const onSaveRules = async (domain: string, cssString: string) => {
-  if (!domain) return;
-
-  const newStyles = { ...settingsState.customStyles };
-  if (!newStyles[props.resourceId]) newStyles[props.resourceId] = {};
-
-  if (cssString.trim()) {
-    newStyles[props.resourceId][domain] = cssString;
-  } else {
-    delete newStyles[props.resourceId][domain];
-  }
-
-  await saveCustomStyles(newStyles);
-  showMessage('自定义样式保存成功', 'success');
-  if (workspace.value?.activeTabId) {
-    refreshWebviewStyles(workspace.value.activeTabId);
-  }
-};
-
-const onDeleteStyle = async (delDomain: string) => {
-  const newStyles = { ...settingsState.customStyles };
-  if (newStyles[props.resourceId]) {
-    delete newStyles[props.resourceId][delDomain];
-    await saveCustomStyles(newStyles);
-    showMessage('自定义样式已删除', 'success');
-    if (workspace.value?.activeTabId) {
-      refreshWebviewStyles(workspace.value.activeTabId);
-    }
-  }
-};
-
-// ==================== 标记重复 (Duplicate Mark) ====================
-const duplicateMarkVisible = ref(false);
-const duplicatePickingType = ref<'mount' | 'title' | null>(null);
-const duplicateMarkDialogRef = ref<any>(null);
-
-const currentResourceDuplicateRules = computed<DuplicateMarkRule[]>(() => {
-  return (settingsState.customDuplicateRules && settingsState.customDuplicateRules[props.resourceId]) || [];
-});
-
-const toggleDuplicateMark = async () => {
-  if (duplicateMarkVisible.value) {
-    duplicateMarkVisible.value = false;
-  } else {
-    await deactivateOtherFeatures('duplicateMark');
-    duplicateMarkVisible.value = true;
-  }
-};
-
-const onPickMountElement = async () => {
-  duplicatePickingType.value = 'mount';
-  startElementPickingSession();
-
-  const tabId = activeTab.value?.id;
-  if (!tabId) {
-    cancelDuplicatePicking();
-    return;
-  }
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview) {
-    cancelDuplicatePicking();
-    return;
-  }
-
-  try {
-    const sel: string = await webview.executeJavaScript(getPickerScript('selector'));
-    duplicatePickingType.value = null;
-    endElementPickingSession();
-    if (sel && duplicateMarkDialogRef.value) {
-      duplicateMarkDialogRef.value.setMountSelector(sel);
-    }
-  } catch (e) {
-    cancelDuplicatePicking();
-  }
-};
-
-const cancelDuplicatePicking = async () => {
-  duplicatePickingType.value = null;
-  endElementPickingSession();
-  const tabId = activeTab.value?.id;
-  if (tabId) {
-    const webview = document.getElementById(`webview-${tabId}`) as any;
-    if (webview) {
-      try {
-        await webview.executeJavaScript(getPickerCancelScript());
-      } catch (e) {}
-    }
-  }
-};
-
-const onPreviewDuplicateRule = async (previewRule: DuplicateMarkRule) => {
-  const tabId = activeTab.value?.id;
-  if (!tabId) return;
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-
-  // 如果未配置挂载选择器，则清除当前页面的标记
-  if (!previewRule.mountSelector?.trim()) {
-    try {
-      await webview.executeJavaScript(getDuplicateMarkCleanupScript());
-    } catch (e) {}
-    return;
-  }
-
-  // 临时替换或添加该规则用于当前活跃页面实时预览
-  const currentList = [...currentResourceDuplicateRules.value];
-  const idx = currentList.findIndex(r => r.id === previewRule.id);
-  if (idx !== -1) {
-    currentList[idx] = { ...previewRule };
-  } else {
-    currentList.push({ ...previewRule });
-  }
-
-  const activeRules = currentList;
-
-  try {
-    const fileIndexObj: Record<string, string[]> = {};
-    fileIndexMap.value.forEach((paths, name) => {
-      fileIndexObj[name] = paths;
-    });
-
-    const script = getDuplicateMarkScript({
-      rules: activeRules,
-      fileIndex: fileIndexObj,
-      theme: settingsState.theme
-    });
-    await webview.executeJavaScript(script);
-  } catch (err) {
-    logger.warn('BrowserWorkspace', `执行标记重复预览失败: ${err}`);
-  }
-};
-
-const onSaveDuplicateRules = async (rules: DuplicateMarkRule[]) => {
-  const allObj = { ...settingsState.customDuplicateRules };
-  allObj[props.resourceId] = rules;
-  await saveCustomDuplicateRules(allObj);
-  showMessage('标记重复规则已保存', 'success');
-  duplicateMarkVisible.value = false;
-  applyDuplicateMarksToAllTabs();
-};
-
-const onDeleteDuplicateRule = async (rules: DuplicateMarkRule[]) => {
-  const allObj = { ...settingsState.customDuplicateRules };
-  allObj[props.resourceId] = rules;
-  await saveCustomDuplicateRules(allObj);
-  showMessage('规则已删除', 'success');
-  applyDuplicateMarksToAllTabs();
-};
-
-const onTestDuplicateRule = async (rule: DuplicateMarkRule) => {
-  const tabId = activeTab.value?.id;
-  if (!tabId) {
-    showMessage('未找到当前活动标签页', 'error');
-    return;
-  }
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') {
-    showMessage('当前页面尚未准备就绪', 'error');
-    return;
-  }
-
-  if (!rule.mountSelector?.trim()) {
-    showMessage('请输入挂载元素选择器', 'error');
-    return;
-  }
-
-  const mountSelector = JSON.stringify(rule.mountSelector.trim());
-  const titleSelector = JSON.stringify((rule.titleSelector || '').trim());
-  const titleAttr = JSON.stringify((rule.titleAttribute || 'innerText').trim() || 'innerText');
-  const extractScript = `
-    (function() {
-      try {
-        const nodes = document.querySelectorAll(${mountSelector});
-        const results = [];
-        nodes.forEach((mountEl, idx) => {
-          let targetEl = mountEl;
-          const tSel = ${titleSelector};
-          if (tSel) {
-            try {
-              targetEl = mountEl.querySelector(tSel);
-            } catch (e) {
-              targetEl = null;
-            }
-          }
-          if (!targetEl) return;
-          const tAttr = ${titleAttr};
-          let rawVal = targetEl[tAttr];
-          if (rawVal === undefined || rawVal === null) {
-            if (typeof targetEl.getAttribute === 'function') {
-              rawVal = targetEl.getAttribute(tAttr);
-            }
-          }
-          const text = (rawVal != null) ? String(rawVal).trim() : '';
-          if (text) {
-            results.push({ index: idx + 1, text });
-          }
-        });
-        return { success: true, items: results };
-      } catch (err) {
-        return { success: false, error: err.message };
-      }
-    })()
-  `;
-
-  try {
-    const extractRes = await webview.executeJavaScript(extractScript);
-    if (!extractRes || !extractRes.success) {
-      showMessage('从当前页面抓取元素失败: ' + (extractRes?.error || '未知错误'), 'error');
-      return;
-    }
-
-    const pageItems: Array<{ index: number; text: string }> = extractRes.items || [];
-    const localFileKeys: string[] = Array.from(fileIndexMap.value.keys());
-    const regexPattern = (rule.regexPattern || '').trim();
-
-    const extractByRegex = (pattern: string, str: string): string | null => {
-      if (!pattern || !str) return null;
-      try {
-        const re = new RegExp(pattern, 'i');
-        const m = str.match(re);
-        if (!m || !m[0]) return null;
-        const trimmed = m[0].trim().toLowerCase();
-        return trimmed.length > 0 ? trimmed : null;
-      } catch {
-        return null;
-      }
-    };
-
-    const tableData: any[] = [];
-
-    if (regexPattern) {
-      // 自定义正则提取比对
-      const localExtractedMap = new Map<string, string>();
-      for (const k of localFileKeys) {
-        const extVal = extractByRegex(regexPattern, k);
-        if (extVal) {
-          localExtractedMap.set(k, extVal);
-        }
-      }
-
-      for (const item of pageItems) {
-        const pageExtracted = extractByRegex(regexPattern, item.text);
-        const matchedFiles: string[] = [];
-        if (pageExtracted) {
-          for (const [k, extVal] of localExtractedMap.entries()) {
-            if (extVal === pageExtracted) {
-              matchedFiles.push(k);
-            }
-          }
-        }
-        tableData.push({
-          '序号': item.index,
-          '网页提取标题': item.text,
-          '网页正则提取值': pageExtracted ?? '(未匹配)',
-          '匹配结果': matchedFiles.length > 0 ? '已下载 (命中)' : '未命中',
-          '命中的本地文件': matchedFiles.length > 0 ? matchedFiles.join('; ') : '-',
-          '匹配规则': `正则: ${regexPattern}`
-        });
-      }
-    } else {
-      // 留空使用默认算法
-      for (const item of pageItems) {
-        let matchedFile: string | null = null;
-        let matchType: 'exact' | 'similar' | 'none' = 'none';
-
-        if (fileIndexMap.value.has(item.text)) {
-          matchedFile = item.text;
-          matchType = 'exact';
-        } else {
-          for (const k of localFileKeys) {
-            if (isSimilarExistingFile(k, item.text)) {
-              matchedFile = k;
-              matchType = 'similar';
+        const webviews = document.querySelectorAll('webview') as NodeListOf<any>;
+        for (const wv of webviews) {
+          if (wv.getWebContentsId && wv.getWebContentsId() === webContentsId) {
+            const tabId = wv.id.replace('webview-', '');
+            if (workspace.value.tabs.some(t => t.id === tabId)) {
+              isOurs = true;
               break;
             }
           }
         }
-
-        tableData.push({
-          '序号': item.index,
-          '网页提取标题': item.text,
-          '网页正则提取值': '(未配置正则，默认算法)',
-          '匹配结果': matchType !== 'none' ? `已下载 (${matchType === 'exact' ? '全名精确' : '相似'})` : '未命中',
-          '命中的本地文件': matchedFile || '-',
-          '匹配规则': '默认算法 (全名 / LCS相似度)'
-        });
       }
-    }
 
-    // 尝试打开 Webview 开发者工具并向 Webview 内置控制台输出测试结果
-    try {
-      if (typeof webview.openDevTools === 'function') {
-        webview.openDevTools();
+      if (isOurs || webContentsId === -1) {
+        addTab(props.resourceId, url, getResourceIcon());
       }
-    } catch {}
-
-    const logPayload = JSON.stringify({
-      ruleTitle: rule.name || rule.domain || '当前规则',
-      rule,
-      pageCount: pageItems.length,
-      localCount: localFileKeys.length,
-      pageTexts: pageItems.map(p => p.text),
-      localFiles: localFileKeys,
-      tableData
-    });
-    const printScript = `
-      (function() {
-        try {
-          const data = ${logPayload};
-          console.group('%c[Velora 标记重复匹配测试] 规则: ' + data.ruleTitle, 'color: #3b82f6; font-weight: bold; font-size: 13px;');
-          console.log('规则配置详情:', data.rule);
-          console.log('当前页面 URL:', window.location.href);
-          console.log('页面抓取到 ' + data.pageCount + ' 个待匹配卡片项, 本地去重库包含 ' + data.localCount + ' 个文件');
-          console.log('【待匹配方 A (网页端提取文本)】:', data.pageTexts);
-          console.log('【待匹配方 B (本地去重库文件名)】:', data.localFiles);
-          console.log('--- 匹配详细结果汇总表 ---');
-          if (data.tableData && data.tableData.length > 0) {
-            console.table(data.tableData);
-          } else {
-            console.warn('[Velora] 当前页面未抓取到任何匹配元素，请检查挂载选择器是否有效');
-          }
-          console.groupEnd();
-        } catch (e) {
-          console.error('[Velora] 打印测试结果失败', e);
-        }
-      })()
-    `;
-    try {
-      await webview.executeJavaScript(printScript);
-    } catch (e: any) {
-      logger.warn('BrowserWorkspace', `向 Webview 注入控制台日志失败: ${e?.message || e}`);
-    }
-
-    if (pageItems.length === 0) {
-      showMessage('当前页面未找到匹配挂载选择器的元素', 'warning');
-    } else {
-      showMessage('结果已输出至控制台', 'info');
-    }
-  } catch (err: any) {
-    logger.error('BrowserWorkspace', `执行标记重复测试异常: ${err.message}`);
-    showMessage('执行测试失败: ' + err.message, 'error');
-  }
-};
-
-const applyDuplicateMarksToTab = async (tabId: string) => {
-  const webview = document.getElementById(`webview-${tabId}`) as any;
-  if (!webview || typeof webview.executeJavaScript !== 'function') return;
-
-  const rules = currentResourceDuplicateRules.value;
-  if (rules.length === 0) {
-    try {
-      await webview.executeJavaScript(getDuplicateMarkCleanupScript());
-    } catch (e) {}
-    return;
-  }
-
-  try {
-    const fileIndexObj: Record<string, string[]> = {};
-    fileIndexMap.value.forEach((paths, name) => {
-      fileIndexObj[name] = paths;
-    });
-
-    const script = getDuplicateMarkScript({
-      rules,
-      fileIndex: fileIndexObj,
-      theme: settingsState.theme
-    });
-    await webview.executeJavaScript(script);
-  } catch (err) {
-    logger.warn('BrowserWorkspace', `执行标记重复脚本失败: ${err}`);
-  }
-};
-
-const applyDuplicateMarksToAllTabs = () => {
-  if (workspace.value?.tabs) {
-    workspace.value.tabs.forEach(t => {
-      applyDuplicateMarksToTab(t.id);
     });
   }
-};
 
-watch(duplicateMarkVisible, (val) => {
-  if (!val) {
-    // 弹窗关闭时，若未保存或取消，恢复当前活跃标签页的已存规则效果
-    const tabId = activeTab.value?.id;
-    if (tabId) {
-      applyDuplicateMarksToTab(tabId);
-    }
+  offMediaSniffedFn = setupMediaSniffedListener();
+
+  // Click-away to close context menu
+  window.addEventListener('click', handleWindowClick);
+  // Global hotkeys
+  window.addEventListener('keydown', handleGlobalKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', hideAllContextMenus);
+  window.removeEventListener('click', handleWindowClick);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  offWebviewNewWindowFn?.();
+  offMediaSniffedFn?.();
+  offWebviewNewWindowFn = undefined;
+  offMediaSniffedFn = undefined;
+  endElementPickingSession();
+  destroyAllWaterfallSessions();
+});
+
+watch(() => props.resourceId, () => {
+  init();
+});
+
+watch(() => workspace.value?.tabs.length, (newLen) => {
+  if (newLen === 0) {
+    // 当标签页完全清空时，默认打开一个空白标签页
+    addTab(props.resourceId, '', undefined, true, true);
   }
 });
 
-watch([() => currentResourceDuplicateRules.value, isDupIndexReady, () => settingsState.theme], () => {
-  applyDuplicateMarksToAllTabs();
-}, { deep: true });
+watch(() => workspace.value?.activeTabId, () => {
+  setTimeout(syncAddressBar, 50);
+});
 </script>
 
 <style scoped lang="less">

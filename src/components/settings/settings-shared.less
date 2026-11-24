@@ -1,0 +1,329 @@
+@keyframes settings-spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.settings-view {
+  .settings-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    margin-top: 24px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .settings-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--row-padding-v) var(--row-padding-h);
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .settings-row:last-child {
+    border-bottom: none;
+  }
+
+  .settings-row:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .settings-row[draggable="true"] {
+    cursor: grab;
+  }
+
+  .settings-row[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
+  .drag-handle {
+    cursor: grab;
+    margin-right: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+  }
+
+  .drag-handle:hover {
+    background: var(--bg-surface-active);
+    color: var(--text-primary);
+    transform: scale(1.05);
+  }
+
+  .drag-handle:active {
+    cursor: grabbing;
+    transform: scale(0.95);
+  }
+
+  .drag-handle svg {
+    display: block;
+  }
+
+  .settings-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .settings-info h3 {
+    margin: 0 0 6px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .settings-info p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    max-width: 400px;
+    line-height: 1.5;
+  }
+
+  .resource-info {
+    min-width: 0;
+    margin-right: 16px;
+  }
+
+  .resource-info h3 {
+    font-size: 15px;
+  }
+
+  .resource-info p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .edit-mode-info {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    margin-right: 20px;
+  }
+
+  /* Inline form for adding */
+  .add-row {
+    display: flex;
+    align-items: center;
+    background-color: var(--bg-surface-hover);
+    gap: 12px;
+  }
+
+  .inline-input {
+    min-width: 180px;
+  }
+
+  .inline-input.name-input {
+    flex: 0 0 140px;
+    min-width: 120px;
+  }
+
+  .inline-input.url-input {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .flex-1 {
+    flex: 1;
+  }
+
+  .action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+  }
+
+  .modal-content {
+    background: var(--bg-surface);
+    border-radius: 12px;
+    width: 600px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-primary);
+  }
+
+  .modal-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+
+  .modal-close-btn svg {
+    display: block;
+  }
+
+  .modal-close-btn:hover {
+    background: var(--border-light);
+    color: var(--text-primary);
+  }
+
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 40px 0;
+    font-size: 14px;
+  }
+
+  .domain-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .domain-group {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .domain-title {
+    background: var(--bg-surface-hover);
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .shrink-0 {
+    flex-shrink: 0;
+  }
+
+  .spin-icon {
+    animation: settings-spin 1s linear infinite;
+  }
+
+  .pan-modal-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    gap: 16px;
+
+    .pan-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  .speed-limit-select {
+    width: 160px;
+    min-width: 160px;
+  }
+
+  .throttle-scope-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .throttle-scope-modal-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+
+    &:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--color-accent);
+    }
+
+    .v-checkbox-label {
+      flex: 1;
+      min-width: 0;
+      line-height: 1.4;
+    }
+  }
+
+  .scope-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .scope-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .scope-item-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+}
