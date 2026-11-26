@@ -37,7 +37,6 @@ export function useHomeTaskActions(options: UseHomeTaskActionsOptions) {
   const { openSaveMediaDialog } = useSaveMediaDialog();
 
   const showNewDownloadModal = ref(false);
-  const showPanParseModal = ref(false);
   const activeImagePreviewUrl = ref<string | null>(null);
   const activeAudioPreviewUrl = ref<string | null>(null);
   const activeVideoPreviewUrl = ref<string | null>(null);
@@ -74,6 +73,17 @@ export function useHomeTaskActions(options: UseHomeTaskActionsOptions) {
   const openCompressDialog = (task: any) => {
     compressingTask.value = task;
     isCompressDialogVisible.value = true;
+  };
+
+  const isVideoEditDialogVisible = ref(false);
+  const videoEditTargetPath = ref<string | null>(null);
+  const videoEditTargetTitle = ref('');
+
+  const openVideoEditDialog = (task: any) => {
+    if (!task?.savePath) return;
+    videoEditTargetPath.value = task.savePath;
+    videoEditTargetTitle.value = task.name || '';
+    isVideoEditDialogVisible.value = true;
   };
 
   const isBatchCompressDialogVisible = ref(false);
@@ -334,7 +344,6 @@ export function useHomeTaskActions(options: UseHomeTaskActionsOptions) {
 
   return {
     showNewDownloadModal,
-    showPanParseModal,
     activeImagePreviewUrl,
     activeAudioPreviewUrl,
     activeVideoPreviewUrl,
@@ -345,6 +354,10 @@ export function useHomeTaskActions(options: UseHomeTaskActionsOptions) {
     isCompressDialogVisible,
     compressingTask,
     openCompressDialog,
+    isVideoEditDialogVisible,
+    videoEditTargetPath,
+    videoEditTargetTitle,
+    openVideoEditDialog,
     isBatchCompressDialogVisible,
     openBatchCompressDialog,
     handleConfirmBatchCompress,

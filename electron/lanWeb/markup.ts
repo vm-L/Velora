@@ -12,10 +12,6 @@ export const lanWebMarkup = `<div id="app">
       </a>
 
       <div class="header-actions">
-        <div id="network-indicator" class="network-indicator" title="局域网连接正常">
-          <span class="network-dot"></span>
-          <span id="network-text">已连接</span>
-        </div>
         <button id="theme-btn" class="v-btn v-btn-icon" title="切换主题">
           <svg id="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="5"></circle>

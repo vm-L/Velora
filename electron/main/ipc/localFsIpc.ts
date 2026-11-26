@@ -4,6 +4,7 @@ import path from 'path'
 import { lanServer } from '../../lanServer'
 import { logger } from '../../logger'
 import { copyDirRecursive, retryFileOperation, scanDirectory, searchDirectoryRecursive } from '../../utils/fileSystem'
+import { auditHighBitrateVideos, type AuditHighBitrateParams } from '../../videoEditor'
 import { releaseLocalMediaStreams } from '../mediaStreamServer'
 import { broadcastFileSystemChange } from '../windowManager'
 
@@ -350,5 +351,9 @@ export function registerLocalFsIpc(): void {
     }
 
     return { success: true, videos: Array.from(uniqueMap.values()) }
+  })
+
+  ipcMain.handle('audit-high-bitrate-videos', async (_event, params: AuditHighBitrateParams) => {
+    return await auditHighBitrateVideos(params)
   })
 }

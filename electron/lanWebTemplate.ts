@@ -1,1 +1,1 @@
-export { getLanWebHtml } from './lanWeb/index';
+export { getLanWebHtml, getLanDesktopHtml, getLanMobileHtml } from './lanWeb/index';

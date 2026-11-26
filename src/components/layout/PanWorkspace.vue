@@ -57,6 +57,16 @@
           <span>新建文件夹</span>
         </VButton>
 
+        <!-- 文件类型筛选 -->
+        <div class="type-filter-wrap">
+          <VInputSelect
+            v-model="typeFilter"
+            :options="typeFilterOptions"
+            :allow-input="false"
+            placeholder="全部类型"
+          />
+        </div>
+
         <!-- 本地即时过滤搜索框 -->
         <div class="search-wrap">
           <VInput
@@ -90,7 +100,7 @@
       <!-- 空目录或无搜索结果 -->
       <div v-else-if="filteredFiles.length === 0" class="empty-state">
         <VIcon name="folder" :size="36" class="empty-icon" />
-        <span>{{ searchQuery ? '未找到匹配的文件' : '当前目录为空' }}</span>
+        <span>{{ searchQuery || typeFilter !== 'all' ? '未找到匹配的文件' : '当前目录为空' }}</span>
       </div>
 
       <!-- 文件列表视图 -->
@@ -103,9 +113,30 @@
               @change="toggleSelectAll"
             />
           </div>
-          <div class="col-name">名称</div>
-          <div class="col-size">大小</div>
-          <div class="col-date">修改时间</div>
+          <div
+            class="col-name sortable-header"
+            :class="{ active: sortBy === 'name' }"
+            @click="toggleSort('name')"
+          >
+            <span>名称</span>
+            <VIcon v-if="sortBy === 'name'" :name="sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'" :size="12" />
+          </div>
+          <div
+            class="col-size sortable-header"
+            :class="{ active: sortBy === 'size' }"
+            @click="toggleSort('size')"
+          >
+            <span>大小</span>
+            <VIcon v-if="sortBy === 'size'" :name="sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'" :size="12" />
+          </div>
+          <div
+            class="col-date sortable-header"
+            :class="{ active: sortBy === 'updatedAt' }"
+            @click="toggleSort('updatedAt')"
+          >
+            <span>修改时间</span>
+            <VIcon v-if="sortBy === 'updatedAt'" :name="sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'" :size="12" />
+          </div>
           <div class="col-actions">操作</div>
         </div>
 
@@ -165,7 +196,7 @@
                 variant="icon"
                 class="row-action-btn"
                 @click="openMoveModal([file])"
-                title="移动到..."
+                title="移动"
               >
                 <VIcon name="folder-move" :size="13" />
               </VButton>
@@ -438,6 +469,7 @@
 import { computed, watch, onMounted, defineAsyncComponent } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
+import VInputSelect, { type InputSelectOption } from '@/components/base/VInputSelect.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
 import { usePanAccounts, type PanAccountInfo } from '@/composables/usePanAccounts';
@@ -467,12 +499,24 @@ const { getPanName } = usePanAccounts();
 const panDisplayName = computed(() => getPanName(props.panType));
 const defaultReferer = computed(() => getDefaultPanReferer(props.panType));
 
+const typeFilterOptions: InputSelectOption[] = [
+  { label: '全部类型', value: 'all' },
+  { label: '文件夹', value: 'folder' },
+  { label: '视频', value: 'video' },
+  { label: '音频', value: 'audio' },
+  { label: '图片', value: 'image' },
+  { label: '其他', value: 'other' }
+];
+
 const {
   displayQuotaText,
   breadcrumbs,
   currentFiles,
   selectedIds,
   searchQuery,
+  typeFilter,
+  sortBy,
+  sortOrder,
   isLoading,
   loadError,
   currentPdirFid,
@@ -484,6 +528,7 @@ const {
   toggleItemSelect,
   toggleSelectAll,
   clearSelection,
+  toggleSort,
   loadCurrentDirectory,
   handleRelogin,
   navigateUp,
@@ -686,8 +731,27 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.type-filter-wrap {
+  width: 112px;
+  flex-shrink: 0;
+}
+
 .search-wrap {
   width: 200px;
+}
+
+.sortable-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.sortable-header:hover,
+.sortable-header.active {
+  color: var(--color-accent);
 }
 
 .workspace-body {

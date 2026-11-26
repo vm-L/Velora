@@ -62,9 +62,26 @@ export const useDownloads = () => {
     }
   }
 
+  const { addDownload, addDownloadsBatch } = createDownloadCreation({
+    recordFile,
+    removeFile,
+    getExactMatches
+  })
+
+  const updateTaskDb = async (task: DownloadTask) => {
+    dirtyTaskIds.delete(task.id)
+    await db.downloads.put(serializeTaskForDb(task))
+  }
+
+  let deleteTaskRef: ((id: string, deleteFile?: boolean) => Promise<void>) | null = null
+
   const { initListeners } = createDownloadSync({
     pauseTask,
     resumeTask,
+    deleteTask: async (id, deleteFile) => {
+      if (deleteTaskRef) await deleteTaskRef(id, deleteFile)
+    },
+    addDownloadsBatch,
     recordFile,
     removeFile
   })
@@ -106,17 +123,6 @@ export const useDownloads = () => {
     return loadTasksPromise
   }
 
-  const { addDownload, addDownloadsBatch } = createDownloadCreation({
-    recordFile,
-    removeFile,
-    getExactMatches
-  })
-
-  const updateTaskDb = async (task: DownloadTask) => {
-    dirtyTaskIds.delete(task.id)
-    await db.downloads.put(serializeTaskForDb(task))
-  }
-
   const deleteTask = async (id: string, deleteFile = false) => {
     dirtyTaskIds.delete(id)
     const t = tasks.value.find(t => t.id === id)
@@ -135,6 +141,7 @@ export const useDownloads = () => {
       releaseUnusedCleanupDirs([t.panContext])
     }
   }
+  deleteTaskRef = deleteTask
 
   const auditDiskFiles = async () => {
     if (!window.electronAPI) return 0

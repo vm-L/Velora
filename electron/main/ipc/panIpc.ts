@@ -109,6 +109,38 @@ export function registerPanIpc(): void {
     }
   })
 
+  ipcMain.handle('pan-get-share-preview-url', async (_, { type, item, filename }: { type: any; item: any; filename?: string }) => {
+    try {
+      const fid = String(item?.fid || '')
+      if (!fid) {
+        return { success: false, error: '缺少文件标识，无法预览' }
+      }
+      const res = await panService.getShareDownloadUrls(type, [item])
+      if (!res.success) {
+        return { success: false, error: res.error || '无法获取分享媒体直链' }
+      }
+      const link = res.links?.[fid]
+      const url = link?.url || res.urls?.[fid]
+      if (!url) {
+        return { success: false, error: '无法获取分享媒体直链' }
+      }
+      const cachedHeaders = panService.getCachedHeadersForUrl(url) || {}
+      const baseHeaders = getHeadersForUrl(url, undefined, undefined, undefined, { allowPanCookies: true, panType: String(type) })
+      const mergedHeaders = { ...baseHeaders, ...cachedHeaders }
+
+      const resolvedName = String(link?.filename || filename || 'media.mp4')
+      const previewUrl = registerPanPreview(url, mergedHeaders, resolvedName)
+      return {
+        success: true,
+        previewUrl,
+        cleanupDirFid: link?.cleanupDirFid || undefined,
+        filename: resolvedName
+      }
+    } catch (err: any) {
+      return { success: false, error: err?.message || '获取分享预览流失败' }
+    }
+  })
+
   ipcMain.handle('pan-cleanup-temp-dir', async (_, { type, cleanupDirFid }: { type: any; cleanupDirFid: string }) => {
     try {
       if (!type || !cleanupDirFid) return { success: true }

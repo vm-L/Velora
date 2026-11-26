@@ -4,20 +4,28 @@ import {
   cancelVideoEdit,
   mergeVideos,
   compressVideo,
+  extractAudio,
+  exportVideoGif,
   EditVideoParams,
   MergeVideosParams,
-  CompressVideoParams
+  CompressVideoParams,
+  ExtractAudioParams,
+  ExportGifParams
 } from './videoEditor';
+
+export type VideoTaskType = 'cut' | 'merge' | 'compress' | 'extract-audio' | 'gif';
 
 export interface VideoTaskPayload {
   cutParams?: EditVideoParams;
   mergeParams?: MergeVideosParams;
   compressParams?: CompressVideoParams;
+  extractAudioParams?: ExtractAudioParams;
+  gifParams?: ExportGifParams;
 }
 
 export interface VideoTaskInternal {
   id: string;
-  type: 'cut' | 'merge' | 'compress';
+  type: VideoTaskType;
   title: string;
   status: 'waiting' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
@@ -31,7 +39,7 @@ export interface VideoTaskInternal {
 
 export interface VideoTaskSnapshot {
   id: string;
-  type: 'cut' | 'merge' | 'compress';
+  type: VideoTaskType;
   title: string;
   status: 'waiting' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
@@ -60,7 +68,7 @@ class VideoTaskManager {
 
   public enqueueTask(params: {
     id?: string;
-    type: 'cut' | 'merge' | 'compress';
+    type: VideoTaskType;
     title: string;
     payload: VideoTaskPayload;
     extra?: Record<string, any>;
@@ -74,6 +82,10 @@ class VideoTaskManager {
       params.payload.mergeParams.taskId = taskId;
     } else if (params.type === 'compress' && params.payload.compressParams) {
       params.payload.compressParams.taskId = taskId;
+    } else if (params.type === 'extract-audio' && params.payload.extractAudioParams) {
+      params.payload.extractAudioParams.taskId = taskId;
+    } else if (params.type === 'gif' && params.payload.gifParams) {
+      params.payload.gifParams.taskId = taskId;
     }
 
     const task: VideoTaskInternal = {
@@ -261,6 +273,32 @@ class VideoTaskManager {
         if (!compressParams) throw new Error('压缩任务缺少参数');
 
         const result = await compressVideo(compressParams, (percent, text) => {
+          if (this.activeTask && this.activeTask.id === nextTask.id && this.activeTask.status !== 'cancelled') {
+            this.activeTask.progress = percent;
+            this.activeTask.statusText = text;
+            this.notifyStateChange(false);
+          }
+        });
+
+        this.handleTaskResult(nextTask, result);
+      } else if (nextTask.type === 'extract-audio') {
+        const extractAudioParams = nextTask.payload.extractAudioParams;
+        if (!extractAudioParams) throw new Error('提取音频任务缺少参数');
+
+        const result = await extractAudio(extractAudioParams, (percent, text) => {
+          if (this.activeTask && this.activeTask.id === nextTask.id && this.activeTask.status !== 'cancelled') {
+            this.activeTask.progress = percent;
+            this.activeTask.statusText = text;
+            this.notifyStateChange(false);
+          }
+        });
+
+        this.handleTaskResult(nextTask, result);
+      } else if (nextTask.type === 'gif') {
+        const gifParams = nextTask.payload.gifParams;
+        if (!gifParams) throw new Error('导出 GIF 任务缺少参数');
+
+        const result = await exportVideoGif(gifParams, (percent, text) => {
           if (this.activeTask && this.activeTask.id === nextTask.id && this.activeTask.status !== 'cancelled') {
             this.activeTask.progress = percent;
             this.activeTask.statusText = text;

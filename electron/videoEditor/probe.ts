@@ -92,13 +92,16 @@ async function probeVideoWithFfmpeg(filePath: string): Promise<ProbeResult> {
       if (fpsMatch) {
         fps = parseFloat(fpsMatch[1])
       }
-      const hasAudio = /Stream #\d+:\d+.*Audio:/.test(stderr)
+      const audioMatch = stderr.match(/Stream #\d+:\d+.*Audio:\s*([a-zA-Z0-9_]+)/)
+      const hasAudio = !!audioMatch
+      const audioCodec = audioMatch ? audioMatch[1].toLowerCase() : undefined
       resolve({
         duration,
         width,
         height,
         fps: fps > 0 ? fps : 30,
-        hasAudio
+        hasAudio,
+        audioCodec
       })
     })
     fallbackChild.on('error', () => {
@@ -124,7 +127,7 @@ export async function probeVideo(filePath: string): Promise<ProbeResult> {
       const child = spawn('ffprobe', [
         '-v', 'error',
         '-show_entries', 'format=duration',
-        '-show_entries', 'stream=codec_type,width,height,r_frame_rate',
+        '-show_entries', 'stream=codec_type,codec_name,width,height,r_frame_rate',
         '-of', 'json',
         filePath
       ])
@@ -158,7 +161,8 @@ export async function probeVideo(filePath: string): Promise<ProbeResult> {
                 width,
                 height,
                 fps: fps > 0 ? fps : 30,
-                hasAudio: !!audioStream
+                hasAudio: !!audioStream,
+                audioCodec: audioStream?.codec_name ? String(audioStream.codec_name).toLowerCase() : undefined
               })
             }
           } catch {

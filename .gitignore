@@ -50,4 +50,5 @@ desktop.ini
 *.temp
 
 mv.js
+build.bat
 msg

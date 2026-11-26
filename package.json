@@ -1,11 +1,13 @@
 {
   "name": "velora",
-  "version": "1.12.5",
+  "version": "1.13.0",
   "description": "this is a electron init",
   "author": "JY",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
+    "check": "tsc -p tsconfig.node.json --noEmit && vue-tsc --noEmit",
+    "test": "node tests/run-all.cjs",
     "build": "vue-tsc && vite build && electron-builder --dir && node -e \"const fs=require('fs'); fs.rmSync('release/builder-effective-config.yaml', {force:true});\"",
     "build:win": "vue-tsc && vite build && electron-builder --win && node -e \"const fs=require('fs'); fs.rmSync('release/builder-effective-config.yaml', {force:true});\"",
     "preview": "vite preview"

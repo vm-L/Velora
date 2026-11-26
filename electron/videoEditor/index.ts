@@ -2,7 +2,10 @@ export type {
   VideoSegment,
   EditVideoParams,
   MergeVideosParams,
-  CompressVideoParams
+  CompressVideoParams,
+  ExtractAudioParams,
+  ExportGifParams,
+  ProbeResult
 } from './types'
 
 export {
@@ -11,10 +14,20 @@ export {
   cancelVideoCompress,
   checkDiskSpace,
   getAppTempDir,
-  cleanupAppTempDir
+  cleanupAppTempDir,
+  moveOrCopyFile
 } from './runtime'
 
-export { getVideoDuration } from './probe'
+export { getVideoDuration, probeVideo } from './probe'
 export { editVideoSegments } from './cut'
 export { mergeVideos } from './merge'
 export { compressVideo } from './compress'
+export { extractAudio, resolveAudioCopyExtension, resolveUniqueOutputPath } from './extractAudio'
+export { exportVideoGif, buildGifFilterComplex } from './gif'
+export {
+  auditHighBitrateVideos,
+  estimateSavingsBytes,
+  type HighBitrateVideoItem,
+  type AuditHighBitrateParams,
+  type AuditHighBitrateResult
+} from './bitrateAudit'

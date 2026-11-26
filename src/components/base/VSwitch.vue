@@ -1,5 +1,5 @@
 <template>
-  <div class="v-switch-control" :class="{ 'disabled': disabled }">
+  <div class="v-switch-control" :class="{ 'disabled': disabled, 'is-block': block }">
     <label
       v-for="(opt, idx) in normalizedOptions"
       :key="idx"
@@ -37,10 +37,12 @@ const props = withDefaults(
     modelValue: any;
     options?: VSwitchOption[];
     disabled?: boolean;
+    block?: boolean;
     name?: string;
   }>(),
   {
     disabled: false,
+    block: false,
     options: () => [
       { label: '关闭', value: false },
       { label: '开启', value: true }
@@ -99,6 +101,11 @@ const selectOption = (val: any) => {
   align-items: center;
 }
 
+.v-switch-control.is-block {
+  display: flex;
+  width: 100%;
+}
+
 .v-switch-control.disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -108,17 +115,25 @@ const selectOption = (val: any) => {
 .v-switch-item {
   position: relative;
   z-index: 2;
+  flex: 1 1 0%;
   padding: 6px 16px;
   font-size: 13px;
+  line-height: 1.2;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: color 0.2s ease;
   min-width: 90px;
+  white-space: nowrap;
   text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.v-switch-control.is-block .v-switch-item {
+  min-width: 0;
+  padding: 6px 10px;
 }
 
 .v-switch-radio {

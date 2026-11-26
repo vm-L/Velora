@@ -30,6 +30,42 @@ export interface ActiveStreamEntry {
   res: http.ServerResponse;
 }
 
+export interface LanDownloadTaskItem {
+  id: string;
+  name: string;
+  status: string;
+  progress: number;
+  receivedBytes: number;
+  totalBytes: number;
+  speed: number;
+  speedText?: string;
+  etaSeconds?: number;
+  savePath: string;
+  errorMsg?: string;
+  createdAt: number;
+}
+
+export interface LanDownloadCommand {
+  action: 'add' | 'pause' | 'resume' | 'delete';
+  id?: string;
+  deleteFile?: boolean;
+  items?: Array<{
+    url: string;
+    name?: string;
+    saveDir: string;
+    referer?: string;
+    headers?: Record<string, string>;
+    totalBytes?: number;
+    panContext?: Record<string, any>;
+  }>;
+}
+
+export interface LanDownloadCommandResult {
+  success: boolean;
+  count?: number;
+  error?: string;
+}
+
 /**
  * 路由处理器共享上下文，封装 LanServer 内部状态与核心能力
  */
@@ -46,6 +82,10 @@ export interface LanRouteContext {
   subscribeTaskProgress: (taskId: string, res: http.ServerResponse) => TaskEvent | undefined;
   unsubscribeTaskProgress: (taskId: string, res: http.ServerResponse) => void;
   broadcastTaskEvent: (taskId: string, event: TaskEvent) => void;
+  getDownloadTasksSnapshot: () => LanDownloadTaskItem[];
+  addDownloadSubscriber: (res: http.ServerResponse) => void;
+  removeDownloadSubscriber: (res: http.ServerResponse) => void;
+  dispatchDownloadCommand: (cmd: LanDownloadCommand) => Promise<LanDownloadCommandResult>;
 }
 
 /**

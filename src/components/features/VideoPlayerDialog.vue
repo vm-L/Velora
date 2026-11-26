@@ -8,21 +8,19 @@
         'hide-cursor': hideCursor,
         'is-resizing': isResizing,
         'is-dragging': isDraggingWindow,
-        'is-audio-mode': isAudioMode,
-        'is-editing-mode': isEditingMode
+        'is-audio-mode': isAudioMode
       }"
       @mousemove="onMouseMove" @mouseleave="onMouseLeave">
     
     <!-- 顶部标题栏 -->
-    <div class="dialog-header" :class="{ 'show-header': showControls || !(isFullscreen || isInAppFullscreen) || isAudioMode || isEditingMode }" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls || isAudioMode" @mouseenter="onControlsEnter" @mouseleave="onControlsLeave">
+    <div class="dialog-header" :class="{ 'show-header': showControls || !(isFullscreen || isInAppFullscreen) || isAudioMode }" @mousedown="startDrag" v-show="!(isFullscreen || isInAppFullscreen) || showControls || isAudioMode" @mouseenter="onControlsEnter" @mouseleave="onControlsLeave">
       <div class="header-title" :title="videoTitle">
         <VIcon :name="!isAudioMode ? 'play' : 'headphones'" :size="14" />
         <span class="title-text">{{ videoTitle }}</span>
         <span v-if="isAudioMode" class="badge-mode">听视频</span>
-        <span v-else-if="isEditingMode" class="badge-mode edit-badge">编辑</span>
       </div>
       <div class="header-actions" @mousedown.stop>
-        <VButton v-if="!hideDownload && !isAudioMode && !isEditingMode" variant="icon" class="action-btn" @click.stop="downloadVideo" @mousedown.stop title="下载">
+        <VButton v-if="!hideDownload && !isAudioMode" variant="icon" class="action-btn" @click.stop="downloadVideo" @mousedown.stop title="下载">
           <VIcon name="download" :size="12" />
         </VButton>
 
@@ -55,20 +53,8 @@
       <!-- 播放控制栏 (原生悬浮在视频上) -->
       <div class="player-controls-overlay" :class="{ 'show-controls': isAudioMode || (showControls && isMouseInVideoArea) || (isDragging && isMouseInVideoArea) }" @mouseenter="onControlsEnter" @mouseleave="onControlsLeave">
         
-        <!-- 进度条容器 (含选区高亮色块) -->
+        <!-- 进度条容器 -->
         <div class="progress-container">
-          <div v-if="isEditingMode && duration > 0" class="segments-highlight-track">
-            <div v-for="(seg, idx) in editSegments" :key="seg.id"
-              class="segment-bar"
-              :class="{ 'active-segment': idx === activeSegmentIndex }"
-              :style="{
-                left: (Math.max(0, seg.start) / duration * 100) + '%',
-                width: (Math.max(0.5, (seg.end - seg.start)) / duration * 100) + '%'
-              }"
-              @click.stop="selectSegment(idx)"
-              :title="`片段 ${idx + 1}: ${formatTime(seg.start)} - ${formatTime(seg.end)}`"
-            ></div>
-          </div>
           <input type="range" class="progress-bar" min="0" :max="duration || 100" step="0.05" :value="currentTime" @input="onSeek" @change="onSeekEnd" @mousedown="isDragging = true" />
         </div>
 
@@ -98,14 +84,14 @@
               <option :value="2.0">2.0x</option>
             </select>
 
+            <!-- 一键截帧 -->
+            <VButton v-if="!isAudioMode" variant="icon" class="ctrl-btn" @click="captureScreenshot" title="截取当前帧 (快捷键: P)">
+              <VIcon name="camera" :size="15" />
+            </VButton>
+
             <!-- 听视频模式切换 -->
             <VButton variant="icon" class="ctrl-btn" :active="isAudioMode" @click="toggleAudioMode" :title="isAudioMode ? '看视频' : '听视频'">
               <VIcon :name="!isAudioMode ? 'headphones' : 'video'" :size="16" />
-            </VButton>
-
-            <!-- 本地视频编辑模式切换 -->
-            <VButton v-if="isLocalVideo && !isAudioMode && !(isFullscreen || isInAppFullscreen)" variant="icon" class="ctrl-btn" :active="isEditingMode" @click="toggleEditingMode" :title="isEditingMode ? '退出编辑' : '编辑'">
-              <VIcon name="scissors" :size="16" />
             </VButton>
 
             <VButton v-if="!isAudioMode && supportsPip" variant="icon" class="ctrl-btn" @click="togglePip" title="画中画">
@@ -126,41 +112,6 @@
       </div>
     </div>
 
-    <!-- 编辑模式底部独立拼接操作面板 (拼接在原窗口下方，完全不遮挡视频画面) -->
-    <VideoEditDockPanel
-      v-if="isEditingMode && !isAudioMode"
-      :segments="editSegments"
-      :active-segment-index="activeSegmentIndex"
-      :is-segment-playing="isSegmentPlaying"
-      :total-edited-duration="totalEditedDuration"
-      @set-start="setCurrentAsStart"
-      @set-end="setCurrentAsEnd"
-      @add-segment="addSegment"
-      @exit-edit="toggleEditingMode"
-      @select-segment="selectSegment"
-      @toggle-preview-segment="togglePreviewSegment"
-      @remove-segment="removeSegment"
-      @save-as="handleSaveAs"
-      @prompt-overwrite="promptConfirmOverwrite"
-    />
-    
-    <!-- 覆盖保存确认弹窗 -->
-    <div v-if="showOverwriteConfirm" class="editor-modal-mask" @mousedown.stop>
-      <div class="editor-confirm-card">
-        <div class="modal-header">
-          <VIcon name="warning" :size="18" color="var(--color-accent)" />
-          <h3>确认覆盖源视频文件？</h3>
-        </div>
-        <p class="confirm-desc">
-          将使用当前标记的 <strong>{{ editSegments.length }}</strong> 个片段并替换源文件。
-        </p>
-        <div class="modal-actions">
-          <VButton variant="secondary" @click="showOverwriteConfirm = false">取消</VButton>
-          <VButton variant="primary" @click="executeOverwriteSave">确认保存覆盖</VButton>
-        </div>
-      </div>
-    </div>
-
     <div class="resize-handle" @mousedown.stop="startResize" v-if="!isFullscreen && !isInAppFullscreen && !isAudioMode"></div>
   </div>
   </Teleport>
@@ -170,11 +121,9 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
-import VideoEditDockPanel from '@/components/features/VideoEditDockPanel.vue';
 import { formatPlayerTime, type EditSegment } from '@/composables/videoPlayer/types';
 import { usePlayerWindowLayout } from '@/composables/videoPlayer/usePlayerWindowLayout';
 import { useVideoPlayback } from '@/composables/videoPlayer/useVideoPlayback';
-import { useVideoEditSegments } from '@/composables/videoPlayer/useVideoEditSegments';
 import { usePlayerShortcuts } from '@/composables/videoPlayer/usePlayerShortcuts';
 
 export type { EditSegment };
@@ -188,20 +137,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'download', url: string): void;
-  (e: 'edit-complete', payload: { mode: 'replace' | 'saveAs'; outputPath: string; sourcePath: string }): void;
 }>();
 
 const dialogRef = ref<HTMLElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
 const formatTime = formatPlayerTime;
 
-// 严格按 A -> B -> C -> D 无环顺序装配 4 个 Composable
 let getPlaybackStateImpl = () => ({ isPlaying: false, isSeeking: false, videoRatio: null as number | null });
-let onEditModeEnterImpl = () => {};
-let onEditModeExitImpl = () => {};
-let onTimeUpdateSegmentCheckImpl = (_curTime: number) => {};
-let onMetadataDurationReadyImpl = (_dur: number) => {};
-let onPlaybackStoppedImpl = () => {};
 
 const {
   position,
@@ -221,7 +163,6 @@ const {
   startResize,
   applyMetadataWindowSize,
   toggleAudioMode,
-  toggleEditingMode,
   toggleInAppFullscreen,
   toggleFullscreen,
   handleFullscreenChange,
@@ -238,8 +179,8 @@ const {
   dialogRef,
   videoRef,
   getPlaybackState: () => getPlaybackStateImpl(),
-  onEditModeEnter: () => onEditModeEnterImpl(),
-  onEditModeExit: () => onEditModeExitImpl()
+  onEditModeEnter: () => {},
+  onEditModeExit: () => {}
 });
 
 const {
@@ -255,8 +196,6 @@ const {
   supportsPip,
   showVolume,
   videoRatio,
-  localDiskPath,
-  isLocalVideo,
   videoTitle,
   releaseVideoMedia,
   loadVideo,
@@ -274,6 +213,7 @@ const {
   togglePip,
   seekBy,
   changeVolume,
+  captureScreenshot,
   cleanupMediaClient
 } = useVideoPlayback({
   url: () => props.url,
@@ -285,9 +225,9 @@ const {
   showControls,
   resetControlsTimeout,
   applyMetadataWindowSize,
-  onTimeUpdateSegmentCheck: (t) => onTimeUpdateSegmentCheckImpl(t),
-  onMetadataDurationReady: (d) => onMetadataDurationReadyImpl(d),
-  onPlaybackStopped: () => onPlaybackStoppedImpl()
+  onTimeUpdateSegmentCheck: () => {},
+  onMetadataDurationReady: () => {},
+  onPlaybackStopped: () => {}
 });
 
 getPlaybackStateImpl = () => ({
@@ -296,76 +236,18 @@ getPlaybackStateImpl = () => ({
   videoRatio: videoRatio.value
 });
 
-const {
-  editSegments,
-  activeSegmentIndex,
-  isSegmentPlaying,
-  totalEditedDuration,
-  showOverwriteConfirm,
-  initSegmentsIfEmpty,
-  syncInitialSegmentDuration,
-  resetEditSegments,
-  stopSegmentPlaying,
-  checkSegmentPlaybackEnd,
-  selectSegment,
-  setCurrentAsStart,
-  setCurrentAsEnd,
-  addSegment,
-  removeSegment,
-  togglePreviewSegment,
-  seekToSegmentStart,
-  seekToSegmentEnd,
-  selectPrevSegment,
-  selectNextSegment,
-  promptConfirmOverwrite,
-  executeOverwriteSave,
-  handleSaveAs
-} = useVideoEditSegments({
-  videoRef,
-  currentTime,
-  duration,
-  localDiskPath,
-  videoTitle,
-  releaseVideoMedia
-});
-
-onEditModeEnterImpl = initSegmentsIfEmpty;
-onEditModeExitImpl = stopSegmentPlaying;
-onTimeUpdateSegmentCheckImpl = (curTime) => {
-  if (isEditingMode.value) {
-    checkSegmentPlaybackEnd(curTime);
-  }
-};
-onMetadataDurationReadyImpl = (dur) => {
-  if (isEditingMode.value) {
-    syncInitialSegmentDuration(dur);
-  }
-};
-onPlaybackStoppedImpl = stopSegmentPlaying;
-
 const { handleKeydown } = usePlayerShortcuts({
   dialogRef,
   zIndex,
   isAudioMode,
-  isEditingMode,
   isFullscreen,
   isInAppFullscreen,
-  showOverwriteConfirm,
-  activeSegmentIndex,
   togglePlay,
   seekBy,
   changeVolume,
   toggleFullscreen,
   toggleMute,
-  setCurrentAsStart,
-  setCurrentAsEnd,
-  addSegment,
-  seekToSegmentStart,
-  seekToSegmentEnd,
-  togglePreviewSegment,
-  selectPrevSegment,
-  selectNextSegment,
-  removeSegment
+  captureScreenshot
 });
 
 watch(() => props.url, (newUrl) => {
@@ -374,7 +256,6 @@ watch(() => props.url, (newUrl) => {
     bringToFront();
     isAudioMode.value = false;
     isEditingMode.value = false;
-    resetEditSegments();
     setTimeout(() => {
       loadVideo();
       if (document.pictureInPictureEnabled) {
@@ -500,15 +381,6 @@ onUnmounted(() => {
       padding: 8px 12px 10px;
     }
   }
-
-  // 编辑模式样式 (保持窗口尺寸完全不变)
-  &.is-editing-mode {
-    .dialog-header {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
-    }
-  }
 }
 
 .dialog-header {
@@ -568,10 +440,6 @@ onUnmounted(() => {
     background: var(--color-accent);
     color: var(--bg-surface);
     flex-shrink: 0;
-
-    &.edit-badge {
-      background: var(--color-accent);
-    }
   }
 }
 
@@ -663,39 +531,6 @@ onUnmounted(() => {
   height: 14px;
   position: relative;
   cursor: pointer;
-}
-
-.segments-highlight-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 4px;
-  height: 6px;
-  pointer-events: none;
-  z-index: 1;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.segment-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: rgba(80, 80, 80, 0.35);
-  border-radius: 2px;
-  pointer-events: auto;
-  cursor: pointer;
-  transition: background 0.15s ease;
-
-  &:hover {
-    background: rgba(80, 80, 80, 0.55);
-  }
-
-  &.active-segment {
-    background: var(--color-accent);
-    opacity: 0.85;
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
-  }
 }
 
 .progress-bar {
@@ -835,63 +670,6 @@ onUnmounted(() => {
     background: var(--bg-surface);
     color: var(--text-primary);
   }
-}
-
-// ==============================
-// 弹窗与确认遮罩样式
-// ==============================
-.editor-modal-mask {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.editor-confirm-card {
-  width: 360px;
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-soft);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  h3 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-}
-
-.confirm-desc {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
 }
 
 .resize-handle {

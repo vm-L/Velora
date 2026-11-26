@@ -49,6 +49,22 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
     }
 
     // Prevent Mobile Touch & Wheel Scroll Penetration on Modals
+    var MODAL_SCROLLABLE_SELECTOR = '.desktop-d2-segments-list, .mobile-s3-segments-list, .mobile-s3-sheet-body, .trimmer-controls, .directory-tree-container, .segment-chips-container, .merge-list, .modal-body';
+
+    function findModalScrollableTarget(target, modal) {
+      var el = target && target.nodeType === 1 ? target : (target && target.parentElement);
+      while (el && el !== modal && el !== document.body) {
+        if (el.scrollHeight > el.clientHeight + 1) {
+          var ov = window.getComputedStyle ? window.getComputedStyle(el).overflowY : '';
+          if (ov === 'auto' || ov === 'scroll' || ov === 'overlay') {
+            return el;
+          }
+        }
+        el = el.parentElement;
+      }
+      return (target && target.closest) ? target.closest(MODAL_SCROLLABLE_SELECTOR) : null;
+    }
+
     var modalTouchStartY = 0;
     document.addEventListener('touchstart', function(e) {
       if (e.touches && e.touches[0]) {
@@ -57,11 +73,11 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
     }, { passive: true });
 
     document.addEventListener('touchmove', function(e) {
-      var modal = e.target.closest ? e.target.closest('.modal-overlay') : null;
+      var modal = e.target && e.target.closest ? e.target.closest('.modal-overlay') : null;
       if (!modal || modal.style.display === 'none') return;
 
-      var scrollEl = e.target.closest ? e.target.closest('.trimmer-controls, .directory-tree-container, .segment-chips-container, .merge-list, .modal-body') : null;
-      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) {
+      var scrollEl = findModalScrollableTarget(e.target, modal);
+      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight + 1) {
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -75,11 +91,11 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
     }, { passive: false });
 
     document.addEventListener('wheel', function(e) {
-      var modal = e.target.closest ? e.target.closest('.modal-overlay') : null;
+      var modal = e.target && e.target.closest ? e.target.closest('.modal-overlay') : null;
       if (!modal || modal.style.display === 'none') return;
 
-      var scrollEl = e.target.closest ? e.target.closest('.trimmer-controls, .directory-tree-container, .segment-chips-container, .merge-list, .modal-body') : null;
-      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) {
+      var scrollEl = findModalScrollableTarget(e.target, modal);
+      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight + 1) {
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -92,7 +108,115 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
       }
     }, { passive: false });
 
-    // Video Player
+    // Video Player (含局域网端独立 localStorage 断点续播)
+    var LAN_RESUME_STORAGE_KEY = 'velora_lan_playback_progress_v1';
+    var LAN_RESUME_MAX_ITEMS = 200;
+    var activeLanVideoPath = '';
+    var activeLanVideoRestored = false;
+    var lastLanProgressSaveAt = 0;
+
+    function loadLanResumeMap() {
+      try {
+        var raw = localStorage.getItem(LAN_RESUME_STORAGE_KEY);
+        if (!raw) return {};
+        var parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function persistLanResumeMap(map) {
+      try {
+        var keys = Object.keys(map);
+        if (keys.length > LAN_RESUME_MAX_ITEMS) {
+          keys.sort(function(a, b) {
+            return (map[a] && map[a].updatedAt || 0) - (map[b] && map[b].updatedAt || 0);
+          });
+          var removeCount = keys.length - LAN_RESUME_MAX_ITEMS;
+          for (var i = 0; i < removeCount; i++) {
+            delete map[keys[i]];
+          }
+        }
+        localStorage.setItem(LAN_RESUME_STORAGE_KEY, JSON.stringify(map));
+      } catch (e) {}
+    }
+
+    function formatLanResumeTime(sec) {
+      var total = Math.max(0, Math.floor(sec || 0));
+      var h = Math.floor(total / 3600);
+      var m = Math.floor((total % 3600) / 60);
+      var s = total % 60;
+      var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+      return h > 0 ? (pad(h) + ':' + pad(m) + ':' + pad(s)) : (pad(m) + ':' + pad(s));
+    }
+
+    function saveLanVideoProgress(videoPath, pos, dur) {
+      if (!videoPath || !isFinite(pos) || !isFinite(dur) || dur < 15) return;
+      var map = loadLanResumeMap();
+      if (pos / dur >= 0.95 || (dur - pos) < 10) {
+        if (map[videoPath]) {
+          delete map[videoPath];
+          persistLanResumeMap(map);
+        }
+        return;
+      }
+      if (pos < 3) return;
+      map[videoPath] = {
+        position: Math.round(pos * 10) / 10,
+        duration: Math.round(dur * 10) / 10,
+        updatedAt: Date.now()
+      };
+      persistLanResumeMap(map);
+    }
+
+    function clearLanVideoProgress(videoPath) {
+      if (!videoPath) return;
+      var map = loadLanResumeMap();
+      if (map[videoPath]) {
+        delete map[videoPath];
+        persistLanResumeMap(map);
+      }
+    }
+
+    function bindLanVideoResumeEvents(video) {
+      if (!video || video.__veloraResumeBound) return;
+      video.__veloraResumeBound = true;
+
+      video.addEventListener('loadedmetadata', function() {
+        if (!activeLanVideoPath || activeLanVideoRestored) return;
+        activeLanVideoRestored = true;
+        var dur = video.duration;
+        if (!isFinite(dur) || dur < 15) return;
+        var map = loadLanResumeMap();
+        var rec = map[activeLanVideoPath];
+        if (rec && rec.position >= 3 && rec.position / dur < 0.95 && (dur - rec.position) >= 10) {
+          try {
+            video.currentTime = rec.position;
+            showToast('已续播至 ' + formatLanResumeTime(rec.position));
+          } catch (e) {}
+        }
+      });
+
+      video.addEventListener('timeupdate', function() {
+        if (!activeLanVideoPath) return;
+        var now = Date.now();
+        if (now - lastLanProgressSaveAt < 3000) return;
+        lastLanProgressSaveAt = now;
+        saveLanVideoProgress(activeLanVideoPath, video.currentTime, video.duration);
+      });
+
+      video.addEventListener('pause', function() {
+        if (!activeLanVideoPath) return;
+        saveLanVideoProgress(activeLanVideoPath, video.currentTime, video.duration);
+      });
+
+      video.addEventListener('ended', function() {
+        if (!activeLanVideoPath) return;
+        clearLanVideoProgress(activeLanVideoPath);
+      });
+    }
+
     function openVideoModal(item) {
       recordPreviewScroll();
       var streamUrl = window.location.origin + '/stream?path=' + encodeURIComponent(item.path) +
@@ -101,6 +225,10 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
       
       document.getElementById('video-modal-title').innerText = item.name;
       var video = document.getElementById('main-video');
+      bindLanVideoResumeEvents(video);
+      activeLanVideoPath = item.path || '';
+      activeLanVideoRestored = false;
+      lastLanProgressSaveAt = 0;
       video.src = streamUrl;
       video.play().catch(function() {});
       document.getElementById('video-modal').style.display = 'flex';
@@ -109,12 +237,17 @@ export const lanWebPreviewAndSearchScripts = `    // 不支持在线预览的文
     window.closeVideoModal = function() {
       var video = document.getElementById('main-video');
       if (video) {
+        if (activeLanVideoPath) {
+          saveLanVideoProgress(activeLanVideoPath, video.currentTime, video.duration);
+        }
         try {
           video.pause();
           video.removeAttribute('src');
           video.load();
         } catch (e) {}
       }
+      activeLanVideoPath = '';
+      activeLanVideoRestored = false;
       document.getElementById('video-modal').style.display = 'none';
       restorePreviewScroll();
     };

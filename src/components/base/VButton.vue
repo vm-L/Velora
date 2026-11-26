@@ -1,7 +1,7 @@
 <template>
   <button
     :type="type"
-    :class="['v-btn', `v-btn-${variant}`, { 'active': active }]"
+    :class="['v-btn', `v-btn-${variant}`, size !== 'medium' ? `v-btn-${size}` : '', { 'active': active }]"
     :disabled="disabled"
     @click="$emit('click', $event)"
   >
@@ -14,7 +14,11 @@
 defineProps({
   variant: {
     type: String,
-    default: 'secondary', // 'primary' | 'secondary' | 'danger' | 'text' | 'icon'
+    default: 'secondary', // 'primary' | 'secondary' | 'danger' | 'danger-soft' | 'warning' | 'text' | 'icon' | 'icon-secondary' | 'icon-danger'
+  },
+  size: {
+    type: String as () => 'small' | 'medium' | 'large',
+    default: 'medium',
   },
   disabled: {
     type: Boolean,
@@ -42,6 +46,7 @@ defineEmits(['click']);
   height: 32px;
   border-radius: 6px;
   font-size: 13px;
+  line-height: 1;
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
@@ -51,6 +56,24 @@ defineEmits(['click']);
   user-select: none;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.v-btn :deep(.v-icon) {
+  display: block;
+  flex-shrink: 0;
+}
+
+.v-btn-small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.v-btn-large {
+  height: 36px;
+  padding: 8px 18px;
+  font-size: 14px;
 }
 
 .v-btn:disabled,
@@ -107,6 +130,12 @@ defineEmits(['click']);
 }
 .v-btn-secondary:hover:not(:disabled) {
   background: var(--border-color);
+}
+.v-btn-secondary.active:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent), var(--shadow-sm);
 }
 
 /* Danger (Solid Red) Button */

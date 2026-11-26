@@ -1,6 +1,12 @@
 import { ref, computed, watch, type Ref } from 'vue';
 import { logger } from '@/services/logger';
-import { getLocalDiskPath } from '@/composables/videoPlayer/types';
+import { useMessage } from '@/composables/useMessage';
+import { buildLocalStreamUrl, formatPlayerTime, getLocalDiskPath } from '@/composables/videoPlayer/types';
+import {
+  clearPlaybackProgress,
+  getSavedPlaybackProgress,
+  savePlaybackProgress
+} from '@/composables/videoPlayer/playbackProgress';
 
 export interface UseVideoPlaybackOptions {
   url: () => string | null;
@@ -38,6 +44,10 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
 
   const previewClientId = 'preview_video_' + Math.random().toString(36).slice(2);
   const effectiveReferer = computed(() => (pageUrl() || '').trim());
+  const { showMessage } = useMessage();
+
+  let hasRestoredResumeForUrl = false;
+  let lastProgressSaveAt = 0;
 
   watch(() => [url(), effectiveReferer.value], ([u, p]) => {
     if (p && window.electronAPI && window.electronAPI.createMediaClient) {
@@ -91,7 +101,19 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
     return '视频播放器';
   });
 
+  const flushPlaybackProgress = (force = false) => {
+    const disk = localDiskPath.value;
+    if (!disk || !videoRef.value) return;
+    const now = Date.now();
+    if (!force && now - lastProgressSaveAt < 3000) return;
+    lastProgressSaveAt = now;
+    const pos = videoRef.value.currentTime;
+    const dur = duration.value || videoRef.value.duration || 0;
+    void savePlaybackProgress(disk, pos, dur);
+  };
+
   const releaseVideoMedia = () => {
+    flushPlaybackProgress(true);
     if (videoRef.value) {
       try {
         videoRef.value.pause();
@@ -108,25 +130,16 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
   };
 
   const formatMediaSrc = (rawUrl: string): string => {
-    if (!rawUrl) return '';
-    let cleanPath = rawUrl.trim().replace(/\\/g, '/');
-
-    if (/^(http:\/\/|https:\/\/|blob:|data:)/i.test(cleanPath)) {
-      return cleanPath;
-    }
-
-    if (cleanPath.startsWith('velora://local/')) {
-      cleanPath = decodeURIComponent(cleanPath.slice('velora://local/'.length));
-    }
-
     const port = window.__SERVER_PORT__ || 0;
     const token = window.__SERVER_TOKEN__ || '';
-    return `http://127.0.0.1:${port}/stream?path=${encodeURIComponent(cleanPath)}&_v=${playerSessionKey.value}&token=${encodeURIComponent(token)}`;
+    return buildLocalStreamUrl(rawUrl, port, token, playerSessionKey.value);
   };
 
   const loadVideo = async () => {
     const rawUrl = url();
     if (!videoRef.value || !rawUrl) return;
+    hasRestoredResumeForUrl = false;
+    lastProgressSaveAt = 0;
     if ((!window.__SERVER_PORT__ || !window.__SERVER_TOKEN__) && window.electronAPI?.getServerInfo && !/^(http:\/\/|https:\/\/|blob:|data:)/i.test(rawUrl.trim())) {
       try {
         const info = await window.electronAPI.getServerInfo();
@@ -253,6 +266,7 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
     if (!videoRef.value) return;
     if (isPlaying.value) {
       videoRef.value.pause();
+      flushPlaybackProgress(true);
       onPlaybackStopped();
     } else {
       videoRef.value.play().catch(() => {});
@@ -263,11 +277,15 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
     if (!isDragging.value && videoRef.value) {
       currentTime.value = videoRef.value.currentTime;
       onTimeUpdateSegmentCheck(currentTime.value);
+      flushPlaybackProgress(false);
     }
   };
 
   const onVideoEnded = () => {
     isPlaying.value = false;
+    if (localDiskPath.value) {
+      void clearPlaybackProgress(localDiskPath.value);
+    }
     onPlaybackStopped();
   };
 
@@ -283,6 +301,69 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
         videoRatio.value = vw / vh;
         applyMetadataWindowSize(vw, vh);
       }
+
+      // 本地视频断点续播（编辑态不抢占进度，每个文件仅首次元数据就绪时恢复）
+      const disk = localDiskPath.value;
+      if (disk && !hasRestoredResumeForUrl && !isEditingMode.value && duration.value >= 15) {
+        hasRestoredResumeForUrl = true;
+        const targetVideo = videoRef.value;
+        const expectedDisk = disk;
+        void getSavedPlaybackProgress(disk).then((saved) => {
+          if (!saved || localDiskPath.value !== expectedDisk || videoRef.value !== targetVideo) return;
+          if (saved.position >= 3 && saved.position < duration.value - 5) {
+            try {
+              targetVideo.currentTime = saved.position;
+              currentTime.value = saved.position;
+              showMessage(`已续播至 ${formatPlayerTime(saved.position)}`, 'info');
+            } catch {}
+          }
+        });
+      }
+    }
+  };
+
+  const captureScreenshot = async () => {
+    const video = videoRef.value;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      showMessage('当前画面尚未加载完成，无法截帧', 'warning');
+      return;
+    }
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        showMessage('截帧画布初始化失败', 'error');
+        return;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/png');
+
+      if (window.electronAPI?.saveVideoScreenshot) {
+        const res = await window.electronAPI.saveVideoScreenshot({
+          dataUrl,
+          sourcePath: localDiskPath.value || undefined,
+          timestampSec: video.currentTime,
+          copyToClipboard: true
+        });
+        if (res?.success) {
+          if (res.savedPath && res.copied) {
+            showMessage('已保存截帧并复制到剪贴板', 'success');
+          } else if (res.savedPath) {
+            showMessage('已保存截帧到视频同目录', 'success');
+          } else {
+            showMessage('已复制当前帧到剪贴板', 'success');
+          }
+        } else {
+          showMessage(res?.error || '截帧失败', 'error');
+        }
+      } else {
+        showMessage('当前客户端暂不支持截帧保存', 'warning');
+      }
+    } catch (err: any) {
+      logger.error('VideoPreview', `captureScreenshot failed: ${err?.message || err}`);
+      showMessage('截帧失败，可能受跨域视频限制', 'error');
     }
   };
 
@@ -301,6 +382,7 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
     if (videoRef.value && Math.abs(videoRef.value.currentTime - val) > 0.3) {
       videoRef.value.currentTime = val;
     }
+    flushPlaybackProgress(true);
     if (!isMouseInVideoArea.value) {
       showControls.value = false;
     } else {
@@ -416,6 +498,7 @@ export function useVideoPlayback(options: UseVideoPlaybackOptions) {
     togglePip,
     seekBy,
     changeVolume,
+    captureScreenshot,
     cleanupMediaClient
   };
 }

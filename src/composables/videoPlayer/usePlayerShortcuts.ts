@@ -1,28 +1,18 @@
 import type { Ref } from 'vue';
+import { resolveStepByModifiers } from '@/composables/videoPlayer/types';
 
 export interface UsePlayerShortcutsOptions {
   dialogRef: Ref<HTMLElement | null>;
   zIndex: Ref<number>;
   isAudioMode: Ref<boolean>;
-  isEditingMode: Ref<boolean>;
   isFullscreen: Ref<boolean>;
   isInAppFullscreen: Ref<boolean>;
-  showOverwriteConfirm: Ref<boolean>;
-  activeSegmentIndex: Ref<number>;
   togglePlay: () => void;
   seekBy: (delta: number) => void;
   changeVolume: (delta: number) => void;
   toggleFullscreen: () => Promise<void> | void;
   toggleMute: () => void;
-  setCurrentAsStart: () => void;
-  setCurrentAsEnd: () => void;
-  addSegment: () => void;
-  seekToSegmentStart: () => void;
-  seekToSegmentEnd: () => void;
-  togglePreviewSegment: (idx: number) => void;
-  selectPrevSegment: () => void;
-  selectNextSegment: () => void;
-  removeSegment: (idx: number) => void;
+  captureScreenshot?: () => Promise<void> | void;
 }
 
 /**
@@ -33,25 +23,14 @@ export function usePlayerShortcuts(options: UsePlayerShortcutsOptions) {
     dialogRef,
     zIndex,
     isAudioMode,
-    isEditingMode,
     isFullscreen,
     isInAppFullscreen,
-    showOverwriteConfirm,
-    activeSegmentIndex,
     togglePlay,
     seekBy,
     changeVolume,
     toggleFullscreen,
     toggleMute,
-    setCurrentAsStart,
-    setCurrentAsEnd,
-    addSegment,
-    seekToSegmentStart,
-    seekToSegmentEnd,
-    togglePreviewSegment,
-    selectPrevSegment,
-    selectNextSegment,
-    removeSegment
+    captureScreenshot
   } = options;
 
   const handleKeydown = (e: KeyboardEvent) => {
@@ -84,10 +63,6 @@ export function usePlayerShortcuts(options: UsePlayerShortcutsOptions) {
     }
 
     if (e.key === 'Escape') {
-      if (showOverwriteConfirm.value) {
-        showOverwriteConfirm.value = false;
-        return;
-      }
       if (isFullscreen.value || isInAppFullscreen.value) {
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
@@ -99,22 +74,12 @@ export function usePlayerShortcuts(options: UsePlayerShortcutsOptions) {
       togglePlay();
     } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
       e.preventDefault();
-      if (e.shiftKey) {
-        seekBy(-60);
-      } else if (e.ctrlKey || e.metaKey) {
-        seekBy(-10);
-      } else {
-        seekBy(-1);
-      }
+      const { step } = resolveStepByModifiers(e);
+      seekBy(-step);
     } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
       e.preventDefault();
-      if (e.shiftKey) {
-        seekBy(60);
-      } else if (e.ctrlKey || e.metaKey) {
-        seekBy(10);
-      } else {
-        seekBy(1);
-      }
+      const { step } = resolveStepByModifiers(e);
+      seekBy(step);
     } else if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
       e.preventDefault();
       changeVolume(0.01);
@@ -126,40 +91,15 @@ export function usePlayerShortcuts(options: UsePlayerShortcutsOptions) {
         e.preventDefault();
         toggleFullscreen();
       }
+    } else if (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') {
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !isAudioMode.value && captureScreenshot) {
+        e.preventDefault();
+        captureScreenshot();
+      }
     } else if (e.key === 'm' || e.key === 'M' || e.code === 'KeyM') {
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         toggleMute();
-      }
-    } else if (isEditingMode.value && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const key = e.key.toLowerCase();
-      if (key === 'z') {
-        e.preventDefault();
-        setCurrentAsStart();
-      } else if (key === 'c') {
-        e.preventDefault();
-        setCurrentAsEnd();
-      } else if (key === 'x') {
-        e.preventDefault();
-        addSegment();
-      } else if (key === 'a') {
-        e.preventDefault();
-        seekToSegmentStart();
-      } else if (key === 'd') {
-        e.preventDefault();
-        seekToSegmentEnd();
-      } else if (key === 's') {
-        e.preventDefault();
-        togglePreviewSegment(activeSegmentIndex.value);
-      } else if (key === 'q') {
-        e.preventDefault();
-        selectPrevSegment();
-      } else if (key === 'e') {
-        e.preventDefault();
-        selectNextSegment();
-      } else if (key === 'w') {
-        e.preventDefault();
-        removeSegment(activeSegmentIndex.value);
       }
     }
   };

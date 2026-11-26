@@ -67,7 +67,7 @@
               <span class="stat-value mono">{{ formatBytes(globalReceivedBytes) }}</span>
             </div>
           </div>
-          <VButton variant="secondary" class="new-task-btn" @click="showPanParseModal = true">
+          <VButton variant="secondary" class="new-task-btn" @click="openPanParseModal()">
             <VIcon name="cloud-download" :size="14" />
             网盘解析
           </VButton>
@@ -139,6 +139,15 @@
                 <VButton variant="icon-secondary" title="打开所在目录" @click.stop="openDirectory(task)">
                   <VIcon name="folder" :size="14" />
                 </VButton>
+                <!-- 剪辑视频按钮（仅对已完成的视频任务显示） -->
+                <VButton
+                  v-if="task.status === 'completed' && isVideoTask(task)"
+                  variant="icon-secondary"
+                  title="视频剪辑"
+                  @click.stop="openVideoEditDialog(task)"
+                >
+                  <VIcon name="scissors" :size="14" />
+                </VButton>
                 <!-- 压缩视频按钮（仅对已完成的视频任务显示） -->
                 <VButton
                   v-if="task.status === 'completed' && isVideoTask(task)"
@@ -202,8 +211,13 @@
     <AudioPlayerDialog v-if="activeAudioPreviewUrl" :url="activeAudioPreviewUrl" 
       @close="activeAudioPreviewUrl = null" @download="onDownloadAudio" :hideDownload="true" />
     <VideoPlayerDialog v-if="activeVideoPreviewUrl" :url="activeVideoPreviewUrl"
-      @edit-complete="handleVideoEditComplete"
       @close="activeVideoPreviewUrl = null" :hideDownload="true" />
+    <VideoEditDialog
+      v-model:visible="isVideoEditDialogVisible"
+      :source-path="videoEditTargetPath"
+      :title="videoEditTargetTitle"
+      @edit-complete="handleVideoEditComplete"
+    />
 
     <EditTaskDialog
       v-model:visible="editTaskDialogVisible"
@@ -222,9 +236,6 @@
     <NewDownloadDialog
       v-model:visible="showNewDownloadModal"
     />
-    <PanParseDialog
-      v-model:visible="showPanParseModal"
-    />
   </div>
 </template>
 
@@ -235,10 +246,10 @@ import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
 const NewDownloadDialog = defineAsyncComponent(() => import('@/components/features/NewDownloadDialog.vue'));
-const PanParseDialog = defineAsyncComponent(() => import('@/components/features/PanParseDialog.vue'));
 const ImagePreviewDialog = defineAsyncComponent(() => import('@/components/features/ImagePreviewDialog.vue'));
 const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
 const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
+const VideoEditDialog = defineAsyncComponent(() => import('@/components/features/VideoEditDialog.vue'));
 const EditTaskDialog = defineAsyncComponent(() => import('@/components/features/EditTaskDialog.vue'));
 const CompressVideoDialog = defineAsyncComponent(() => import('@/components/features/CompressVideoDialog.vue'));
 const BatchCompressVideoDialog = defineAsyncComponent(() => import('@/components/features/BatchCompressVideoDialog.vue'));
@@ -254,6 +265,9 @@ import {
 } from '@/composables/home/taskHelpers';
 import { useHomeSelectionAndFilter } from '@/composables/home/useHomeSelectionAndFilter';
 import { useHomeTaskActions } from '@/composables/home/useHomeTaskActions';
+import { useGlobalPanParseModal } from '@/composables/pan/useGlobalPanParseModal';
+
+const { openPanParseModal } = useGlobalPanParseModal();
 
 const { tasks, pauseTask, resumeTask, skipFailedSegmentsTask, deleteTask, loadTasks, isInitialized, updateTaskDb } = useDownloads();
 
@@ -284,7 +298,6 @@ const {
 
 const {
   showNewDownloadModal,
-  showPanParseModal,
   activeImagePreviewUrl,
   activeAudioPreviewUrl,
   activeVideoPreviewUrl,
@@ -295,6 +308,10 @@ const {
   isCompressDialogVisible,
   compressingTask,
   openCompressDialog,
+  isVideoEditDialogVisible,
+  videoEditTargetPath,
+  videoEditTargetTitle,
+  openVideoEditDialog,
   isBatchCompressDialogVisible,
   openBatchCompressDialog,
   handleConfirmBatchCompress,

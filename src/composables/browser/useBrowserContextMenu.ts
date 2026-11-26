@@ -1,5 +1,10 @@
 import { ref, nextTick, type Ref, type ComputedRef } from 'vue';
 import type { Workspace } from '@/composables/useWorkspaces';
+import {
+  detectPanShareMeta,
+  extractAllPanShareLinks,
+  isProbablyPanText
+} from '@/composables/pan/shareTextParser';
 
 export interface UseBrowserContextMenuOptions {
   workspace: ComputedRef<Workspace | undefined>;
@@ -8,6 +13,7 @@ export interface UseBrowserContextMenuOptions {
   pickElementImage: () => Promise<void> | void;
   pickElementText: () => Promise<void> | void;
   startSilentParse: (params: { isLink: boolean; targetUrl?: string; tabId?: string }) => void;
+  onParsePanLink?: (rawText: string) => void;
 }
 
 /**
@@ -20,7 +26,8 @@ export function useBrowserContextMenu(options: UseBrowserContextMenuOptions) {
     isPickingElementText,
     pickElementImage,
     pickElementText,
-    startSilentParse
+    startSilentParse,
+    onParsePanLink
   } = options;
 
   const contextMenuVisible = ref(false);
@@ -28,6 +35,7 @@ export function useBrowserContextMenu(options: UseBrowserContextMenuOptions) {
   const contextMenuTabId = ref('');
   const contextMenuTargetUrl = ref('');
   const isContextMenuTargetLink = ref(false);
+  const contextMenuPanText = ref('');
   const contextMenuRef = ref<HTMLElement | null>(null);
 
   const handleWebviewContextMenu = (e: any, tabId: string) => {
@@ -38,8 +46,9 @@ export function useBrowserContextMenu(options: UseBrowserContextMenuOptions) {
     const px = typeof params?.x === 'number' ? params.x : (typeof e.clientX === 'number' ? e.clientX : 0);
     const py = typeof params?.y === 'number' ? params.y : (typeof e.clientY === 'number' ? e.clientY : 0);
 
-    const link = params?.linkURL || params?.linkUrl;
-    const page = params?.pageURL || params?.pageUrl;
+    const link = String(params?.linkURL || params?.linkUrl || '').trim();
+    const page = String(params?.pageURL || params?.pageUrl || '').trim();
+    const selectionText = String(params?.selectionText || '').trim();
     const tab = workspace.value?.tabs.find(t => t.id === tabId);
 
     if (link) {
@@ -49,6 +58,24 @@ export function useBrowserContextMenu(options: UseBrowserContextMenuOptions) {
       isContextMenuTargetLink.value = false;
       contextMenuTargetUrl.value = page || tab?.url || '';
     }
+
+    // 识别右键链接或选中文本中的网盘分享链接
+    let detectedPan = '';
+    if (link && detectPanShareMeta(link)) {
+      detectedPan = selectionText && /(?:提取码|密码|访问码|口令|code|pwd)[:：\s]*[a-zA-Z0-9]{4,8}/i.test(selectionText)
+        ? `${link} ${selectionText}`
+        : link;
+    } else if (selectionText) {
+      const found = extractAllPanShareLinks(selectionText);
+      if (found.length > 0) {
+        detectedPan = found[0].password
+          ? `${found[0].url} 提取码: ${found[0].password}`
+          : found[0].url;
+      } else if (isProbablyPanText(selectionText)) {
+        detectedPan = selectionText;
+      }
+    }
+    contextMenuPanText.value = detectedPan;
 
     contextMenuPos.value = { x: px, y: py };
     contextMenuTabId.value = tabId;
@@ -109,16 +136,26 @@ export function useBrowserContextMenu(options: UseBrowserContextMenuOptions) {
     startSilentParse({ isLink, targetUrl, tabId });
   };
 
+  const triggerParsePanLink = () => {
+    const rawText = contextMenuPanText.value;
+    contextMenuVisible.value = false;
+    if (rawText && onParsePanLink) {
+      onParsePanLink(rawText);
+    }
+  };
+
   return {
     contextMenuVisible,
     contextMenuPos,
     isContextMenuTargetLink,
+    contextMenuPanText,
     contextMenuRef,
     handleWebviewContextMenu,
     hideAllContextMenus,
     handleWindowClick,
     triggerPickImage,
     triggerCopyText,
-    triggerSilentParse
+    triggerSilentParse,
+    triggerParsePanLink
   };
 }

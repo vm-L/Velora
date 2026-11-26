@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from './logger';
-import { getLanWebHtml } from './lanWebTemplate';
+import { getLanDesktopHtml, getLanMobileHtml } from './lanWeb';
 import { resolveAppIconPath } from './utils/fileSystem';
 import type { VideoQueueState } from './videoTaskManager';
 import {
@@ -13,14 +13,20 @@ import {
   type ResourceInfo,
   type TaskEvent,
   type ActiveStreamEntry,
-  type LanRouteContext
+  type LanRouteContext,
+  type LanDownloadTaskItem,
+  type LanDownloadCommand,
+  type LanDownloadCommandResult
 } from './lanServer/types';
 import { getLocalIp } from './lanServer/network';
+import { detectLanDeviceView, LAN_VIEW_COOKIE_NAME } from './lanServer/deviceDetector';
 import { handleStreamRoutes } from './lanServer/streamRoutes';
 import { handleFsRoutes } from './lanServer/fsRoutes';
 import { handleVideoRoutes } from './lanServer/videoRoutes';
+import { handleUploadRoutes } from './lanServer/uploadRoutes';
+import { handleRemoteRoutes } from './lanServer/remoteRoutes';
 
-export type { LanServerConfig, ResourceInfo, TaskEvent };
+export type { LanServerConfig, ResourceInfo, TaskEvent, LanDownloadTaskItem, LanDownloadCommand, LanDownloadCommandResult };
 
 export class LanServer {
   private server: http.Server | null = null;
@@ -32,6 +38,9 @@ export class LanServer {
   private getResourcesCallback: () => Promise<ResourceInfo[]> = async () => [];
   private sseSubscribers = new Map<string, Set<http.ServerResponse>>();
   private taskQueueSubscribers = new Set<http.ServerResponse>();
+  private downloadSubscribers = new Set<http.ServerResponse>();
+  private downloadTasksSnapshot: LanDownloadTaskItem[] = [];
+  private onDownloadCommandCallback: ((cmd: LanDownloadCommand) => Promise<LanDownloadCommandResult>) | null = null;
   private latestTaskEvents = new Map<string, TaskEvent>();
   private onFileSystemChangeCallback: ((event: any) => void) | null = null;
   private onReleaseMediaStreamsCallback: ((targetPath: string) => void) | null = null;
@@ -48,6 +57,23 @@ export class LanServer {
 
   public setReleaseMediaStreamsCallback(cb: (targetPath: string) => void) {
     this.onReleaseMediaStreamsCallback = cb;
+  }
+
+  public setDownloadCommandCallback(cb: (cmd: LanDownloadCommand) => Promise<LanDownloadCommandResult>) {
+    this.onDownloadCommandCallback = cb;
+  }
+
+  public updateDownloadTasksSnapshot(tasks: LanDownloadTaskItem[]) {
+    this.downloadTasksSnapshot = Array.isArray(tasks) ? tasks : [];
+    if (this.downloadSubscribers.size === 0) return;
+    const payload = `data: ${JSON.stringify({ tasks: this.downloadTasksSnapshot })}\n\n`;
+    this.downloadSubscribers.forEach((res) => {
+      try {
+        res.write(payload);
+      } catch {
+        this.downloadSubscribers.delete(res);
+      }
+    });
   }
 
   public releaseStreams(targetPath: string): number {
@@ -254,7 +280,16 @@ export class LanServer {
           this.sseSubscribers.delete(taskId);
         }
       },
-      broadcastTaskEvent: (taskId, event) => this.broadcastTaskEvent(taskId, event)
+      broadcastTaskEvent: (taskId, event) => this.broadcastTaskEvent(taskId, event),
+      getDownloadTasksSnapshot: () => this.downloadTasksSnapshot,
+      addDownloadSubscriber: (res) => this.downloadSubscribers.add(res),
+      removeDownloadSubscriber: (res) => this.downloadSubscribers.delete(res),
+      dispatchDownloadCommand: async (cmd) => {
+        if (!this.onDownloadCommandCallback) {
+          return { success: false, error: '桌面端下载引擎未就绪' };
+        }
+        return await this.onDownloadCommandCallback(cmd);
+      }
     };
   }
 
@@ -271,10 +306,42 @@ export class LanServer {
         return res.end();
       }
 
-      // Root Web page
+      // Root Web page: 按设备标识与 Cookie 偏好 302 分流至 /desktop 或 /m
       if (pathname === '/' || pathname === '/index.html') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(getLanWebHtml());
+        const targetView = detectLanDeviceView(req.headers);
+        const targetPath = targetView === 'mobile' ? '/m' : '/desktop';
+        const suffix = urlObj.search || '';
+        res.writeHead(302, {
+          Location: `${targetPath}${suffix}`,
+          'Cache-Control': 'no-store'
+        });
+        return res.end();
+      }
+
+      // Desktop Web Entry
+      if (pathname === '/desktop' || pathname === '/desktop/') {
+        const headers: Record<string, string> = {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store'
+        };
+        if (urlObj.searchParams.get('prefer') === '1') {
+          headers['Set-Cookie'] = `${LAN_VIEW_COOKIE_NAME}=desktop; Path=/; Max-Age=2592000; SameSite=Lax`;
+        }
+        res.writeHead(200, headers);
+        return res.end(getLanDesktopHtml());
+      }
+
+      // Mobile Web Entry
+      if (pathname === '/m' || pathname === '/m/') {
+        const headers: Record<string, string> = {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store'
+        };
+        if (urlObj.searchParams.get('prefer') === '1') {
+          headers['Set-Cookie'] = `${LAN_VIEW_COOKIE_NAME}=mobile; Path=/; Max-Age=2592000; SameSite=Lax`;
+        }
+        res.writeHead(200, headers);
+        return res.end(getLanMobileHtml());
       }
 
       // Static assets: App Icon / Favicon
@@ -318,6 +385,8 @@ export class LanServer {
       }
 
       if (await handleStreamRoutes(req, res, urlObj, this.routeContext)) return;
+      if (await handleUploadRoutes(req, res, urlObj, this.routeContext)) return;
+      if (await handleRemoteRoutes(req, res, urlObj, this.routeContext)) return;
       if (await handleFsRoutes(req, res, urlObj, this.routeContext)) return;
       if (await handleVideoRoutes(req, res, urlObj, this.routeContext)) return;
 

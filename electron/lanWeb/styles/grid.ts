@@ -187,15 +187,6 @@ export const lanWebGridStyles = `    /* File Grid Layout - 1:1 with LocalWorkspa
         -webkit-line-clamp: 3;
         max-height: 4.1em;
       }
-      .video-edit-modal-content {
-        height: 92vh;
-        max-height: 94vh;
-        border-radius: 10px;
-      }
-      .trimmer-controls {
-        padding: 12px 14px;
-        gap: 10px;
-      }
     }
 
     .card-size {

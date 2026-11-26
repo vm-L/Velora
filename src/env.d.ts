@@ -49,6 +49,28 @@ interface Window {
     createLocalFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
     deleteLocalPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
     scanLocalVideos: (targetPaths: string[]) => Promise<{ success: boolean; videos: Array<{ name: string; path: string; size: number }>; error?: string }>
+    auditHighBitrateVideos?: (params: {
+      targetPaths: string[];
+      minBitrateKbps: number;
+      targetBitrateKbps: number;
+      minSizeMB?: number;
+      maxFiles?: number;
+    }) => Promise<{
+      success: boolean;
+      totalScanned: number;
+      candidates: Array<{
+        name: string;
+        path: string;
+        size: number;
+        duration: number;
+        width: number;
+        height: number;
+        bitrateKbps: number;
+        estimatedSavingsBytes: number;
+      }>;
+      totalEstimatedSavingsBytes: number;
+      error?: string;
+    }>
     silentParseHtml: (targetUrl: string, scripts?: string[], evalExprs?: string[]) => Promise<{ success: boolean; html?: string; evaluatedVars?: Record<string, any>; error?: string }>
     setMediaReferer: (mediaUrl: string, pageUrl: string) => Promise<void>
     createMediaClient: (config: { clientId: string, referer: string, origin?: string }) => Promise<void>
@@ -61,6 +83,9 @@ interface Window {
     getLanShareStatus: () => Promise<{ running: boolean; port: number; ip: string; url: string; hasPassword: boolean; allowEdit: boolean }>
     restartLanServer: () => Promise<{ success: boolean; port?: number; error?: string; running?: boolean }>
     stopLanServer: () => Promise<{ success: boolean }>
+    syncLanDownloadTasks?: (tasks: any[]) => void
+    onLanDownloadCommand?: (callback: (payload: { reqId: string; command: any }) => void) => () => void
+    replyLanDownloadCommand?: (payload: { reqId: string; result: { success: boolean; count?: number; error?: string } }) => void
     notifyFirstScreenReady: () => void
     log: (level: 'info' | 'warn' | 'error' | 'perf', scope: string, message: string) => void
     editVideoSegments: (params: { taskId: string, sourcePath: string, segments: Array<{ start: number, end: number }>, outputPath?: string, mode: 'replace' | 'saveAs' }) => Promise<{ success: boolean, outputPath?: string, error?: string }>
@@ -73,8 +98,9 @@ interface Window {
     offVideoMergeProgress: (taskId: string) => void
     showSaveDialog: (options: { defaultPath?: string, title?: string, filters?: Array<{ name: string, extensions: string[] }> }) => Promise<{ canceled: boolean, filePath?: string }>
     getVideoQueueState: () => Promise<{ activeTask: any; queue: any[]; totalCount: number }>
-    enqueueVideoTask: (params: { id?: string; type: 'cut' | 'merge' | 'compress'; title: string; payload: any; extra?: any }) => Promise<string>
+    enqueueVideoTask: (params: { id?: string; type: 'cut' | 'merge' | 'compress' | 'extract-audio' | 'gif'; title: string; payload: any; extra?: any }) => Promise<string>
     cancelVideoTask: (taskId: string) => Promise<boolean>
+    saveVideoScreenshot?: (params: { dataUrl: string; sourcePath?: string; timestampSec?: number; copyToClipboard?: boolean }) => Promise<{ success: boolean; savedPath?: string; copied?: boolean; error?: string }>
     onVideoQueueStateChanged: (callback: (state: { activeTask: any; queue: any[]; totalCount: number }) => void) => () => void
     onVideoTaskFinished: (callback: (data: { task: any; success: boolean; outputPath?: string }) => void) => () => void
     onFileSystemChanged: (callback: (data: {
@@ -101,6 +127,11 @@ interface Window {
     getPanDownloadUrls?: (params: { type: string; fids: string[] }) => Promise<{ success: boolean; urls?: Record<string, string>; links?: Record<string, { fid: string; url: string; size?: number; filename?: string; headers: Record<string, string> }>; error?: string }>
     getPanShareDownloadUrls?: (params: { type: string; items: Array<{ fid: string; fidToken?: string; pwdId?: string; stoken?: string; extra?: Record<string, any> }> }) => Promise<{ success: boolean; urls?: Record<string, string>; links?: Record<string, { fid: string; url: string; size?: number; filename?: string; headers: Record<string, string>; cleanupDirFid?: string }>; error?: string }>
     getPanPreviewUrl?: (params: { type: string; fid: string; filename?: string }) => Promise<{ success: boolean; previewUrl?: string; error?: string }>
+    getPanSharePreviewUrl?: (params: {
+      type: string;
+      item: { fid: string; fidToken?: string; pwdId?: string; stoken?: string; extra?: Record<string, any> };
+      filename?: string;
+    }) => Promise<{ success: boolean; previewUrl?: string; cleanupDirFid?: string; filename?: string; error?: string }>
     cleanupPanTempDir?: (params: { type: string; cleanupDirFid: string }) => Promise<{ success: boolean }>
     deletePanFiles?: (params: { type: string; fids: string[] }) => Promise<{ success: boolean; error?: string }>
     refreshPanQuota?: (type: string) => Promise<{ success: boolean; quotaText?: string; used?: number; total?: number; error?: string }>

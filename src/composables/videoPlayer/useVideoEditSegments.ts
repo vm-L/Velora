@@ -1,5 +1,6 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
 import { useVideoEditQueue } from '@/composables/useVideoEditQueue';
+import { useMessage } from '@/composables/useMessage';
 import type { EditSegment } from '@/composables/videoPlayer/types';
 
 export interface UseVideoEditSegmentsOptions {
@@ -16,12 +17,12 @@ export interface UseVideoEditSegmentsOptions {
  */
 export function useVideoEditSegments(options: UseVideoEditSegmentsOptions) {
   const { videoRef, currentTime, duration, localDiskPath, videoTitle, releaseVideoMedia } = options;
-  const { enqueueTask } = useVideoEditQueue();
+  const { enqueueTask, enqueueGifTask } = useVideoEditQueue();
+  const { showMessage } = useMessage();
 
   const editSegments = ref<EditSegment[]>([]);
   const activeSegmentIndex = ref(0);
   const isSegmentPlaying = ref(false);
-  const showOverwriteConfirm = ref(false);
 
   const totalEditedDuration = computed(() => {
     return editSegments.value.reduce((acc, s) => acc + Math.max(0, s.end - s.start), 0);
@@ -133,6 +134,35 @@ export function useVideoEditSegments(options: UseVideoEditSegmentsOptions) {
     }
   };
 
+  const moveSegment = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (idx < 0 || idx >= editSegments.value.length || target < 0 || target >= editSegments.value.length) return;
+    const [item] = editSegments.value.splice(idx, 1);
+    editSegments.value.splice(target, 0, item);
+    if (activeSegmentIndex.value === idx) {
+      activeSegmentIndex.value = target;
+    } else if (activeSegmentIndex.value === target) {
+      activeSegmentIndex.value = idx;
+    }
+  };
+
+  const updateSegmentTime = (idx: number, field: 'start' | 'end', sec: number): boolean => {
+    const seg = editSegments.value[idx];
+    if (!seg || isNaN(sec) || sec < 0) return false;
+    const maxDur = duration.value > 0 ? duration.value : (videoRef.value?.duration || 0);
+    const clamped = maxDur > 0 ? Math.min(maxDur, sec) : sec;
+    const rounded = Number(clamped.toFixed(2));
+    if (field === 'start') {
+      if (rounded >= seg.end - 0.1) return false;
+      seg.start = rounded;
+      return true;
+    } else {
+      if (rounded <= seg.start + 0.1) return false;
+      seg.end = rounded;
+      return true;
+    }
+  };
+
   const togglePreviewSegment = (idx: number) => {
     if (isSegmentPlaying.value && activeSegmentIndex.value === idx) {
       isSegmentPlaying.value = false;
@@ -192,34 +222,42 @@ export function useVideoEditSegments(options: UseVideoEditSegmentsOptions) {
     });
   };
 
-  const promptConfirmOverwrite = () => {
-    showOverwriteConfirm.value = true;
-  };
-
-  const executeOverwriteSave = () => {
-    showOverwriteConfirm.value = false;
-    startExport('replace');
-  };
-
-  const handleSaveAs = async () => {
+  const handleExportGif = async () => {
     const disk = localDiskPath.value;
     if (!disk || !window.electronAPI?.showSaveDialog) return;
 
-    const ext = disk.split('.').pop() || 'mp4';
+    const seg = editSegments.value[activeSegmentIndex.value];
+    if (!seg || seg.end <= seg.start + 0.1) {
+      showMessage('请先标记有效的剪辑选段', 'warning');
+      return;
+    }
+
+    const clipDur = seg.end - seg.start;
+    if (clipDur > 60) {
+      showMessage(`单段 GIF 时长不能超过 60 秒（当前 ${clipDur.toFixed(1)} 秒），请缩短选段`, 'warning');
+      return;
+    }
+
     const baseName = disk.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^/.]+$/, '') || 'video';
-    const defaultFileName = `${baseName}_edited.${ext}`;
+    const defaultFileName = `${baseName}_clip.gif`;
 
     const res = await window.electronAPI.showSaveDialog({
       defaultPath: defaultFileName,
-      title: '另存剪辑视频为',
+      title: '导出选中片段为 GIF',
       filters: [
-        { name: '视频文件 (*.' + ext + ')', extensions: [ext] },
+        { name: 'GIF 动图 (*.gif)', extensions: ['gif'] },
         { name: '所有文件', extensions: ['*'] }
       ]
     });
 
     if (!res.canceled && res.filePath) {
-      startExport('saveAs', res.filePath);
+      await enqueueGifTask({
+        sourcePath: disk,
+        start: seg.start,
+        end: seg.end,
+        outputPath: res.filePath,
+        title: `导出 GIF: ${res.filePath.split(/[/\\]/).pop() || defaultFileName}`
+      });
     }
   };
 
@@ -228,7 +266,6 @@ export function useVideoEditSegments(options: UseVideoEditSegmentsOptions) {
     activeSegmentIndex,
     isSegmentPlaying,
     totalEditedDuration,
-    showOverwriteConfirm,
     initSegmentsIfEmpty,
     syncInitialSegmentDuration,
     resetEditSegments,
@@ -239,13 +276,14 @@ export function useVideoEditSegments(options: UseVideoEditSegmentsOptions) {
     setCurrentAsEnd,
     addSegment,
     removeSegment,
+    moveSegment,
+    updateSegmentTime,
     togglePreviewSegment,
     seekToSegmentStart,
     seekToSegmentEnd,
     selectPrevSegment,
     selectNextSegment,
-    promptConfirmOverwrite,
-    executeOverwriteSave,
-    handleSaveAs
+    startExport,
+    handleExportGif
   };
 }

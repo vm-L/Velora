@@ -70,6 +70,9 @@
           <FileTree
             :files="resolvedFiles"
             v-model="selectedIndices"
+            :previewable="true"
+            :preview-loading-index="previewLoadingIndex"
+            @preview="handlePreviewFile"
           />
 
           <div class="file-tree-summary">
@@ -128,9 +131,25 @@
       />
     </div>
   </div>
+
+  <!-- 分享音视频免下载在线预览播放器 -->
+  <VideoPlayerDialog
+    v-if="previewVideoUrl"
+    :url="previewVideoUrl"
+    :pageUrl="previewPageUrl"
+    :hideDownload="true"
+    @close="closeMediaPreview"
+  />
+  <AudioPlayerDialog
+    v-if="previewAudioUrl"
+    :url="previewAudioUrl"
+    :pageUrl="previewPageUrl"
+    @close="closeMediaPreview"
+  />
 </template>
 
 <script setup lang="ts">
+import { defineAsyncComponent } from 'vue';
 import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
 import VIcon from '@/components/base/VIcon.vue';
@@ -138,6 +157,9 @@ import FileTree from '@/components/features/FileTree.vue';
 import PanFolderPickerDialog from '@/components/features/PanFolderPickerDialog.vue';
 import { formatBytes } from '@/composables/pan/types';
 import { usePanShareParse } from '@/composables/pan/usePanShareParse';
+
+const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/features/VideoPlayerDialog.vue'));
+const AudioPlayerDialog = defineAsyncComponent(() => import('@/components/features/AudioPlayerDialog.vue'));
 
 const props = defineProps<{
   visible: boolean;
@@ -169,6 +191,10 @@ const {
   selectedTotalSize,
   isSubmitDisabled,
   isSaveDisabled,
+  previewVideoUrl,
+  previewAudioUrl,
+  previewLoadingIndex,
+  previewPageUrl,
   onUrlPaste,
   onUrlInput,
   onPasswordInput,
@@ -181,7 +207,9 @@ const {
   invertSelect,
   handleOpenSavePicker,
   handleConfirmSaveToDrive,
-  handleSubmit
+  handleSubmit,
+  handlePreviewFile,
+  closeMediaPreview
 } = usePanShareParse({
   visible: () => props.visible,
   initialUrl: () => props.initialUrl,

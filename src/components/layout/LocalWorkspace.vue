@@ -86,6 +86,11 @@
         </div>
 
         <!-- Actions -->
+        <v-button variant="secondary" size="small" @click="showVideoSlimModal = true" title="扫描高码率视频并批量压缩">
+          <VIcon name="compress" :size="14" />
+          视频压缩
+        </v-button>
+
         <v-button variant="secondary" size="small" @click="showNewFolderModal = true" title="新建文件夹">
           <VIcon name="plus" :size="14" />
           新建文件夹
@@ -298,7 +303,15 @@
               <span>移动</span>
             </div>
 
-            <!-- Video / Directory Compress Option -->
+            <!-- Video / Directory Compress & Edit Options -->
+            <div
+              v-if="!contextMenu.targetItem.isDirectory && getFileCategory(contextMenu.targetItem) === 'video'"
+              class="menu-action-item"
+              @click="openVideoEditModal(contextMenu.targetItem)"
+            >
+              <VIcon name="scissors" :size="14" />
+              <span>视频剪辑</span>
+            </div>
             <div
               v-if="contextMenu.targetItem.isDirectory"
               class="menu-action-item"
@@ -314,6 +327,14 @@
             >
               <VIcon name="compress" :size="14" />
               <span>压缩视频</span>
+            </div>
+            <div
+              v-if="!contextMenu.targetItem.isDirectory && getFileCategory(contextMenu.targetItem) === 'video'"
+              class="menu-action-item"
+              @click="openExtractAudioModal(contextMenu.targetItem)"
+            >
+              <VIcon name="music" :size="14" />
+              <span>提取音频</span>
             </div>
 
             <div class="menu-divider"></div>
@@ -387,6 +408,36 @@
       </div>
     </Teleport>
 
+    <!-- Extract Audio Modal -->
+    <Teleport to="body">
+      <div v-if="extractAudioModal.visible" class="modal-overlay" v-overlay-close="() => extractAudioModal.visible = false">
+        <div class="modal-content" style="max-width: 420px; width: 90vw;">
+          <div class="modal-header">
+            <h3>提取音频</h3>
+            <v-button variant="icon" class="modal-close-btn" @click="extractAudioModal.visible = false">
+              <VIcon name="close" :size="18" />
+            </v-button>
+          </div>
+          <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="font-size: 13px; color: var(--text-secondary); word-break: break-all;">
+              源文件：<strong style="color: var(--text-primary);">{{ extractAudioModal.item?.name }}</strong>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-size: 12.5px; color: var(--text-secondary);">输出格式</label>
+              <VSwitch v-model="extractAudioModal.format" :options="extractAudioFormatOptions" />
+            </div>
+            <div style="font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
+              {{ extractAudioModal.format === 'copy' ? '优先无损直出原音轨（通常为 M4A/AAC），耗时极短且零画质/音质损失。' : '转换为通用 MP3 格式，兼容全部播放器与车载设备。' }}
+            </div>
+          </div>
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border-light);">
+            <v-button variant="secondary" @click="extractAudioModal.visible = false">取消</v-button>
+            <v-button variant="primary" @click="handleConfirmExtractAudio">开始提取</v-button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Move File Dialog -->
     <MoveLocalFileDialog
       v-model:visible="moveDialog.visible"
@@ -400,8 +451,15 @@
       v-if="activeVideoUrl"
       :url="activeVideoUrl"
       :hideDownload="true"
-      @edit-complete="refreshDirectorySilently"
       @close="activeVideoUrl = null; refreshDirectorySilently()"
+    />
+
+    <!-- Standalone Video Edit Workbench (D2) -->
+    <VideoEditDialog
+      v-model:visible="videoEditModal.visible"
+      :source-path="videoEditModal.sourcePath"
+      :title="videoEditModal.title"
+      @edit-complete="refreshDirectorySilently"
     />
 
     <!-- Audio Preview Modal -->
@@ -443,22 +501,33 @@
       :current-directory="currentPath"
       @success="handleMergeSuccess"
     />
+
+    <!-- High Bitrate Video Slimming Dialog -->
+    <VideoSlimDialog
+      v-model:visible="showVideoSlimModal"
+      :current-path="currentPath"
+      @confirm="handleConfirmBatchCompress"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import VButton from '@/components/base/VButton.vue';
 import VInput from '@/components/base/VInput.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import MoveLocalFileDialog from '@/components/features/MoveLocalFileDialog.vue';
 import VideoPlayerDialog from '@/components/features/VideoPlayerDialog.vue';
+import VideoEditDialog from '@/components/features/VideoEditDialog.vue';
 import AudioPlayerDialog from '@/components/features/AudioPlayerDialog.vue';
 import ImagePreviewDialog from '@/components/features/ImagePreviewDialog.vue';
 import CompressVideoDialog from '@/components/features/CompressVideoDialog.vue';
 import BatchCompressVideoDialog from '@/components/features/BatchCompressVideoDialog.vue';
 import MergeVideoDialog from '@/components/features/MergeVideoDialog.vue';
+import VideoSlimDialog from '@/components/features/VideoSlimDialog.vue';
+import VSwitch from '@/components/base/VSwitch.vue';
+import { useVideoEditQueue } from '@/composables/useVideoEditQueue';
 import { formatBytes } from '@/utils/format';
 import {
   formatTime,
@@ -480,6 +549,59 @@ const props = defineProps<{
 }>();
 
 const route = useRoute();
+const { enqueueExtractAudioTask } = useVideoEditQueue();
+const showVideoSlimModal = ref(false);
+
+const extractAudioFormatOptions = [
+  { label: '原音轨无损', value: 'copy' },
+  { label: 'MP3 通用', value: 'mp3' }
+];
+
+const extractAudioModal = ref<{
+  visible: boolean;
+  item: LocalFileItem | null;
+  format: 'copy' | 'mp3';
+}>({
+  visible: false,
+  item: null,
+  format: 'copy'
+});
+
+const openExtractAudioModal = (item: LocalFileItem) => {
+  closeContextMenu();
+  extractAudioModal.value = {
+    visible: true,
+    item,
+    format: 'copy'
+  };
+};
+
+const videoEditModal = ref<{ visible: boolean; sourcePath: string | null; title: string }>({
+  visible: false,
+  sourcePath: null,
+  title: ''
+});
+
+const openVideoEditModal = (item: LocalFileItem) => {
+  closeContextMenu();
+  videoEditModal.value = {
+    visible: true,
+    sourcePath: item.path,
+    title: item.name
+  };
+};
+
+const handleConfirmExtractAudio = async () => {
+  const target = extractAudioModal.value.item;
+  if (!target) return;
+  const format = extractAudioModal.value.format;
+  extractAudioModal.value.visible = false;
+  await enqueueExtractAudioTask({
+    sourcePath: target.path,
+    format,
+    title: `提取音频: ${target.name}`
+  });
+};
 
 let clearSelectionImpl = () => {};
 

@@ -100,6 +100,13 @@
           </template>
         </SnifferDropdown>
 
+        <PanSnifferDropdown
+          tooltip="网盘嗅探"
+          :items="activeTab?.sniffedPanLinks || []"
+          @clear="onClearSniffedPanLinks"
+          @parse="onParseSniffedPanLink"
+        />
+
         <div class="func-divider"></div>
 
         <v-button variant="icon" class="func-btn tooltip-left" v-tooltip="'开发者工具'" @click="onDevTools">
@@ -274,6 +281,10 @@
         <VIcon name="magic" size="14" />
         <span>{{ isContextMenuTargetLink ? '解析链接' : '解析页面' }}</span>
       </div>
+      <div v-if="contextMenuPanText" class="menu-item" @click="triggerParsePanLink">
+        <VIcon name="cloud-download" size="14" />
+        <span>解析网盘链接</span>
+      </div>
     </div>
   </div>
 </template>
@@ -297,7 +308,10 @@ import { useBrowserWebviewBridge } from '@/composables/browser/useBrowserWebview
 import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import SnifferDropdown from '@/components/features/SnifferDropdown.vue';
+import PanSnifferDropdown from '@/components/features/PanSnifferDropdown.vue';
 import WaterfallDropdown from '@/components/features/WaterfallDropdown.vue';
+import { extractAllPanShareLinks, type SniffedPanLink } from '@/composables/pan/shareTextParser';
+import { useGlobalPanParseModal } from '@/composables/pan/useGlobalPanParseModal';
 
 const InspectorDialog = defineAsyncComponent(() => import('@/components/features/InspectorDialog.vue'));
 const ScriptInjectorDialog = defineAsyncComponent(() => import('@/components/features/ScriptInjectorDialog.vue'));
@@ -653,24 +667,71 @@ deactivateOtherFeaturesImpl = async (exclude: string) => {
   }
 };
 
+const { openPanParseModal } = useGlobalPanParseModal();
+
+const onClearSniffedPanLinks = () => {
+  if (!activeTab.value) return;
+  updateTab(props.resourceId, activeTab.value.id, { sniffedPanLinks: [] });
+};
+
+const onParseSniffedPanLink = (item: SniffedPanLink) => {
+  openPanParseModal(item.url, item.password);
+};
+
+const scanPanLinksInTab = async (tabId: string) => {
+  const wv = document.getElementById(`webview-${tabId}`) as any;
+  if (!wv || typeof wv.executeJavaScript !== 'function') return;
+  try {
+    const payload = await wv.executeJavaScript(`
+      (function() {
+        try {
+          const anchors = [];
+          const nodes = document.querySelectorAll('a[href]');
+          const limit = Math.min(nodes.length, 300);
+          for (let i = 0; i < limit; i++) {
+            const a = nodes[i];
+            const href = a.href || a.getAttribute('href') || '';
+            if (!href || !/^https?:\\/\\//i.test(href)) continue;
+            const text = (a.innerText || a.textContent || '').trim().slice(0, 100);
+            const parentText = (a.parentElement && (a.parentElement.innerText || a.parentElement.textContent) || '').trim().slice(0, 160);
+            anchors.push({ href, text, context: parentText });
+          }
+          const bodyText = ((document.body && document.body.innerText) || '').slice(0, 120000);
+          return { anchors, bodyText };
+        } catch (err) {
+          return null;
+        }
+      })();
+    `);
+    if (!payload) return;
+    const links = extractAllPanShareLinks(payload.bodyText || '', payload.anchors || []);
+    updateTab(props.resourceId, tabId, { sniffedPanLinks: links });
+  } catch {
+    // 忽略跨域/销毁中的 webview 扫描错误
+  }
+};
+
 const {
   contextMenuVisible,
   contextMenuPos,
   isContextMenuTargetLink,
+  contextMenuPanText,
   contextMenuRef,
   handleWebviewContextMenu,
   hideAllContextMenus,
   handleWindowClick,
   triggerPickImage,
   triggerCopyText,
-  triggerSilentParse
+  triggerSilentParse,
+  triggerParsePanLink
 } = useBrowserContextMenu({
   workspace,
   isPickingElementImage,
   isPickingElementText,
   pickElementImage,
   pickElementText,
-  startSilentParse
+  startSilentParse,
+  onParsePanLink: (rawText) => openPanParseModal(rawText)
 });
 
 const {
@@ -700,7 +761,8 @@ const {
   checkAutoApplyWaterfall,
   onWaterfallTriggerBottom,
   retryWaterfall,
-  destroyWaterfallSession
+  destroyWaterfallSession,
+  scanPanLinksInTab
 });
 
 const onCloseTab = (tabId: string) => {
@@ -731,7 +793,8 @@ const onCloseTab = (tabId: string) => {
       isBlank: true,
       sniffedImages: [],
       sniffedVideos: [],
-      sniffedAudios: []
+      sniffedAudios: [],
+      sniffedPanLinks: []
     });
     addressInputUrl.value = '';
     nextTick(() => {

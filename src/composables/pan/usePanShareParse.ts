@@ -44,8 +44,43 @@ export function usePanShareParse(options: UsePanShareParseOptions) {
   const resolvedFiles = ref<PanFileWithUrl[]>([]);
   const selectedIndices = ref<number[]>([]);
 
+  // 分享文件在线预览与临时转存清理状态
+  const previewVideoUrl = ref<string | null>(null);
+  const previewAudioUrl = ref<string | null>(null);
+  const previewLoadingIndex = ref<number | null>(null);
+  const previewPageUrl = ref<string>('');
+  let previewReqSeq = 0;
+  let activePreviewCleanup: { panType: string; cleanupDirFid: string } | null = null;
+
   let resolveSeq = 0;
   let resolveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const cleanupActivePreviewTempDir = () => {
+    const pending = activePreviewCleanup;
+    activePreviewCleanup = null;
+    if (!pending?.cleanupDirFid || !pending?.panType) return;
+    window.electronAPI?.cleanupPanTempDir?.({
+      type: pending.panType,
+      cleanupDirFid: pending.cleanupDirFid
+    }).then((cleanRes) => {
+      if (cleanRes?.success) {
+        notifyPanDirectoryChanged({
+          panType: pending.panType,
+          dirFids: ['0'],
+          refreshQuota: true
+        });
+      }
+    }).catch(() => {});
+  };
+
+  const closeMediaPreview = () => {
+    ++previewReqSeq;
+    previewVideoUrl.value = null;
+    previewAudioUrl.value = null;
+    previewPageUrl.value = '';
+    previewLoadingIndex.value = null;
+    cleanupActivePreviewTempDir();
+  };
 
   // 自动初始化默认下载目录（默认使用设置中的文件类型下载目录）
   const initDefaultDownloadDir = async () => {
@@ -72,6 +107,7 @@ export function usePanShareParse(options: UsePanShareParseOptions) {
       clearTimeout(resolveDebounceTimer);
       resolveDebounceTimer = null;
     }
+    closeMediaPreview();
   });
 
   const resetState = () => {
@@ -489,6 +525,82 @@ export function usePanShareParse(options: UsePanShareParseOptions) {
     }
   };
 
+  // 全网盘统一支持分享文件在线直连预览（自动处理 /pan-stream 代理与关闭清理临时转存目录）
+  const handlePreviewFile = async (fileIndex: number) => {
+    const file = resolvedFiles.value[fileIndex];
+    if (!file || file.isDirectory) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const isVideo = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'wmv', 'webm', 'ts', 'm4v'].includes(ext);
+    const isAudio = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a'].includes(ext);
+    if (!isVideo && !isAudio) {
+      showMessage('该文件类型暂不支持在线预览', 'info');
+      return;
+    }
+
+    const pt = detectedPanType.value || 'quark';
+    const meta = normalizePanShareFile(file);
+    const reqSeq = ++previewReqSeq;
+
+    // 切换预览前先释放并清理上一个预览可能产生的临时转存目录
+    previewVideoUrl.value = null;
+    previewAudioUrl.value = null;
+    cleanupActivePreviewTempDir();
+    previewLoadingIndex.value = fileIndex;
+
+    try {
+      let streamUrl = '';
+      let cleanupDirFid: string | undefined;
+
+      if (meta.fid && window.electronAPI?.getPanSharePreviewUrl) {
+        const res = await window.electronAPI.getPanSharePreviewUrl({
+          type: pt,
+          item: {
+            fid: meta.fid,
+            fidToken: meta.fidToken,
+            pwdId: meta.pwdId,
+            stoken: meta.stoken,
+            extra: meta.extra
+          },
+          filename: file.name
+        });
+        if (reqSeq !== previewReqSeq) {
+          if (res?.cleanupDirFid) {
+            window.electronAPI?.cleanupPanTempDir?.({ type: pt, cleanupDirFid: res.cleanupDirFid }).catch(() => {});
+          }
+          return;
+        }
+        if (!res?.success || !res.previewUrl) {
+          throw new Error(res?.error || '无法获取在线预览地址');
+        }
+        streamUrl = res.previewUrl;
+        cleanupDirFid = res.cleanupDirFid;
+      } else if (file.downloadUrl) {
+        streamUrl = file.downloadUrl;
+      } else {
+        throw new Error('当前客户端不支持分享在线预览');
+      }
+
+      if (cleanupDirFid) {
+        activePreviewCleanup = { panType: pt, cleanupDirFid };
+      }
+      previewPageUrl.value = getDefaultPanReferer(pt) || '';
+      if (isVideo) {
+        previewVideoUrl.value = streamUrl;
+      } else {
+        previewAudioUrl.value = streamUrl;
+      }
+    } catch (err: any) {
+      if (reqSeq === previewReqSeq) {
+        showMessage(err?.message ? `无法在线预览: ${err.message}` : '无法在线预览该文件', 'error');
+      }
+    } finally {
+      if (reqSeq === previewReqSeq) {
+        previewLoadingIndex.value = null;
+      }
+    }
+  };
+
   return {
     inputUrl,
     inputPassword,
@@ -505,6 +617,10 @@ export function usePanShareParse(options: UsePanShareParseOptions) {
     selectedTotalSize,
     isSubmitDisabled,
     isSaveDisabled,
+    previewVideoUrl,
+    previewAudioUrl,
+    previewLoadingIndex,
+    previewPageUrl,
     onUrlPaste,
     onUrlInput,
     onPasswordInput,
@@ -517,6 +633,8 @@ export function usePanShareParse(options: UsePanShareParseOptions) {
     invertSelect,
     handleOpenSavePicker,
     handleConfirmSaveToDrive,
-    handleSubmit
+    handleSubmit,
+    handlePreviewFile,
+    closeMediaPreview
   };
 }

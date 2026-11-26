@@ -100,7 +100,8 @@ export type IconName =
   | 'clean'
   | 'login'
   | 'logout'
-  | 'skip-forward';
+  | 'skip-forward'
+  | 'camera';
 
 const computedSize = computed(() => props.size ?? 16);
 
@@ -298,12 +299,12 @@ const iconsMap: Record<string, string> = {
     <line x1="5" y1="12" x2="19" y2="12"></line>
   `,
 
-  // 压缩 (极简内缩折线箭头 + 视频播放视窗)
+  // 视频压缩 (视频画幅外框 + 右上向内缩小箭头)
   'compress': `
-    <polyline points="4 9 7 12 4 15"></polyline>
-    <polyline points="20 9 17 12 20 15"></polyline>
-    <rect x="9" y="5" width="6" height="14" rx="1.5"></rect>
-    <polygon points="11 10.5 13.5 12 11 13.5" fill="currentColor"></polygon>
+    <path d="M12 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path>
+    <polygon points="8 10.5 13 13.5 8 16.5" fill="currentColor" stroke="none"></polygon>
+    <polyline points="15 4 15 9 20 9"></polyline>
+    <line x1="21" y1="3" x2="15" y2="9"></line>
   `,
 
   // 提示信息 (Info - 居中信息圆标)
@@ -616,6 +617,12 @@ const iconsMap: Record<string, string> = {
   'skip-forward': `
     <polygon points="5 4 15 12 5 20 5 4"></polygon>
     <line x1="19" y1="5" x2="19" y2="19"></line>
+  `,
+
+  // 截取当前帧
+  'camera': `
+    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
+    <circle cx="12" cy="13" r="3"></circle>
   `
 };
 

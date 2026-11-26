@@ -47,6 +47,19 @@
           {{ node.name }}
         </span>
 
+        <!-- 在线预览按钮（音视频文件） -->
+        <VButton
+          v-if="previewable && isNodePreviewable(node)"
+          variant="icon"
+          class="node-preview-btn"
+          :loading="previewLoadingIndex === node.fileIndex"
+          :disabled="previewLoadingIndex !== null && previewLoadingIndex !== node.fileIndex"
+          @click.stop="onNodePreview(node)"
+          title="在线预览"
+        >
+          <VIcon name="play" :size="13" />
+        </VButton>
+
         <!-- 大小 -->
         <span class="node-size">
           {{ formatBytes(node.size) }}
@@ -58,6 +71,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import VButton from '@/components/base/VButton.vue';
 import VIcon from '@/components/base/VIcon.vue';
 import VCheckbox from '@/components/base/VCheckbox.vue';
 import type { IconName } from '@/components/base/VIcon.vue';
@@ -81,13 +95,19 @@ interface InternalTreeNode {
   fileIndices: number[]; // 包含的所有子文件索引
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   files: RawFileInfo[];
   modelValue: number[];
-}>();
+  previewable?: boolean;
+  previewLoadingIndex?: number | null;
+}>(), {
+  previewable: false,
+  previewLoadingIndex: null
+});
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: number[]): void;
+  (e: 'preview', fileIndex: number): void;
 }>();
 
 const expandedMap = ref<Record<string, boolean>>({});
@@ -213,6 +233,17 @@ const onNodeCheckChange = (node: InternalTreeNode, checked: boolean) => {
   emit('update:modelValue', Array.from(currentSet));
 };
 
+const isNodePreviewable = (node: InternalTreeNode): boolean => {
+  if (node.isDirectory || node.fileIndex === undefined) return false;
+  const ext = node.name.split('.').pop()?.toLowerCase() || '';
+  return ['mp4', 'mkv', 'avi', 'flv', 'mov', 'wmv', 'webm', 'ts', 'm4v', 'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a'].includes(ext);
+};
+
+const onNodePreview = (node: InternalTreeNode) => {
+  if (node.fileIndex === undefined) return;
+  emit('preview', node.fileIndex);
+};
+
 const getNodeIcon = (node: InternalTreeNode): IconName => {
   if (node.isDirectory) return 'folder';
   const ext = node.name.split('.').pop()?.toLowerCase() || '';
@@ -322,5 +353,17 @@ function formatBytes(bytes: number): string {
   margin-left: 12px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.file-tree-node .node-preview-btn {
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.file-tree-node .node-preview-btn:hover {
+  color: var(--color-accent);
 }
 </style>

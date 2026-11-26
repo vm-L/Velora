@@ -1,6 +1,5 @@
-import { BrowserWindow, Tray, screen, ipcMain, app } from 'electron';
+import { BrowserWindow, Tray, screen, ipcMain } from 'electron';
 import path from 'path';
-import { logger } from './logger';
 import { TaskStats } from './downloader';
 
 export interface TrayCallbacks {

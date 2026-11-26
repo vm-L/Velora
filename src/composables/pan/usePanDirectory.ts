@@ -1,7 +1,14 @@
 import { ref, computed, getCurrentInstance, onUnmounted } from 'vue';
 import { useMessage } from '@/composables/useMessage';
 import { usePanAccounts } from '@/composables/usePanAccounts';
-import type { BreadcrumbItem, PanFileItem } from '@/composables/pan/types';
+import {
+  filterAndSortPanFiles,
+  type BreadcrumbItem,
+  type PanFileItem,
+  type PanFileTypeFilter,
+  type PanSortField,
+  type PanSortOrder
+} from '@/composables/pan/types';
 import { onPanDirectoryChanged, shouldRefreshPanDirectory } from '@/composables/pan/usePanRefreshBus';
 
 export interface UsePanDirectoryOptions {
@@ -30,6 +37,9 @@ export function usePanDirectory(options: UsePanDirectoryOptions) {
   const currentFiles = ref<PanFileItem[]>([]);
   const selectedIds = ref<string[]>([]);
   const searchQuery = ref('');
+  const typeFilter = ref<PanFileTypeFilter>('all');
+  const sortBy = ref<PanSortField>('default');
+  const sortOrder = ref<PanSortOrder>('asc');
   const isLoading = ref(false);
   const loadError = ref('');
 
@@ -40,12 +50,27 @@ export function usePanDirectory(options: UsePanDirectoryOptions) {
 
   const isAtRoot = computed(() => breadcrumbs.value.length <= 1);
 
-  // 本地即时过滤列表
-  const filteredFiles = computed(() => {
-    const query = searchQuery.value.trim().toLowerCase();
-    if (!query) return currentFiles.value;
-    return currentFiles.value.filter((f) => f.name.toLowerCase().includes(query));
-  });
+  // 本地即时过滤 + 类型筛选 + 排序
+  const filteredFiles = computed(() =>
+    filterAndSortPanFiles(currentFiles.value, {
+      query: searchQuery.value,
+      typeFilter: typeFilter.value,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value
+    })
+  );
+
+  const toggleSort = (field: Exclude<PanSortField, 'default'>) => {
+    if (sortBy.value !== field) {
+      sortBy.value = field;
+      sortOrder.value = field === 'name' ? 'asc' : 'desc';
+    } else if (sortOrder.value === 'asc') {
+      sortOrder.value = 'desc';
+    } else {
+      sortBy.value = 'default';
+      sortOrder.value = 'asc';
+    }
+  };
 
   // 全选/半选状态
   const isAllSelected = computed(() => {
@@ -189,6 +214,9 @@ export function usePanDirectory(options: UsePanDirectoryOptions) {
   const resetDirectoryState = () => {
     breadcrumbs.value = [{ id: '0', name: '全部文件' }];
     currentFiles.value = [];
+    typeFilter.value = 'all';
+    sortBy.value = 'default';
+    sortOrder.value = 'asc';
     clearSelection();
     searchQuery.value = '';
     liveQuotaText.value = '';
@@ -217,6 +245,9 @@ export function usePanDirectory(options: UsePanDirectoryOptions) {
     currentFiles,
     selectedIds,
     searchQuery,
+    typeFilter,
+    sortBy,
+    sortOrder,
     isLoading,
     loadError,
     currentPdirFid,
@@ -228,6 +259,7 @@ export function usePanDirectory(options: UsePanDirectoryOptions) {
     toggleItemSelect,
     toggleSelectAll,
     clearSelection,
+    toggleSort,
     loadCurrentDirectory,
     handleRelogin,
     navigateUp,

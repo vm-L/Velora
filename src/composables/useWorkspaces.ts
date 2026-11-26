@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import type { SniffedPanLink } from '@/composables/pan/shareTextParser'
 
 export interface Tab {
   id: string
@@ -10,6 +11,7 @@ export interface Tab {
   sniffedImages: { url: string, timestamp: number }[]
   sniffedVideos: { url: string, timestamp: number }[]
   sniffedAudios: { url: string, timestamp: number }[]
+  sniffedPanLinks: SniffedPanLink[]
   isBlank?: boolean
 }
 
@@ -36,7 +38,8 @@ export const useWorkspaces = () => {
           favicon,
           sniffedImages: [],
           sniffedVideos: [],
-          sniffedAudios: []
+          sniffedAudios: [],
+          sniffedPanLinks: []
         }]
       }
     }
@@ -58,7 +61,8 @@ export const useWorkspaces = () => {
       isBlank,
       sniffedImages: [],
       sniffedVideos: [],
-      sniffedAudios: []
+      sniffedAudios: [],
+      sniffedPanLinks: []
     })
     if (activate) {
       ws.activeTabId = tabId

@@ -31,6 +31,12 @@
   <v-notification-bar />
   <SaveMediaContainer />
   <VideoEditQueueWidget />
+  <PanParseDialog
+    :visible="panParseVisible"
+    :initial-url="panParseInitialUrl"
+    @update:visible="(val) => { if (!val) closePanParseModal(); }"
+    @close="closePanParseModal"
+  />
 </template>
 
 <script setup lang="ts">
@@ -47,6 +53,7 @@ const BrowserWorkspace = defineAsyncComponent(() => import('@/components/layout/
 const CMSWorkspace = defineAsyncComponent(() => import('@/components/layout/CMSWorkspace.vue'));
 const LocalWorkspace = defineAsyncComponent(() => import('@/components/layout/LocalWorkspace.vue'));
 const PanWorkspace = defineAsyncComponent(() => import('@/components/layout/PanWorkspace.vue'));
+const PanParseDialog = defineAsyncComponent(() => import('@/components/features/PanParseDialog.vue'));
 import { useSettings } from '@/composables/useSettings';
 import { useDownloads } from '@/composables/useDownloads';
 import { useFileDeduplication } from '@/composables/useFileDeduplication';
@@ -54,6 +61,7 @@ import { useOpenedResources } from '@/composables/useOpenedResources';
 import { useOpenedCMS } from '@/composables/useOpenedCMS';
 import { useOpenedLocal } from '@/composables/useOpenedLocal';
 import { usePanAccounts } from '@/composables/usePanAccounts';
+import { useGlobalPanParseModal } from '@/composables/pan/useGlobalPanParseModal';
 
 const route = useRoute();
 const router = useRouter();
@@ -64,6 +72,7 @@ const { openedResources, openResource } = useOpenedResources();
 const { openedCMS, openCMS, updateLastRoute } = useOpenedCMS();
 const { openedLocal, openLocal } = useOpenedLocal();
 const { panAccounts, loadAccounts: loadPanAccounts } = usePanAccounts();
+const { panParseVisible, panParseInitialUrl, closePanParseModal } = useGlobalPanParseModal();
 const openedPanTypes = ref<string[]>([]);
 const panAccountsReady = ref(false);
 const mountedPanAccounts = computed(() =>

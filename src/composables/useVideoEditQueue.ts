@@ -1,9 +1,9 @@
 import { ref, computed } from 'vue';
-import { useMessage } from './useMessage';
+import { useMessage } from '@/composables/useMessage';
 
 export interface VideoEditTaskItem {
   id: string;
-  type?: 'cut' | 'merge' | 'compress';
+  type?: 'cut' | 'merge' | 'compress' | 'extract-audio' | 'gif';
   title: string;
   sourcePath?: string;
   segments?: Array<{ start: number; end: number }>;
@@ -93,27 +93,15 @@ function initGlobalQueueSync() {
     window.electronAPI.onVideoTaskFinished((data) => {
       const task = data.task || {};
       const rawTitle = task.title || '视频';
-      const cleanTitle = rawTitle.replace(/^(剪辑(\(覆盖\))?|合并|压缩):\s*/, '').trim() || '视频';
+      const cleanTitle = rawTitle.replace(/^(剪辑(\(覆盖\))?|合并|压缩|提取音频|导出\s*GIF):\s*/i, '').trim() || '视频';
 
       if (data.success) {
-        showMessage({
-          text: `${cleanTitle} 处理完成`,
-          type: 'success',
-          duration: 2000
-        });
+        showMessage(`${cleanTitle} 处理完成`, 'success');
       } else if (task.status === 'cancelled') {
-        showMessage({
-          text: `${cleanTitle} 任务已取消`,
-          type: 'info',
-          duration: 2000
-        });
+        showMessage(`${cleanTitle} 任务已取消`, 'info');
       } else {
         const errMsg = task.error || '处理失败';
-        showMessage({
-          text: `${cleanTitle} 处理失败: ${errMsg}`,
-          type: 'error',
-          duration: 3000
-        });
+        showMessage(`${cleanTitle} 处理失败: ${errMsg}`, 'error');
       }
     });
   }
@@ -183,6 +171,89 @@ export function useVideoEditQueue() {
     isModalVisible.value = true;
     isMinimized.value = false;
 
+    return taskId;
+  };
+
+  /**
+   * 将提取音频任务推入主进程全局任务队列
+   */
+  const enqueueExtractAudioTask = async (params: {
+    sourcePath: string;
+    format: 'copy' | 'mp3';
+    outputPath?: string;
+    title?: string;
+  }): Promise<string> => {
+    const taskId = 'task_audio_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const fileName = params.sourcePath.split(/[/\\]/).pop() || '未命名视频';
+    const title = params.title || fileName;
+
+    if (window.electronAPI?.enqueueVideoTask) {
+      await window.electronAPI.enqueueVideoTask({
+        id: taskId,
+        type: 'extract-audio',
+        title,
+        payload: {
+          extractAudioParams: {
+            taskId,
+            sourcePath: params.sourcePath,
+            format: params.format,
+            outputPath: params.outputPath
+          }
+        },
+        extra: {
+          sourcePath: params.sourcePath,
+          format: params.format
+        }
+      });
+    }
+
+    isModalVisible.value = true;
+    isMinimized.value = false;
+    return taskId;
+  };
+
+  /**
+   * 将片段导出 GIF 任务推入主进程全局任务队列
+   */
+  const enqueueGifTask = async (params: {
+    sourcePath: string;
+    start: number;
+    end: number;
+    outputPath?: string;
+    fps?: number;
+    maxWidth?: number;
+    title?: string;
+  }): Promise<string> => {
+    const taskId = 'task_gif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const fileName = params.outputPath
+      ? params.outputPath.split(/[/\\]/).pop() || 'clip.gif'
+      : params.sourcePath.split(/[/\\]/).pop() || '未命名视频';
+    const title = params.title || fileName;
+
+    if (window.electronAPI?.enqueueVideoTask) {
+      await window.electronAPI.enqueueVideoTask({
+        id: taskId,
+        type: 'gif',
+        title,
+        payload: {
+          gifParams: {
+            taskId,
+            sourcePath: params.sourcePath,
+            start: params.start,
+            end: params.end,
+            outputPath: params.outputPath,
+            fps: params.fps,
+            maxWidth: params.maxWidth
+          }
+        },
+        extra: {
+          sourcePath: params.sourcePath
+        }
+      });
+    }
+
+    isModalVisible.value = true;
+    isMinimized.value = false;
     return taskId;
   };
 
@@ -260,6 +331,8 @@ export function useVideoEditQueue() {
     isModalVisible,
     isMinimized,
     enqueueTask,
+    enqueueExtractAudioTask,
+    enqueueGifTask,
     cancelTask,
     cancelCurrentTask,
     removeCompletedTask,

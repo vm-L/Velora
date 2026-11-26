@@ -36,13 +36,25 @@ export interface DownloadTask {
   updatedAt: number;
 }
 
+export interface PlaybackProgressRecord {
+  path: string; // 归一化后的本地视频路径作为主键
+  position: number; // 上次播放秒数
+  duration: number; // 视频总时长秒数
+  updatedAt: number;
+}
+
 export class VeloraDB extends Dexie {
   downloads!: Table<DownloadTask, string>;
+  playbackProgress!: Table<PlaybackProgressRecord, string>;
 
   constructor() {
     super('VeloraDB');
     this.version(1).stores({
       downloads: 'id, status, createdAt' // Primary key and indexed props
+    });
+    this.version(2).stores({
+      downloads: 'id, status, createdAt',
+      playbackProgress: 'path, updatedAt'
     });
   }
 }

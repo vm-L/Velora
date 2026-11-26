@@ -62,6 +62,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createLocalFolder: (folderPath: string) => ipcRenderer.invoke('create-local-folder', folderPath),
   deleteLocalPath: (targetPath: string) => ipcRenderer.invoke('delete-local-path', targetPath),
   scanLocalVideos: (targetPaths: string[]) => ipcRenderer.invoke('scan-local-videos', targetPaths),
+  auditHighBitrateVideos: (params: {
+    targetPaths: string[];
+    minBitrateKbps: number;
+    targetBitrateKbps: number;
+    minSizeMB?: number;
+    maxFiles?: number;
+  }) => ipcRenderer.invoke('audit-high-bitrate-videos', params),
   silentParseHtml: (targetUrl: string, scripts?: string[], evalExprs?: string[]) => ipcRenderer.invoke('silent-parse-html', targetUrl, scripts, evalExprs),
   setMediaReferer: (mediaUrl: string, pageUrl: string) => ipcRenderer.invoke('set-media-referer', mediaUrl, pageUrl),
   createMediaClient: (config: { clientId: string, referer: string, origin?: string }) => ipcRenderer.invoke('create-media-client', config),
@@ -78,6 +85,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLanShareStatus: () => ipcRenderer.invoke('get-lan-share-status'),
   restartLanServer: () => ipcRenderer.invoke('restart-lan-server'),
   stopLanServer: () => ipcRenderer.invoke('stop-lan-server'),
+  syncLanDownloadTasks: (tasks: any[]) => ipcRenderer.send('lan-sync-download-tasks', tasks),
+  onLanDownloadCommand: (callback: (payload: { reqId: string; command: any }) => void) => {
+    const handler = (_event: any, payload: { reqId: string; command: any }) => callback(payload);
+    ipcRenderer.on('lan-download-command', handler);
+    return () => ipcRenderer.removeListener('lan-download-command', handler);
+  },
+  replyLanDownloadCommand: (payload: { reqId: string; result: { success: boolean; count?: number; error?: string } }) =>
+    ipcRenderer.send('lan-download-command-result', payload),
   notifyFirstScreenReady: () => ipcRenderer.send('app-first-screen-ready'),
   log: (level: string, scope: string, message: string) => ipcRenderer.send('log-message', { level, scope, message }),
   editVideoSegments: (params: { taskId: string, sourcePath: string, segments: Array<{ start: number, end: number }>, outputPath?: string, mode: 'replace' | 'saveAs' }) => ipcRenderer.invoke('edit-video-segments', params),
@@ -106,6 +121,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideoQueueState: () => ipcRenderer.invoke('get-video-queue-state'),
   enqueueVideoTask: (params: any) => ipcRenderer.invoke('enqueue-video-task', params),
   cancelVideoTask: (taskId: string) => ipcRenderer.invoke('cancel-video-task', taskId),
+  saveVideoScreenshot: (params: { dataUrl: string; sourcePath?: string; timestampSec?: number; copyToClipboard?: boolean }) =>
+    ipcRenderer.invoke('save-video-screenshot', params),
   onVideoQueueStateChanged: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('video-queue-state-changed', handler);
@@ -175,6 +192,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }) => ipcRenderer.invoke('pan-save-share', params),
   getPanPreviewUrl: (params: { type: string; fid: string; filename?: string }) =>
     ipcRenderer.invoke('pan-get-preview-url', params),
+  getPanSharePreviewUrl: (params: {
+    type: string;
+    item: { fid: string; fidToken?: string; pwdId?: string; stoken?: string; extra?: Record<string, any> };
+    filename?: string;
+  }) => ipcRenderer.invoke('pan-get-share-preview-url', params),
   cleanupPanTempDir: (params: { type: string; cleanupDirFid: string }) =>
     ipcRenderer.invoke('pan-cleanup-temp-dir', params),
   clearSiteCache: (resourceId: string, scopes: Array<'cache' | 'cookies' | 'history'>) =>

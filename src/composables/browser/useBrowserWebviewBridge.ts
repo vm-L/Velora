@@ -129,6 +129,7 @@ export interface UseBrowserWebviewBridgeOptions {
   onWaterfallTriggerBottom: (tabId: string) => Promise<void>;
   retryWaterfall: (tabId: string) => Promise<void>;
   destroyWaterfallSession: (tabId: string) => Promise<void>;
+  scanPanLinksInTab?: (tabId: string) => Promise<void> | void;
 }
 
 /**
@@ -154,7 +155,8 @@ export function useBrowserWebviewBridge(options: UseBrowserWebviewBridgeOptions)
     checkAutoApplyWaterfall,
     onWaterfallTriggerBottom,
     retryWaterfall,
-    destroyWaterfallSession
+    destroyWaterfallSession,
+    scanPanLinksInTab
   } = options;
 
   const { state: settingsState, saveExternalSites, saveCmsResources } = useSettings();
@@ -239,7 +241,7 @@ export function useBrowserWebviewBridge(options: UseBrowserWebviewBridgeOptions)
         }
       }
       if (newUrl && newUrl !== 'about:blank') {
-        updateTab(resourceId(), targetId, { url: newUrl });
+        updateTab(resourceId(), targetId, { url: newUrl, sniffedPanLinks: [] });
       }
     }
     syncAddressBar();
@@ -251,6 +253,7 @@ export function useBrowserWebviewBridge(options: UseBrowserWebviewBridgeOptions)
     checkAutoApplyWaterfall(tabId);
     applyDuplicateMarksToTab(tabId);
     applyVideoQuickDownloadToTab(tabId);
+    scanPanLinksInTab?.(tabId);
   };
 
   const onTitleUpdated = (event: any, tabId: string) => {

@@ -16,6 +16,8 @@ type FileDeduplicationApi = ReturnType<typeof useFileDeduplication>
 export interface DownloadSyncDeps {
   pauseTask: (id: string) => Promise<void>
   resumeTask: (id: string) => Promise<void>
+  deleteTask?: (id: string, deleteFile?: boolean) => Promise<void>
+  addDownloadsBatch?: (items: any[]) => Promise<number>
   recordFile: FileDeduplicationApi['recordFile']
   removeFile: FileDeduplicationApi['removeFile']
 }
@@ -27,7 +29,7 @@ let dirtyFlushTimer: ReturnType<typeof setInterval> | null = null
  * 构建主进程下载进度同步、滑动窗口测速、托盘联动与 Dexie 节流刷写控制器
  */
 export const createDownloadSync = (deps: DownloadSyncDeps) => {
-  const { pauseTask, resumeTask, recordFile, removeFile } = deps
+  const { pauseTask, resumeTask, deleteTask, addDownloadsBatch, recordFile, removeFile } = deps
 
   const initListeners = () => {
     if (isListenersInitialized) {
@@ -280,6 +282,82 @@ export const createDownloadSync = (deps: DownloadSyncDeps) => {
         window.electronAPI.syncTrayPausedState(hasPaused)
       }
     }, { immediate: true })
+
+    // 同步下载任务快照至主进程局域网服务（250ms 节流，支持局域网 SSE 实时查看进度）
+    let lanSyncTimer: ReturnType<typeof setTimeout> | null = null
+    const pushLanDownloadSnapshot = () => {
+      if (!window.electronAPI?.syncLanDownloadTasks) return
+      const snapshot = tasks.value.slice(0, 120).map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        progress: Math.round((t.progress || 0) * 10) / 10,
+        receivedBytes: t.receivedBytes || 0,
+        totalBytes: t.totalBytes || 0,
+        speed: t.speed || 0,
+        speedText: t.speedText,
+        etaSeconds: t.etaSeconds,
+        savePath: t.savePath,
+        errorMsg: t.errorMsg,
+        createdAt: t.createdAt
+      }))
+      window.electronAPI.syncLanDownloadTasks(snapshot)
+    }
+    const scheduleLanDownloadSync = () => {
+      if (lanSyncTimer) return
+      lanSyncTimer = setTimeout(() => {
+        lanSyncTimer = null
+        pushLanDownloadSnapshot()
+      }, 250)
+    }
+
+    watch(
+      () =>
+        tasks.value.map(
+          (t) => `${t.id}:${t.status}:${Math.round((t.progress || 0) * 10)}:${Math.round(t.speed || 0)}:${t.receivedBytes || 0}`
+        ),
+      () => {
+        scheduleLanDownloadSync()
+      },
+      { immediate: true }
+    )
+
+    // 响应局域网远程下载控制指令（投递 / 暂停 / 继续 / 删除）
+    if (window.electronAPI?.onLanDownloadCommand) {
+      window.electronAPI.onLanDownloadCommand(async ({ reqId, command }) => {
+        const reply = (result: { success: boolean; count?: number; error?: string }) => {
+          window.electronAPI?.replyLanDownloadCommand?.({ reqId, result })
+        }
+        try {
+          if (!command || !command.action) {
+            return reply({ success: false, error: '无效的远程指令' })
+          }
+          if (command.action === 'add' && Array.isArray(command.items) && addDownloadsBatch) {
+            const count = await addDownloadsBatch(command.items)
+            pushLanDownloadSnapshot()
+            return reply({ success: true, count })
+          }
+          if (command.action === 'pause' && command.id) {
+            await pauseTask(command.id)
+            pushLanDownloadSnapshot()
+            return reply({ success: true })
+          }
+          if (command.action === 'resume' && command.id) {
+            await resumeTask(command.id)
+            pushLanDownloadSnapshot()
+            return reply({ success: true })
+          }
+          if (command.action === 'delete' && command.id && deleteTask) {
+            await deleteTask(command.id, !!command.deleteFile)
+            pushLanDownloadSnapshot()
+            return reply({ success: true })
+          }
+          return reply({ success: false, error: '不支持的远程操作' })
+        } catch (err: any) {
+          return reply({ success: false, error: err?.message || '远程操作执行失败' })
+        }
+      })
+    }
   }
 
   return { initListeners }
