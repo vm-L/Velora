@@ -40,15 +40,15 @@ export const lanWebWorkspaceStyles = `    /* Main Container */
     }
 
     .resource-tab-item.active {
-      background: var(--color-accent);
+      background: var(--bg-surface);
       border-color: var(--color-accent);
-      color: var(--color-accent-text);
-      box-shadow: var(--shadow-sm);
+      color: var(--color-accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent), var(--shadow-sm);
       font-weight: 600;
     }
 
     .resource-tab-item.active svg {
-      stroke: var(--color-accent-text);
+      stroke: var(--color-accent);
     }
 
     /* Workspace Toolbar */

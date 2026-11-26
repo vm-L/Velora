@@ -85,15 +85,26 @@ async function runTests() {
     assert.ok(desktopHtml.includes('class="lan-desktop-mode"'));
     assert.ok(desktopHtml.includes('desktop-sidebar'));
     assert.ok(desktopHtml.includes('desktop-drop-overlay'));
+    assert.ok(desktopHtml.includes('id="view-mode-btn"'));
+    assert.ok(desktopHtml.includes('id="desktop-context-menu"'));
+    assert.ok(desktopHtml.includes('id="desktop-marquee-box"'));
+    assert.ok(desktopHtml.includes('id="batch-delete-btn"'));
+    assert.ok(desktopHtml.includes('id="remote-dl-filter-tabs"'));
+    assert.ok(desktopHtml.includes('id="image-prev-btn"'));
     assert.ok(desktopHtml.includes('class="video-edit-modal-content desktop-d2-workbench"'));
     assert.ok(desktopHtml.includes('class="trim-shortcuts-popover"'));
     assert.ok(desktopHtml.includes('id="trim-step-prev"'));
     assert.ok(desktopHtml.includes('id="trim-step-next"'));
     assert.ok(desktopHtml.includes('id="trim-modifier-badge"'));
     assert.strictEqual(desktopHtml.includes('id="trim-tier-switch"'), false);
+    assert.strictEqual(desktopHtml.includes('id="mobile-select-bar"'), false);
 
     assert.ok(mobileHtml.includes('class="lan-mobile-mode"'));
     assert.ok(mobileHtml.includes('mobile-bottom-nav'));
+    assert.ok(mobileHtml.includes('id="mobile-select-bar"'));
+    assert.ok(mobileHtml.includes('id="mobile-search-toggle-btn"'));
+    assert.ok(mobileHtml.includes('id="mobile-open-dl-sheet-btn"'));
+    assert.ok(mobileHtml.includes('id="pan-paste-parse-btn"'));
     assert.ok(mobileHtml.includes('class="video-edit-modal-content mobile-s3-workbench"'));
     assert.ok(mobileHtml.includes('id="trim-tier-switch"'));
     assert.ok(mobileHtml.includes('粗略 1/5 m'));
@@ -102,10 +113,12 @@ async function runTests() {
     assert.ok(mobileHtml.includes('id="trim-export-sheet"'));
     assert.strictEqual(mobileHtml.includes('id="trim-move-prev-btn"'), false);
     assert.strictEqual(mobileHtml.includes('id="trim-move-next-btn"'), false);
+    assert.strictEqual(mobileHtml.includes('id="desktop-context-menu"'), false);
+    assert.strictEqual(mobileHtml.includes('id="desktop-marquee-box"'), false);
     assert.strictEqual(mobileHtml.includes('class="video-edit-modal-content desktop-d2-workbench"'), false);
     assert.ok(mobileHtml.includes('.segmented-control.mobile-s3-tier-switch'));
     assert.strictEqual(mobileHtml.includes('step-inner'), false);
-    // UI 回归防退化：无废弃连接状态标签、无远程下载/网盘目录选择框
+    // UI 回归防退化：无废弃连接状态标签、无远程下载/网盘目录选择框、全文档零重复 DOM ID
     assert.strictEqual(desktopHtml.includes('id="network-indicator"'), false);
     assert.strictEqual(mobileHtml.includes('id="network-indicator"'), false);
     assert.strictEqual(desktopHtml.includes('id="dl-save-dir"'), false);
@@ -115,6 +128,14 @@ async function runTests() {
       const m = html.match(/<script>([\s\S]*?)<\/script>/);
       assert.ok(m && m[1], `${label} HTML 应包含内联脚本`);
       new vm.Script(m[1], { filename: `lan-${label}.js` });
+
+      const bodyHtml = html.replace(/<script>[\s\S]*?<\/script>/g, '');
+      const seenIds = new Set();
+      for (const match of bodyHtml.matchAll(/\bid="([^"]+)"/g)) {
+        const domId = match[1];
+        assert.strictEqual(seenIds.has(domId), false, `${label} HTML 存在重复 DOM id: ${domId}`);
+        seenIds.add(domId);
+      }
     }
 
     // 2b. lanWebTrimmerScripts 核心时间码、桌面端修饰键步长与移动端 S3 三档配置 VM 实测
@@ -266,7 +287,359 @@ async function runTests() {
       fn({ target: nonScrollNode, deltaY: 40, cancelable: true, preventDefault: () => { blockedNonScroll = true; } })
     );
     assert.strictEqual(blockedNonScroll, true, '非滚动区域滚轮应阻止背景穿透');
-    console.log('[PASS] 2. lanWeb /desktop(D2) 与 /m(S3) 模板、脚本语法、滚动放行与双端步长校验');
+
+    // 2d. 校验 navigation.ts 历史栈、Hash 解析与浮层逐层关闭（防 history.back 重入）
+    const { lanWebNavigationScripts } = require(
+      bundleToCjs(path.join(rootDir, 'electron/lanWeb/scripts/navigation.ts'), 'lanNav.cjs')
+    );
+    const historyStack = [{ state: null, hash: '' }];
+    let historyBackCalls = 0;
+    let navSandbox;
+    const listenersMap = {};
+    navSandbox = {
+      window: {
+        location: { hash: '#view=files&res=res1&path=%2Fmedia%2FMovies' },
+        history: {
+          get state() {
+            return historyStack[historyStack.length - 1].state;
+          },
+          pushState: (st, _t, url) => {
+            if (url !== undefined) navSandbox.window.location.hash = url;
+            historyStack.push({ state: st, hash: url || '' });
+          },
+          replaceState: (st, _t, url) => {
+            if (url !== undefined) navSandbox.window.location.hash = url;
+            historyStack[historyStack.length - 1] = { state: st, hash: url || '' };
+          },
+          back: () => {
+            historyBackCalls++;
+            if (historyStack.length > 1) {
+              historyStack.pop();
+              const cur = historyStack[historyStack.length - 1];
+              (listenersMap.popstate || []).forEach((fn) => fn({ state: cur.state }));
+            }
+          }
+        },
+        addEventListener: (ev, fn) => {
+          listenersMap[ev] = listenersMap[ev] || [];
+          listenersMap[ev].push(fn);
+        },
+        switchMainView: () => {},
+        selectResource: () => {}
+      },
+      state: { activeMainView: 'files', currentResourceId: 'res1', currentPath: '/media/Movies' },
+      loadDirectory: () => {},
+      console
+    };
+    vm.createContext(navSandbox);
+    vm.runInContext(
+      lanWebNavigationScripts + '\n__navExports = { parseNavHash, pushNavHistory, pushOverlayHistory, closeOverlayViaUi };',
+      navSandbox
+    );
+    const navApi = navSandbox.__navExports;
+    assert.deepStrictEqual(Object.assign({}, navApi.parseNavHash('#view=downloads&res=r1&path=%2Fd%2Fsub')), {
+      view: 'downloads',
+      res: 'r1',
+      path: '/d/sub'
+    });
+    let closedBottom = 0;
+    let closedTop = 0;
+    navApi.pushOverlayHistory('video-modal', () => { closedBottom++; });
+    navApi.pushOverlayHistory('action-modal', () => { closedTop++; });
+    // 通过浏览器 back 先关闭顶层，不会连带关掉下层
+    navSandbox.window.history.back();
+    assert.strictEqual(closedTop, 1);
+    assert.strictEqual(closedBottom, 0);
+    // 通过 UI 按钮关闭底层，应回退 history 且不触发 popstate 二次重入回调
+    navApi.closeOverlayViaUi('video-modal', () => { closedBottom++; });
+    assert.strictEqual(closedBottom, 1);
+    assert.strictEqual(historyBackCalls, 2);
+
+    // 2e. 校验 desktopInteractions 右键菜单策略与 remoteScripts 下载状态筛选
+    const { lanWebDesktopInteractionsScripts } = require(
+      bundleToCjs(path.join(rootDir, 'electron/lanWeb/scripts/desktopInteractions.ts'), 'lanDeskInt.cjs')
+    );
+    const deskSandbox = {
+      window: { addEventListener: () => {}, innerWidth: 1280, innerHeight: 800 },
+      document: {
+        addEventListener: () => {},
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => []
+      },
+      fileGrid: null,
+      state: { activeMainView: 'files', allowEdit: false, selectedPaths: new Set(), items: [], internalDragPaths: [] },
+      getFileCategory: (i) => (i.isDirectory ? 'folder' : 'video'),
+      console
+    };
+    vm.createContext(deskSandbox);
+    vm.runInContext(
+      lanWebDesktopInteractionsScripts + '\n__deskExports = { buildDesktopContextMenuItems };',
+      deskSandbox
+    );
+    const singleReadonlyMenu = deskSandbox.__deskExports.buildDesktopContextMenuItems({
+      type: 'single',
+      allowEdit: false,
+      item: { name: 'a.mp4', isDirectory: false },
+      category: 'video'
+    });
+    assert.ok(singleReadonlyMenu.some((m) => m.label === '下载'));
+    assert.strictEqual(singleReadonlyMenu.some((m) => m.label === '删除'), false);
+
+    const { lanWebRemoteScripts } = require(
+      bundleToCjs(path.join(rootDir, 'electron/lanWeb/shared/remoteScripts.ts'), 'lanRemote.cjs')
+    );
+    const remSandbox = {
+      window: { addEventListener: () => {}, location: { href: '' } },
+      document: { getElementById: () => null, querySelectorAll: () => [], querySelector: () => null },
+      state: { allowEdit: true, remoteDownloads: [] },
+      console
+    };
+    vm.createContext(remSandbox);
+    vm.runInContext(
+      lanWebRemoteScripts + '\n__remExports = { filterRemoteDownloadTasks };',
+      remSandbox
+    );
+    const sampleTasks = [
+      { id: '1', status: 'downloading' },
+      { id: '2', status: 'paused' },
+      { id: '3', status: 'completed' },
+      { id: '4', status: 'error' }
+    ];
+    assert.strictEqual(remSandbox.__remExports.filterRemoteDownloadTasks(sampleTasks, 'all').length, 4);
+    assert.strictEqual(remSandbox.__remExports.filterRemoteDownloadTasks(sampleTasks, 'active').length, 2);
+    assert.strictEqual(remSandbox.__remExports.filterRemoteDownloadTasks(sampleTasks, 'completed').length, 1);
+    assert.strictEqual(remSandbox.__remExports.filterRemoteDownloadTasks(sampleTasks, 'error').length, 1);
+
+    // 2f. 校验双端 Velora 瓷器配色规范、复选框非纯黑、网盘复选框与桌面端无 ⋮ 按钮 / 无重复弹窗
+    for (const [label, html] of [['desktop', desktopHtml], ['mobile', mobileHtml]]) {
+      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+      assert.ok(styleMatch && styleMatch[1], `${label} HTML 应包含内联样式`);
+      const css = styleMatch[1];
+
+      assert.strictEqual(css.includes('#64748b'), false, `${label} 样式不应包含偏离色板的 #64748b`);
+      assert.strictEqual(css.includes('--bg-surface-rgb'), false, `${label} 样式不应包含未定义的 --bg-surface-rgb`);
+      assert.ok(css.includes('.pan-parse-row input[type="checkbox"]:checked'), `${label} 网盘列表复选框应接入瓷器样式`);
+
+      const pickRuleWithBg = (re) => {
+        const blocks = Array.from(css.matchAll(re), (m) => m[1]);
+        assert.ok(blocks.length > 0, `${label} 缺少目标样式规则: ${re}`);
+        const bgBlock = blocks.find((b) => b.includes('background')) || blocks[blocks.length - 1];
+        return bgBlock;
+      };
+
+      const progressRule = pickRuleWithBg(/^[ \t]*\.progress-bar-fill\s*\{([^}]*)\}/gm);
+      assert.strictEqual(progressRule.includes('#3b82f6'), false, `${label} .progress-bar-fill 不应使用偏离色板蓝色渐变`);
+
+      for (const selectorRe of [
+        /^[ \t]*\.file-card\.selected \.card-select-btn\s*\{([^}]*)\}/gm,
+        /^[ \t]*\.resource-tab-item\.active\s*\{([^}]*)\}/gm,
+        /^[ \t]*\.nav-badge-count\s*\{([^}]*)\}/gm,
+        /^[ \t]*\.capsule-badge\s*\{([^}]*)\}/gm
+      ]) {
+        const rule = pickRuleWithBg(selectorRe);
+        assert.strictEqual(
+          /background:\s*var\(--color-accent\)/.test(rule),
+          false,
+          `${label} ${selectorRe} 不应使用纯黑 --color-accent 作为背景填充`
+        );
+      }
+    }
+
+    const desktopCss = desktopHtml.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const desktopCtxMenuMatch = desktopCss.match(/^[ \t]*\.desktop-context-menu\s*\{([^}]*)\}/m);
+    assert.ok(desktopCtxMenuMatch && desktopCtxMenuMatch[1].includes('z-index: 980'), '桌面右键菜单层级应低于模态框(1000)');
+    assert.strictEqual(
+      /^[ \t]*\.desktop-list-row\.selected \.list-check-box[\s\S]*?background:\s*var\(--color-accent\)/m.test(desktopCss),
+      false,
+      '桌面端列表勾选框不应使用纯黑填充'
+    );
+    for (const noDarkBorderRe of [
+      /^[ \t]*\.file-card\.selected\s*\{[^}]*border-color:\s*var\(--color-accent\)/m,
+      /^[ \t]*\.file-card\.selected \.card-select-btn\s*\{[^}]*border-color:\s*var\(--color-accent\)/m,
+      /^[ \t]*\.desktop-list-row\.selected \.list-check-box[\s\S]*?border-color:\s*var\(--color-accent\)/m
+    ]) {
+      assert.strictEqual(noDarkBorderRe.test(desktopCss), false, `桌面端选中态不应使用黑边: ${noDarkBorderRe}`);
+    }
+
+    const mobileCss = mobileHtml.match(/<style>([\s\S]*?)<\/style>/)[1];
+    assert.strictEqual(
+      /^[ \t]*\.mobile-list-row-wrap\.selected \.mobile-row-check\s*\{[^}]*background:\s*var\(--color-accent\)/m.test(mobileCss),
+      false,
+      '移动端列表勾选框不应使用纯黑填充'
+    );
+    for (const noDarkBorderRe of [
+      /^[ \t]*\.mobile-list-row-wrap\.selected\s*\{[^}]*border-color:\s*var\(--color-accent\)/m,
+      /^[ \t]*\.mobile-list-row-wrap\.selected \.mobile-row-check\s*\{[^}]*border-color:\s*var\(--color-accent\)/m
+    ]) {
+      assert.strictEqual(noDarkBorderRe.test(mobileCss), false, `移动端选中态不应使用黑边: ${noDarkBorderRe}`);
+    }
+
+    const { lanWebBrowserScripts } = require(
+      bundleToCjs(path.join(rootDir, 'electron/lanWeb/scripts/browser.ts'), 'lanBrowser.cjs')
+    );
+    const { lanWebFileActionsScripts } = require(
+      bundleToCjs(path.join(rootDir, 'electron/lanWeb/scripts/fileActions.ts'), 'lanFileActions.cjs')
+    );
+    let isDesktopFlag = true;
+    const browserSandbox = {
+      window: { closeDesktopContextMenu: () => {} },
+      document: {
+        body: { classList: { toggle: () => {}, add: () => {}, remove: () => {} } },
+        getElementById: () => null
+      },
+      fileGrid: { innerHTML: '', classList: { toggle: () => {} }, querySelectorAll: () => [] },
+      getFilteredAndSortedItems: () => browserSandbox.state.items.slice(),
+      newFolderBtn: null,
+      actionModalTitle: { innerText: '' },
+      actionModalBody: { innerHTML: '' },
+      actionModalFooter: { innerHTML: '' },
+      actionModal: { style: { display: 'none' } },
+      isLanDesktopMode: () => isDesktopFlag,
+      isLanMobileMode: () => !isDesktopFlag,
+      escapeHtml: (s) => String(s || ''),
+      getFileCategory: (item) => (item && item.ext === 'mp4' ? 'video' : 'image'),
+      state: {
+        allowEdit: true,
+        viewMode: 'grid',
+        sort: 'mtime-desc',
+        isSearching: false,
+        selectedPaths: new Set(),
+        focusedIdx: -1,
+        lastSelectedIdx: -1,
+        multiSelectExplicit: false,
+        items: [
+          { name: 'clip.mp4', path: '/demo/clip.mp4', ext: 'mp4', size: 2048, mtime: Date.now(), isDirectory: false },
+          { name: 'photo.jpg', path: '/demo/photo.jpg', ext: 'jpg', size: 1024, mtime: Date.now(), isDirectory: false }
+        ]
+      },
+      console
+    };
+    vm.createContext(browserSandbox);
+    vm.runInContext(
+      lanWebBrowserScripts +
+        '\n' +
+        lanWebFileActionsScripts +
+        '\n__browserExports = { buildCardHtml, buildGridCardHtml, buildDesktopListRowHtml, renderFileGrid };',
+      browserSandbox
+    );
+
+    isDesktopFlag = true;
+    browserSandbox.state.viewMode = 'grid';
+    browserSandbox.__browserExports.renderFileGrid();
+    const desktopCardHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[0], 0);
+    assert.strictEqual(desktopCardHtml.includes('card-actions-btn'), false, '桌面端网格卡片不应渲染右上角 ⋮ 按钮');
+    assert.strictEqual(desktopCardHtml.includes('openItemActions'), false, '桌面端网格卡片不应绑定 openItemActions');
+    assert.ok(desktopCardHtml.includes('<polyline points="20 6 9 17 4 12"></polyline>'), '桌面端网格卡片应使用圆角矢量勾号 SVG');
+    assert.strictEqual(desktopCardHtml.includes('>✓<'), false, '桌面端网格卡片不应保留原始 ✓ 字符');
+
+    // 桌面端重复点击卡片反选 + 双击第 2 次点击防误反选 + 多选反选
+    browserSandbox.window.handleCardClick(0, { detail: 1 });
+    assert.strictEqual(browserSandbox.state.selectedPaths.has('/demo/clip.mp4'), true);
+    assert.strictEqual(browserSandbox.state.focusedIdx, 0);
+    browserSandbox.window.handleCardClick(0, { detail: 1 });
+    assert.strictEqual(browserSandbox.state.selectedPaths.size, 0, '桌面端重复单击已选中卡片应取消选中');
+    assert.strictEqual(browserSandbox.state.focusedIdx, -1, '取消选中后应清空焦点');
+
+    browserSandbox.window.handleCardClick(0, { detail: 1 });
+    browserSandbox.window.handleCardClick(0, { detail: 2 });
+    assert.strictEqual(browserSandbox.state.selectedPaths.has('/demo/clip.mp4'), true, '双击第 2 次点击不应误触发反选');
+
+    browserSandbox.window.handleCardClick(1, { ctrlKey: true, detail: 1 });
+    assert.strictEqual(browserSandbox.state.selectedPaths.size, 2);
+    browserSandbox.window.handleCardClick(0, { detail: 1 });
+    assert.strictEqual(browserSandbox.state.selectedPaths.has('/demo/clip.mp4'), false, '多选状态单击已选卡片应取消该项选中');
+    assert.strictEqual(browserSandbox.state.selectedPaths.has('/demo/photo.jpg'), true);
+    browserSandbox.state.selectedPaths.clear();
+    browserSandbox.state.focusedIdx = -1;
+
+    browserSandbox.state.viewMode = 'list';
+    const desktopRowHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[0], 0);
+    assert.strictEqual(desktopRowHtml.includes('openItemActions'), false, '桌面端列表行不应渲染 ⋮ 更多弹窗按钮');
+    assert.ok(desktopRowHtml.includes('<polyline points="20 6 9 17 4 12"></polyline>'), '桌面端列表行应使用矢量勾号 SVG');
+    assert.ok(desktopRowHtml.includes('<path d="M2 13h10"></path><path d="m9 16 3-3-3-3"></path>'), '桌面端移动按钮应使用 folder-input 箭头入目录 SVG');
+    assert.strictEqual(desktopRowHtml.includes('>✓<'), false);
+
+    // 移动弹窗与网盘转存目录选择器容器应具备固定 260px 高度，防止加载前后弹窗高度闪烁
+    for (const [label, html] of [['desktop', desktopHtml], ['mobile', mobileHtml]]) {
+      const styleBlock = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+      const dirTreeMatch = styleBlock.match(/^[ \t]*\.directory-tree-container\s*\{([^}]*)\}/m);
+      assert.ok(dirTreeMatch && dirTreeMatch[1].includes('height: 260px'), `${label} .directory-tree-container 应固定 height: 260px`);
+      const panListMatch = styleBlock.match(/^[ \t]*\.pan-folder-picker-list\s*\{([^}]*)\}/m);
+      assert.ok(panListMatch && panListMatch[1].includes('height: 260px'), `${label} .pan-folder-picker-list 应固定 height: 260px`);
+    }
+
+    // 桌面端列表行常用操作：按适用范围从窄到广(左->右)排序，右侧视觉对齐
+    const videoActionOrder = [
+      'openVideoEditModal',
+      'openVideoCompressModal',
+      'downloadLanFile',
+      'openMoveModal',
+      'openRenameModal',
+      'openDeleteModal'
+    ];
+    let prevActPos = -1;
+    for (const fn of videoActionOrder) {
+      const pos = desktopRowHtml.indexOf(fn);
+      assert.ok(pos > prevActPos, `视频行按钮顺序应满足从窄到广右对齐: ${fn}`);
+      prevActPos = pos;
+    }
+
+    const desktopImgRowHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[1], 1);
+    assert.strictEqual(desktopImgRowHtml.includes('openVideoEditModal'), false);
+    assert.strictEqual(desktopImgRowHtml.includes('openVideoCompressModal'), false);
+    const fileActionOrder = ['downloadLanFile', 'openMoveModal', 'openRenameModal', 'openDeleteModal'];
+    prevActPos = -1;
+    for (const fn of fileActionOrder) {
+      const pos = desktopImgRowHtml.indexOf(fn);
+      assert.ok(pos > prevActPos, `普通文件行应右侧对齐包含: ${fn}`);
+      prevActPos = pos;
+    }
+
+    const folderItem = { name: 'Movies', path: '/demo/Movies', ext: '', size: 0, mtime: Date.now(), isDirectory: true };
+    const desktopFolderRowHtml = browserSandbox.__browserExports.buildCardHtml(folderItem, 2);
+    assert.strictEqual(desktopFolderRowHtml.includes('openVideoEditModal'), false);
+    assert.strictEqual(desktopFolderRowHtml.includes('openVideoCompressModal'), false);
+    assert.strictEqual(desktopFolderRowHtml.includes('downloadLanFile'), false);
+    const folderActionOrder = ['openMoveModal', 'openRenameModal', 'openDeleteModal'];
+    prevActPos = -1;
+    for (const fn of folderActionOrder) {
+      const pos = desktopFolderRowHtml.indexOf(fn);
+      assert.ok(pos > prevActPos, `文件夹行应右侧对齐包含: ${fn}`);
+      prevActPos = pos;
+    }
+
+    // 只读模式：仅非目录保留下载按钮，所有编辑/删除操作隐藏
+    browserSandbox.state.allowEdit = false;
+    const roVideoRowHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[0], 0);
+    assert.ok(roVideoRowHtml.includes('downloadLanFile'));
+    for (const fn of ['openVideoEditModal', 'openVideoCompressModal', 'openMoveModal', 'openRenameModal', 'openDeleteModal']) {
+      assert.strictEqual(roVideoRowHtml.includes(fn), false, `只读模式不应显示: ${fn}`);
+    }
+    const roFolderRowHtml = browserSandbox.__browserExports.buildCardHtml(folderItem, 2);
+    assert.strictEqual(roFolderRowHtml.includes('downloadLanFile'), false);
+    assert.strictEqual(roFolderRowHtml.includes('openDeleteModal'), false);
+    browserSandbox.state.allowEdit = true;
+
+    browserSandbox.actionModal.style.display = 'none';
+    browserSandbox.window.openItemActions(encodeURIComponent('/demo/clip.mp4'));
+    assert.strictEqual(browserSandbox.actionModal.style.display, 'none', '桌面端调用 openItemActions 不应打开重复操作弹窗');
+
+    isDesktopFlag = false;
+    browserSandbox.state.viewMode = 'grid';
+    const mobileCardHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[0], 0);
+    assert.ok(mobileCardHtml.includes('card-actions-btn') && mobileCardHtml.includes('openItemActions'));
+    assert.ok(mobileCardHtml.includes('<polyline points="20 6 9 17 4 12"></polyline>'));
+    assert.strictEqual(mobileCardHtml.includes('>✓<'), false);
+    browserSandbox.state.viewMode = 'list';
+    const mobileRowHtml = browserSandbox.__browserExports.buildCardHtml(browserSandbox.state.items[0], 0);
+    assert.ok(mobileRowHtml.includes('mobile-row-more-btn') && mobileRowHtml.includes('openItemActions'));
+    assert.ok(mobileRowHtml.includes('<polyline points="20 6 9 17 4 12"></polyline>'));
+    assert.strictEqual(mobileRowHtml.includes('>✓<'), false);
+    browserSandbox.window.openItemActions(encodeURIComponent('/demo/clip.mp4'));
+    assert.strictEqual(browserSandbox.actionModal.style.display, 'flex', '移动端应继续通过 openItemActions 打开操作面板');
+
+    console.log('[PASS] 2. lanWeb 双端模板(无重复ID)、配色规范、JS语法、导航历史栈、桌面右键与无冗余弹窗、滚动与下载筛选校验');
 
     // 3. 启动真实 LanServer HTTP 实测
     const appDataDir = path.join(tmpDir, 'mock-userdata');

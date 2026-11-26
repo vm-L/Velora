@@ -80,7 +80,7 @@ export const lanDesktopMarkup = `<div id="app">
 
         <div class="desktop-sidebar-divider"></div>
         <div class="desktop-sidebar-label">已挂载资源目录</div>
-        <div id="resource-tabs" class="resource-tabs-wrap" onclick="switchMainView('files')"></div>
+        <div id="resource-tabs" class="resource-tabs-wrap" onclick="if(state.activeMainView!=='files') switchMainView('files')"></div>
       </aside>
 
       <!-- Desktop Main Area -->
@@ -121,6 +121,22 @@ export const lanDesktopMarkup = `<div id="app">
                 <option value="size-desc">按大小 (从大到小)</option>
                 <option value="size-asc">按大小 (从小到大)</option>
               </select>
+              <button id="view-mode-btn" class="v-btn v-btn-icon" onclick="toggleViewMode()" title="切换列表视图">
+                <svg id="view-icon-list" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                <svg id="view-icon-grid" style="display:none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </button>
               <button id="upload-files-btn" class="v-btn v-btn-secondary" style="display:none;" onclick="triggerFileUpload()" title="上传文件到当前目录">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -160,6 +176,12 @@ export const lanDesktopMarkup = `<div id="app">
     <div id="desktop-drop-overlay" class="desktop-drop-overlay">
       <div class="desktop-drop-card">松开鼠标即可上传文件到当前目录</div>
     </div>
+
+    <!-- Desktop Marquee Selection Box -->
+    <div id="desktop-marquee-box" class="desktop-marquee-box" style="display:none;"></div>
+
+    <!-- Desktop Cursor-Following Context Menu -->
+    <div id="desktop-context-menu" class="desktop-context-menu" style="display:none;" onclick="event.stopPropagation()"></div>
 
     ${lanDesktopVideoEditMarkup}
     ${lanWebSharedModalsMarkup}

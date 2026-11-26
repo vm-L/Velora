@@ -812,8 +812,9 @@ export const lanWebMediaToolsStyles = `    /* ==================================
 
     .preset-btn.active {
       border-color: var(--color-accent);
-      background: var(--accent-light);
+      background: var(--bg-surface);
       color: var(--color-accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent), var(--shadow-sm);
       font-weight: 600;
     }
 
@@ -887,7 +888,7 @@ export const lanWebMediaToolsStyles = `    /* ==================================
 
     .progress-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--color-accent) 0%, #3b82f6 100%);
+      background: var(--color-accent);
       width: 0%;
       transition: width 0.25s ease;
       border-radius: 4px;

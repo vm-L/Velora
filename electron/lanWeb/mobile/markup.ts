@@ -54,21 +54,58 @@ export const lanMobileMarkup = `<div id="app">
 
     <main class="mobile-main-content">
       <section class="lan-panel-section is-active" data-panel="files" id="panel-files">
-        <!-- Resource Switcher Pills -->
+        <!-- Resource Switcher Pills (auto-hidden on mobile when <= 1 resource) -->
         <div id="resource-tabs" class="resource-tabs-wrap"></div>
 
-        <!-- Mobile Workspace Toolbar -->
-        <div class="workspace-toolbar">
-          <div class="toolbar-nav-group">
+        <!-- Mobile Compact Single-Row Toolbar + Collapsible Search Drawer -->
+        <div class="workspace-toolbar mobile-compact-toolbar">
+          <div class="mobile-toolbar-row">
             <button id="nav-back-btn" class="v-btn v-btn-icon nav-back-btn" title="返回上一级" disabled onclick="navigateUp()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15 18 9 12 15 6"></polyline>
               </svg>
             </button>
             <div id="breadcrumbs" class="breadcrumb-container"></div>
+            <div class="mobile-toolbar-actions">
+              <button id="mobile-search-toggle-btn" class="v-btn v-btn-icon" type="button" onclick="toggleMobileSearchDrawer()" title="搜索文件">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </button>
+              <button id="view-mode-btn" class="v-btn v-btn-icon" type="button" onclick="toggleViewMode()" title="切换网格视图">
+                <svg id="view-icon-list" style="display:none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                <svg id="view-icon-grid" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </button>
+              <button id="mobile-sort-btn" class="v-btn v-btn-icon" type="button" onclick="openMobileSortSheet()" title="排序方式">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"></path>
+                  <path d="M6 12h12"></path>
+                  <path d="M10 18h4"></path>
+                </svg>
+              </button>
+              <button id="mobile-tools-more-btn" class="v-btn v-btn-icon" type="button" onclick="openMobileToolsSheet()" title="更多操作">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </button>
+            </div>
           </div>
 
-          <div class="toolbar-tools">
+          <div id="mobile-search-drawer" class="mobile-search-drawer">
             <form id="search-form" class="search-wrap" action="javascript:void(0);" onsubmit="return false;">
               <button id="search-btn" class="search-btn" title="点击搜索" type="button">
                 <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -76,7 +113,7 @@ export const lanMobileMarkup = `<div id="app">
                   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
               </button>
-              <input type="search" id="search-input" class="v-input search-input" placeholder="搜索文件" enterkeyhint="search" autocomplete="off" spellcheck="false">
+              <input type="search" id="search-input" class="v-input search-input" placeholder="搜索当前目录文件" enterkeyhint="search" autocomplete="off" spellcheck="false">
               <button id="clear-search-btn" class="clear-search-btn" title="清空搜索" type="button" style="display:none;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -84,7 +121,7 @@ export const lanMobileMarkup = `<div id="app">
                 </svg>
               </button>
             </form>
-            <select id="sort-select" class="sort-select">
+            <select id="sort-select" style="display:none;" aria-hidden="true">
               <option value="mtime-desc">修改时间 ↓</option>
               <option value="mtime-asc">修改时间 ↑</option>
               <option value="name-asc">名称 A-Z</option>
@@ -92,28 +129,6 @@ export const lanMobileMarkup = `<div id="app">
               <option value="size-desc">大小 ↓</option>
               <option value="size-asc">大小 ↑</option>
             </select>
-            <button id="upload-files-btn" class="v-btn v-btn-secondary" style="display:none;" onclick="triggerFileUpload()" title="上传文件">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              <span>上传</span>
-            </button>
-            <button id="new-folder-btn" class="v-btn v-btn-secondary" style="display:none;" title="新建文件夹">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span>新建</span>
-            </button>
-            <button id="refresh-btn" class="v-btn v-btn-icon" title="刷新列表">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-              </svg>
-            </button>
           </div>
         </div>
 
@@ -149,6 +164,16 @@ export const lanMobileMarkup = `<div id="app">
         <span>解析</span>
       </button>
     </nav>
+
+    <!-- Mobile Full-Width Multi-Select Bottom Bar (replaces bottom nav when selecting) -->
+    <div id="mobile-select-bar" class="mobile-select-bar" style="display:none;" aria-label="批量操作">
+      <button id="m-batch-select-all-btn" class="mobile-select-action-btn" type="button" onclick="toggleSelectAll()">全选</button>
+      <button id="m-batch-merge-btn" class="mobile-select-action-btn" type="button" style="display:none;" onclick="openBatchMergeModal()">合并</button>
+      <button id="m-batch-compress-btn" class="mobile-select-action-btn" type="button" style="display:none;" onclick="openBatchCompressModal()">压缩</button>
+      <button id="m-batch-move-btn" class="mobile-select-action-btn" type="button" style="display:none;" onclick="openBatchMoveModal()">移动</button>
+      <button id="m-batch-delete-btn" class="mobile-select-action-btn is-danger" type="button" style="display:none;" onclick="confirmDeleteSelectedItems()">删除</button>
+      <button class="mobile-select-action-btn" type="button" onclick="clearSelection()">取消</button>
+    </div>
 
     ${lanMobileVideoEditMarkup}
     ${lanWebSharedModalsMarkup}

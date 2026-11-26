@@ -1,11 +1,26 @@
-export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('click', function() {
+export const lanWebFileActionsScripts = `    window.triggerCreateNewFolder = function() {
+      if (typeof window.closeDesktopContextMenu === 'function') window.closeDesktopContextMenu();
+      if (!state.allowEdit) {
+        showToast('当前为只读模式，请在桌面端设置开启局域网编辑权限', 3000);
+        return;
+      }
       actionModalTitle.innerText = '新建文件夹';
-      actionModalBody.innerHTML = '<input type="text" id="new-folder-name" class="v-input" placeholder="请输入文件夹名称" style="width:100%;">';
+      actionModalBody.innerHTML = '<input type="text" id="new-folder-name" class="v-input" placeholder="请输入文件夹名称" style="width:100%;" onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();submitNewFolder();}">';
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-primary" onclick="submitNewFolder()">创建</button>';
       actionModal.style.display = 'flex';
-      setTimeout(function() { document.getElementById('new-folder-name').focus(); }, 50);
-    });
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
+      setTimeout(function() {
+        var inp = document.getElementById('new-folder-name');
+        if (inp) inp.focus();
+      }, 50);
+    };
+
+    if (newFolderBtn) {
+      newFolderBtn.addEventListener('click', window.triggerCreateNewFolder);
+    }
 
     window.submitNewFolder = async function() {
       var name = document.getElementById('new-folder-name').value.trim();
@@ -21,42 +36,101 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
           closeActionModal();
           loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
-          showToast(res.error || '创建失败');
+          showToast(res.error || '创建失败', 3000);
         }
       } catch (err) {
-        showToast('创建异常');
+        showToast('创建异常', 3000);
       }
     };
 
     window.openItemActions = function(encodedPath) {
+      if (typeof isLanDesktopMode === 'function' && isLanDesktopMode()) return;
       var itemPath = decodeURIComponent(encodedPath);
       var item = state.items.find(function(i) { return i.path === itemPath; });
       if (!item) return;
 
-      var isVideo = getFileCategory(item) === 'video';
+      var cat = getFileCategory(item);
+      var isVideo = cat === 'video';
+      var isMedia = isVideo || cat === 'audio' || cat === 'image';
 
-      actionModalTitle.innerText = '管理: ' + item.name;
+      actionModalTitle.innerText = item.name;
       var html = '<div style="display:flex; flex-direction:column; gap:8px;">';
 
-      if (isVideo) {
-        html += '<button class="v-btn v-btn-primary" onclick="closeActionModal(); openVideoEditModal(\\'' + encodedPath + '\\')">' +
-          '<span>视频剪辑</span></button>';
-
-        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoCompressModal(\\'' + encodedPath + '\\')">' +
-          '<span>压缩视频</span></button>';
+      if (item.isDirectory) {
+        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); loadDirectory(decodeURIComponent(\\'' + encodedPath + '\\'))">打开文件夹</button>';
+      } else {
+        if (isMedia) {
+          html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openPreviewByPath(\\'' + encodedPath + '\\')">预览</button>';
+        }
+        html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); downloadLanFile(\\'' + encodedPath + '\\')">下载</button>';
       }
 
-      html += '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\')">移动</button>' +
-        '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\')">重命名</button>' +
-        '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\')">删除</button>' +
-        '</div>';
+      if (state.allowEdit) {
+        if (isVideo) {
+          html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoEditModal(\\'' + encodedPath + '\\')">视频剪辑</button>';
+          html += '<button class="v-btn v-btn-secondary" onclick="closeActionModal(); openVideoCompressModal(\\'' + encodedPath + '\\')">压缩视频</button>';
+        }
+        html += '<button class="v-btn v-btn-secondary" onclick="openMoveModal(\\'' + encodedPath + '\\')">移动</button>' +
+          '<button class="v-btn v-btn-secondary" onclick="openRenameModal(\\'' + encodedPath + '\\')">重命名</button>' +
+          '<button class="v-btn v-btn-danger-soft" onclick="openDeleteModal(\\'' + encodedPath + '\\')">删除</button>';
+      }
+
+      html += '</div>';
 
       actionModalBody.innerHTML = html;
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">关闭</button>';
       actionModal.style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
+    };
+
+    window.openPreviewByPath = function(encodedPath) {
+      var itemPath = decodeURIComponent(encodedPath);
+      var idx = currentRenderedItems.findIndex(function(i) { return i.path === itemPath; });
+      if (idx >= 0) {
+        openItemPrimaryAction(idx);
+      }
+    };
+
+    window.confirmDeleteSelectedItems = async function() {
+      var selectedList = Array.from(state.selectedPaths);
+      if (selectedList.length === 0 || !state.allowEdit) return;
+      var ok = await window.showConfirm({
+        title: '确认删除选中的项目',
+        message: '确定要永久删除选中的文件和文件夹吗？此操作不可恢复。',
+        confirmText: '确认',
+        danger: true
+      });
+      if (!ok) return;
+
+      var deletedCount = 0;
+      var failMsg = '';
+      for (var i = 0; i < selectedList.length; i++) {
+        try {
+          var res = await apiFetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetPath: selectedList[i] })
+          });
+          if (res && res.success) deletedCount++;
+          else if (!failMsg && res && res.error) failMsg = res.error;
+        } catch (err) {}
+      }
+
+      window.clearSelection();
+      if (deletedCount === selectedList.length) {
+        showToast('已删除选中的项目');
+      } else if (deletedCount > 0) {
+        showToast('部分项目删除失败', 3000);
+      } else {
+        showToast(failMsg || '删除失败', 3000);
+      }
+      loadDirectory(state.currentPath, { preserveScroll: true });
     };
 
     window.openBatchMoveModal = async function() {
+      if (typeof window.closeDesktopContextMenu === 'function') window.closeDesktopContextMenu();
       var selectedList = Array.from(state.selectedPaths);
       if (selectedList.length === 0) return;
 
@@ -67,7 +141,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
       state.moveSelectedTarget = '';
       state.moveDirList = [];
 
-      actionModalTitle.innerText = '移动 (已选 ' + selectedList.length + ' 项)';
+      actionModalTitle.innerText = '移动选中的项目';
       actionModalBody.innerHTML = '<div style="display:flex; flex-direction:column; gap:12px;">' +
         '<div class="tree-toolbar">' +
         '<span class="selected-target-hint">目标目录: <strong id="move-target-label">未选择</strong></span>' +
@@ -82,10 +156,14 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
         '<button class="v-btn v-btn-primary" id="move-confirm-btn" disabled onclick="submitMove()">确认移动</button>';
 
       actionModal.style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
       await loadMoveDirTree();
     };
 
     window.openMoveModal = async function(encodedPath, name) {
+      if (typeof window.closeDesktopContextMenu === 'function') window.closeDesktopContextMenu();
       var sourcePath = decodeURIComponent(encodedPath);
       var item = state.items.find(function(i) { return i.path === sourcePath; });
       var finalName = name || (item ? item.name : (sourcePath.split(/[\\\\/]/).pop() || ''));
@@ -112,6 +190,9 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
         '<button class="v-btn v-btn-primary" id="move-confirm-btn" disabled onclick="submitMove()">确认移动</button>';
 
       actionModal.style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
       await loadMoveDirTree();
     };
 
@@ -138,7 +219,6 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
         return;
       }
 
-      var currentDir = state.currentPath.replace(/\\\\/g, '/').replace(/\\/+$/, '');
       var html = '';
       for (var i = 0; i < state.moveDirList.length; i++) {
         var item = state.moveDirList[i];
@@ -193,10 +273,10 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
           showToast('子目录创建成功');
           loadMoveDirTree();
         } else {
-          showToast(res.error || '创建失败');
+          showToast(res.error || '创建失败', 3000);
         }
       }).catch(function() {
-        showToast('创建异常');
+        showToast('创建异常', 3000);
       });
     };
 
@@ -221,7 +301,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
       var confirmBtn = document.getElementById('move-confirm-btn');
       if (confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerText = '正在移动...';
+        confirmBtn.innerText = '正在移动';
       }
 
       try {
@@ -233,7 +313,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
 
         if (res.success) {
           if (state.isBatchMove) {
-            showToast('已成功移动 ' + (res.movedCount || state.moveSourcePaths.length) + ' 项');
+            showToast('已成功移动选中的项目');
             clearSelection();
           } else {
             showToast('移动成功');
@@ -241,10 +321,10 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
           closeActionModal();
           loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
-          showToast(res.error || '移动失败');
+          showToast(res.error || '移动失败', 3000);
         }
       } catch (err) {
-        showToast('移动异常');
+        showToast('移动异常', 3000);
       } finally {
         if (confirmBtn) {
           confirmBtn.disabled = false;
@@ -254,16 +334,28 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
     };
 
     window.openRenameModal = function(encodedPath, oldName) {
+      if (typeof window.closeDesktopContextMenu === 'function') window.closeDesktopContextMenu();
       var targetPath = decodeURIComponent(encodedPath);
       var item = state.items.find(function(i) { return i.path === targetPath; });
       var finalName = oldName || (item ? item.name : (targetPath.split(/[\\\\/]/).pop() || ''));
 
       actionModalTitle.innerText = '重命名';
-      actionModalBody.innerHTML = '<input type="text" id="rename-input" class="v-input" value="' + escapeHtml(finalName) + '" style="width:100%;">';
+      actionModalBody.innerHTML = '<input type="text" id="rename-input" class="v-input" value="' + escapeHtml(finalName) + '" style="width:100%;" onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();submitRename(\\'' + encodedPath + '\\');}">';
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-primary" onclick="submitRename(\\'' + encodedPath + '\\')">保存</button>';
       actionModal.style.display = 'flex';
-      setTimeout(function() { document.getElementById('rename-input').focus(); }, 50);
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
+      setTimeout(function() {
+        var inp = document.getElementById('rename-input');
+        if (inp) {
+          inp.focus();
+          var dot = inp.value.lastIndexOf('.');
+          if (dot > 0 && inp.setSelectionRange) inp.setSelectionRange(0, dot);
+          else inp.select();
+        }
+      }, 50);
     };
 
     window.submitRename = async function(encodedPath) {
@@ -275,7 +367,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
       var saveBtn = actionModalFooter.querySelector('.v-btn-primary');
       if (saveBtn) {
         saveBtn.disabled = true;
-        saveBtn.innerText = '正在保存...';
+        saveBtn.innerText = '正在保存';
       }
 
       try {
@@ -289,10 +381,10 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
           closeActionModal();
           loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
-          showToast(res.error || '重命名失败');
+          showToast(res.error || '重命名失败', 3000);
         }
       } catch (err) {
-        showToast('重命名异常');
+        showToast('重命名异常', 3000);
       } finally {
         if (saveBtn) {
           saveBtn.disabled = false;
@@ -302,6 +394,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
     };
 
     window.openDeleteModal = function(encodedPath, isDir, name) {
+      if (typeof window.closeDesktopContextMenu === 'function') window.closeDesktopContextMenu();
       var targetPath = decodeURIComponent(encodedPath);
       var item = state.items.find(function(i) { return i.path === targetPath; });
       var finalName = name || (item ? item.name : (targetPath.split(/[\\\\/]/).pop() || ''));
@@ -312,6 +405,9 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button class="v-btn v-btn-danger-soft" onclick="submitDelete(\\'' + encodedPath + '\\')">确认</button>';
       actionModal.style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
     };
 
     window.submitDelete = async function(encodedPath) {
@@ -319,7 +415,7 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
       var delBtn = actionModalFooter.querySelector('.v-btn-danger-soft');
       if (delBtn) {
         delBtn.disabled = true;
-        delBtn.innerText = '正在删除...';
+        delBtn.innerText = '正在删除';
       }
 
       try {
@@ -333,10 +429,10 @@ export const lanWebFileActionsScripts = `    newFolderBtn.addEventListener('clic
           closeActionModal();
           loadDirectory(state.currentPath, { preserveScroll: true });
         } else {
-          showToast(res.error || '删除失败');
+          showToast(res.error || '删除失败', 3000);
         }
       } catch (err) {
-        showToast('删除异常');
+        showToast('删除异常', 3000);
       } finally {
         if (delBtn) {
           delBtn.disabled = false;

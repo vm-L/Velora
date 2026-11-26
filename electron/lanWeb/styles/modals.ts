@@ -33,8 +33,16 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 12px;
       font-weight: 600;
       font-size: 15px;
+    }
+
+    #action-modal-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .modal-body {
@@ -54,19 +62,50 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
 
     /* Video Player Modal */
     .player-modal-content {
-      max-width: 900px;
+      max-width: 960px;
       width: 100%;
       background: #000000;
       border: 1px solid var(--border-color);
       border-radius: 12px;
       overflow: hidden;
       box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .player-preview-header {
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+      padding: 10px 14px;
+      gap: 10px;
+    }
+
+    .player-preview-title {
+      flex: 1;
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-preview-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
     }
 
     .player-video-wrap {
+      position: relative;
       width: 100%;
       aspect-ratio: 16 / 9;
       background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
     }
 
     .player-video-wrap video {
@@ -75,23 +114,154 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       object-fit: contain;
     }
 
-    /* Image Modal */
-    .image-modal-content {
-      max-width: 90vw;
-      max-height: 90vh;
+    .player-gesture-badge {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(15, 15, 15, 0.78);
+      color: #ffffff;
+      font-size: 12.5px;
+      font-weight: 600;
+      pointer-events: none;
+      z-index: 6;
+      backdrop-filter: blur(6px);
+    }
+
+    /* Image Lightbox Modal */
+    .image-lightbox-overlay {
+      background: rgba(8, 8, 10, 0.9) !important;
+      padding: 0 !important;
+      flex-direction: column;
+    }
+
+    .image-lightbox-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: calc(52px + env(safe-area-inset-top, 0px));
+      padding: env(safe-area-inset-top, 0px) 14px 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.65) 0%, transparent 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 12;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .image-lightbox-overlay.is-chrome-hidden .image-lightbox-topbar {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-10px);
+    }
+
+    .image-lightbox-counter {
+      font-size: 12.5px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      background: rgba(255, 255, 255, 0.14);
+      padding: 3px 9px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .image-lightbox-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0.92;
+    }
+
+    .image-lightbox-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .image-lightbox-btn {
+      color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.1) !important;
+      font-size: 12px;
+    }
+
+    .image-lightbox-btn:hover {
+      background: rgba(255, 255, 255, 0.22) !important;
+    }
+
+    .image-nav-arrow {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 64px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(18, 18, 20, 0.52);
+      color: #ffffff;
+      font-size: 28px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 12;
+      backdrop-filter: blur(8px);
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .image-nav-arrow:hover {
+      background: rgba(18, 18, 20, 0.8);
+    }
+
+    .image-nav-arrow.is-prev {
+      left: 16px;
+    }
+
+    .image-nav-arrow.is-next {
+      right: 16px;
+    }
+
+    .image-modal-content.image-stage-viewport {
+      width: 100vw;
+      height: 100vh;
+      max-width: 100vw;
+      max-height: 100vh;
       background: transparent;
       border: none;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .image-modal-content.image-stage-viewport.is-zoomed {
+      cursor: grab;
+    }
+
+    .image-modal-content.image-stage-viewport.is-zoomed:active {
+      cursor: grabbing;
     }
 
     .image-modal-content img {
-      max-width: 100%;
-      max-height: 85vh;
+      max-width: 92vw;
+      max-height: 86vh;
       object-fit: contain;
-      border-radius: 8px;
+      border-radius: 6px;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+      transform-origin: center center;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+      will-change: transform;
     }
 
     /* Toast Notification Container & Items (Top Staggered) */
@@ -193,7 +363,9 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
     }
 
     .directory-tree-container {
-      max-height: 280px;
+      height: 260px;
+      min-height: 260px;
+      max-height: 260px;
       overflow-y: auto;
       border: 1px solid var(--border-color);
       border-radius: 8px;
@@ -201,6 +373,12 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       padding: 4px 0;
       display: flex;
       flex-direction: column;
+    }
+
+    .directory-tree-container .empty-state {
+      flex: 1;
+      height: 100%;
+      padding: 0 12px;
     }
 
     .tree-node {
@@ -211,6 +389,7 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       cursor: pointer;
       font-size: 13px;
       color: var(--text-primary);
+      flex-shrink: 0;
       transition: background 0.15s ease;
       user-select: none;
     }
@@ -257,6 +436,18 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       z-index: 10;
     }
 
+    .card-select-btn .check-icon-svg {
+      display: block;
+      opacity: 0;
+      transform: scale(0.78);
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .card-select-btn:hover {
+      border-color: var(--text-secondary);
+      background: var(--bg-surface-hover);
+    }
+
     .file-card:hover .card-select-btn,
     .file-card.selected .card-select-btn,
     body.is-selecting .card-select-btn {
@@ -264,14 +455,20 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
     }
 
     .file-card.selected .card-select-btn {
-      background: var(--color-accent);
-      border-color: var(--color-accent);
-      color: var(--color-accent-text);
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .file-card.selected .card-select-btn .check-icon-svg {
+      opacity: 1;
+      transform: scale(1);
     }
 
     .file-card.selected {
-      border-color: var(--color-accent);
-      background: var(--bg-surface-hover);
+      border-color: var(--border-color);
+      background: var(--bg-surface-active);
     }
 
     .multi-select-bar {
@@ -332,7 +529,7 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
       height: 34px;
       max-width: 190px;
       padding: 0 8px 0 10px;
-      background: rgba(var(--bg-surface-rgb, 255, 255, 255), 0.92);
+      background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border-color);
@@ -403,10 +600,11 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
     .capsule-badge {
       font-size: 9px;
       font-weight: 700;
-      padding: 1px 4px;
+      padding: 1px 5px;
       border-radius: 999px;
-      background: var(--color-accent);
-      color: #fff;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--color-accent);
       line-height: 1.2;
       flex-shrink: 0;
     }
@@ -428,8 +626,8 @@ export const lanWebModalStyles = `    /* Modal Dialogs - 1:1 with Velora Modal *
     }
 
     .capsule-cancel-btn:hover, .capsule-cancel-btn:active {
-      background: rgba(239, 68, 68, 0.15);
-      color: #ef4444;
+      background: color-mix(in srgb, var(--color-error) 15%, transparent);
+      color: var(--color-error);
     }
 
     @keyframes capsuleSlideUp {

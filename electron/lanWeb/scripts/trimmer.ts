@@ -316,6 +316,9 @@ export const lanWebTrimmerScripts = `    // ====================================
       renderTrimSegments();
       updateTrimmerPlayButtonUI();
       document.getElementById('video-edit-modal').style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('video-edit-modal', function() { window.closeVideoEditModal(true); });
+      }
     };
 
     var pendingSeekTime = null;
@@ -485,10 +488,10 @@ export const lanWebTrimmerScripts = `    // ====================================
     window.addEventListener('touchend', window.stopSeek);
     window.addEventListener('touchcancel', window.stopSeek);
 
-    window.closeVideoEditModal = function() {
+    function closeVideoEditModalDom() {
       window.stopSeek();
       stopTrimSegmentPreview();
-      window.closeMobileTrimExportSheet();
+      window.closeMobileTrimExportSheet(true);
       pendingSeekTime = null;
       var video = document.getElementById('trimmer-video');
       if (video) {
@@ -500,6 +503,16 @@ export const lanWebTrimmerScripts = `    // ====================================
       }
       var modal = document.getElementById('video-edit-modal');
       if (modal) modal.style.display = 'none';
+    }
+
+    window.closeVideoEditModal = function(fromPopState) {
+      if (fromPopState === true) {
+        closeVideoEditModalDom();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('video-edit-modal', closeVideoEditModalDom);
+      } else {
+        closeVideoEditModalDom();
+      }
     };
 
     window.toggleTrimmerPlay = function() {
@@ -613,12 +626,24 @@ export const lanWebTrimmerScripts = `    // ====================================
       if (sheet) {
         updateTrimmerSummary();
         sheet.style.display = 'flex';
+        if (typeof pushOverlayHistory === 'function') {
+          pushOverlayHistory('trim-export-sheet', function() { window.closeMobileTrimExportSheet(true); });
+        }
       }
     };
 
-    window.closeMobileTrimExportSheet = function() {
-      var sheet = document.getElementById('trim-export-sheet');
-      if (sheet) sheet.style.display = 'none';
+    window.closeMobileTrimExportSheet = function(fromPopState) {
+      var hideSheet = function() {
+        var sheet = document.getElementById('trim-export-sheet');
+        if (sheet) sheet.style.display = 'none';
+      };
+      if (fromPopState === true) {
+        hideSheet();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('trim-export-sheet', hideSheet);
+      } else {
+        hideSheet();
+      }
     };
 
     function updateTrimmerActionButtons() {

@@ -8,22 +8,48 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
         .replace(/'/g, '&#39;');
     }
 
+    function isLanDesktopMode() {
+      return !!(typeof document !== 'undefined' && document.body && document.body.classList && document.body.classList.contains('lan-desktop-mode'));
+    }
+
+    function isLanMobileMode() {
+      return !!(typeof document !== 'undefined' && document.body && document.body.classList && document.body.classList.contains('lan-mobile-mode'));
+    }
+
+    function getInitialViewMode() {
+      try {
+        if (isLanMobileMode()) {
+          return localStorage.getItem('velora_lan_mobile_view') || 'list';
+        }
+        return localStorage.getItem('velora_lan_desktop_view') || 'grid';
+      } catch (e) {
+        return isLanMobileMode() ? 'list' : 'grid';
+      }
+    }
+
     // State
     var state = {
       token: localStorage.getItem('velora_lan_token') || '',
       requireAuth: false,
       allowEdit: false,
+      activeMainView: 'files',
+      viewMode: getInitialViewMode(),
       resources: [],
       currentResourceId: '',
       currentPath: '',
       breadcrumbPaths: [],
       items: [],
+      renderedCount: 0,
       search: '',
       isSearching: false,
       searchResults: [],
       sort: 'mtime-desc',
       theme: localStorage.getItem('velora_theme') || 'light',
       selectedPaths: new Set(),
+      focusedIdx: -1,
+      lastSelectedIdx: -1,
+      internalDragPaths: [],
+      downloadStatusFilter: 'all',
       // Trimmer
       trimSegments: [],
       trimStart: 0,
@@ -97,8 +123,23 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
     var actionModalBody = document.getElementById('action-modal-body');
     var actionModalFooter = document.getElementById('action-modal-footer');
 
-    window.closeActionModal = function() {
+    function hideActionModalDom() {
       if (actionModal) actionModal.style.display = 'none';
+    }
+
+    window.closeActionModal = function(fromPopState) {
+      if (fromPopState === true) {
+        hideActionModalDom();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('action-modal', hideActionModalDom);
+      } else {
+        hideActionModalDom();
+      }
+    };
+
+    window.downloadLanFile = function(encodedPath) {
+      var itemPath = decodeURIComponent(encodedPath);
+      window.location.href = '/download?path=' + encodeURIComponent(itemPath) + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
     };
 
     if (navBackBtn) {
@@ -199,9 +240,19 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
     // Custom Dialog Modal (Alert / Confirm / Prompt)
     var customDialogResolve = null;
 
-    window.closeCustomDialog = function(result) {
+    function hideCustomDialogDom() {
       var modal = document.getElementById('custom-dialog-modal');
       if (modal) modal.style.display = 'none';
+    }
+
+    window.closeCustomDialog = function(result, fromPopState) {
+      if (fromPopState === true) {
+        hideCustomDialogDom();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('custom-dialog', hideCustomDialogDom);
+      } else {
+        hideCustomDialogDom();
+      }
       if (customDialogResolve) {
         var resolve = customDialogResolve;
         customDialogResolve = null;
@@ -240,6 +291,9 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
         confirmBtn.innerText = opts.okText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
+        if (typeof pushOverlayHistory === 'function') {
+          pushOverlayHistory('custom-dialog', function() { window.closeCustomDialog(undefined, true); });
+        }
         confirmBtn.focus();
       });
     };
@@ -265,6 +319,9 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
         confirmBtn.innerText = opts.confirmText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
+        if (typeof pushOverlayHistory === 'function') {
+          pushOverlayHistory('custom-dialog', function() { window.closeCustomDialog(false, true); });
+        }
         confirmBtn.focus();
       });
     };
@@ -306,6 +363,9 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
         confirmBtn.innerText = opts.confirmText || opts.okText || '确认';
 
         document.getElementById('custom-dialog-modal').style.display = 'flex';
+        if (typeof pushOverlayHistory === 'function') {
+          pushOverlayHistory('custom-dialog', function() { window.closeCustomDialog(null, true); });
+        }
         setTimeout(function() {
           input.focus();
           input.select();
@@ -335,13 +395,24 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
     }
 
     // Init
+    async function restoreInitialNavigationView() {
+      if (typeof parseNavHash === 'function') {
+        var hashNav = parseNavHash();
+        if (hashNav && (hashNav.view === 'downloads' || hashNav.view === 'pan') && typeof window.switchMainView === 'function') {
+          window.switchMainView(hashNav.view, { replaceHistory: true });
+        } else if (typeof pushNavHistory === 'function') {
+          pushNavHistory('files', state.currentResourceId, state.currentPath, { replace: true });
+        }
+      }
+    }
+
     async function init() {
       try {
         var info = await fetch('/api/info').then(function(r) { return r.json(); });
         state.requireAuth = info.requireAuth;
         state.allowEdit = info.allowEdit;
 
-        if (state.allowEdit) {
+        if (state.allowEdit && newFolderBtn) {
           newFolderBtn.style.display = 'inline-flex';
         }
 
@@ -350,11 +421,12 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
           return;
         }
 
-        if (state.requireAuth) {
+        if (state.requireAuth && logoutBtn) {
           logoutBtn.style.display = 'inline-flex';
         }
 
         await loadResources();
+        await restoreInitialNavigationView();
         connectTaskQueueSSE();
       } catch (err) {
         console.error('Init error:', err);
@@ -381,9 +453,10 @@ export const lanWebCoreScripts = `function escapeHtml(str) {
           state.token = res.token;
           localStorage.setItem('velora_lan_token', res.token);
           authModal.style.display = 'none';
-          logoutBtn.style.display = 'inline-flex';
+          if (logoutBtn) logoutBtn.style.display = 'inline-flex';
           showToast('登录成功');
           await loadResources();
+          await restoreInitialNavigationView();
           connectTaskQueueSSE();
         } else {
           showToast(res.error || '密码错误');

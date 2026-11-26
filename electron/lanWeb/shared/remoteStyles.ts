@@ -77,6 +77,39 @@ export const lanWebRemoteStyles = `
       flex-wrap: wrap;
     }
 
+    .remote-split-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .remote-sheet-surface {
+      display: contents;
+    }
+
+    .remote-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .remote-filter-tabs {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+
+    .remote-filter-tabs .segmented-option {
+      font-size: 12px;
+      padding: 5px 4px;
+    }
+
+    .pan-footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     /* Remote Download List */
     .remote-dl-list {
       display: flex;
@@ -128,12 +161,12 @@ export const lanWebRemoteStyles = `
 
     .remote-dl-status.is-done {
       color: var(--color-success);
-      background: rgba(22, 163, 74, 0.12);
+      background: color-mix(in srgb, var(--color-success) 14%, transparent);
     }
 
     .remote-dl-status.is-error {
       color: var(--color-error);
-      background: rgba(239, 68, 68, 0.12);
+      background: color-mix(in srgb, var(--color-error) 12%, transparent);
     }
 
     .remote-dl-progress-track {
@@ -196,6 +229,45 @@ export const lanWebRemoteStyles = `
       background: var(--bg-surface-hover);
     }
 
+    .pan-parse-row input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      outline: none;
+      background: var(--bg-surface);
+      cursor: pointer;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      flex-shrink: 0;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .pan-parse-row input[type="checkbox"]:hover {
+      border-color: var(--text-secondary);
+      background: var(--bg-surface-hover);
+    }
+
+    .pan-parse-row input[type="checkbox"]:checked {
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+    }
+
+    .pan-parse-row input[type="checkbox"]:checked::after {
+      content: "";
+      width: 4px;
+      height: 8px;
+      border: solid var(--color-accent);
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg) translate(-0.5px, -1px);
+      display: block;
+    }
+
     .pan-parse-row-name {
       flex: 1;
       min-width: 0;
@@ -214,6 +286,8 @@ export const lanWebRemoteStyles = `
     .pan-folder-picker-list {
       display: flex;
       flex-direction: column;
+      height: 260px;
+      min-height: 260px;
       max-height: 260px;
       overflow-y: auto;
       border: 1px solid var(--border-color);
@@ -228,6 +302,7 @@ export const lanWebRemoteStyles = `
       padding: 9px 12px;
       border-bottom: 1px solid var(--border-light);
       font-size: 13px;
+      flex-shrink: 0;
       cursor: pointer;
     }
 
@@ -278,8 +353,9 @@ export const lanWebRemoteStyles = `
       height: 18px;
       padding: 0 5px;
       border-radius: 999px;
-      background: var(--color-accent);
-      color: var(--color-accent-text);
+      background: var(--bg-tertiary);
+      color: var(--color-accent);
+      border: 1px solid var(--border-color);
       font-size: 11px;
       font-weight: 600;
       margin-left: auto;

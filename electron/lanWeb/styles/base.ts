@@ -13,7 +13,7 @@ export const lanWebBaseStyles = `/* Pristine Elegance OKLCH Theme Variables - 1:
 
       --color-accent: oklch(30% 0.01 90);
       --color-accent-hover: oklch(20% 0.01 90);
-      --color-accent-text: #ffffff;
+      --color-accent-text: var(--bg-surface);
       --accent-color: var(--color-accent);
       --accent-hover: var(--color-accent-hover);
       --accent-light: oklch(92% 0.01 90);
@@ -198,14 +198,33 @@ export const lanWebBaseStyles = `/* Pristine Elegance OKLCH Theme Variables - 1:
       background: var(--border-color);
     }
 
+    .v-btn-secondary.active {
+      background: var(--bg-surface);
+      color: var(--color-accent);
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent), var(--shadow-sm);
+    }
+
+    .v-btn-danger {
+      background: var(--color-error);
+      color: var(--bg-surface);
+      border-color: var(--color-error);
+    }
+
+    .v-btn-danger:hover {
+      background: color-mix(in srgb, var(--color-error) 85%, black);
+      border-color: color-mix(in srgb, var(--color-error) 85%, black);
+    }
+
     .v-btn-danger-soft {
-      background: rgba(239, 68, 68, 0.1);
+      background: color-mix(in srgb, var(--color-error) 12%, transparent);
       color: var(--color-error);
-      border-color: transparent;
+      border-color: color-mix(in srgb, var(--color-error) 15%, transparent);
     }
 
     .v-btn-danger-soft:hover {
-      background: rgba(239, 68, 68, 0.2);
+      background: color-mix(in srgb, var(--color-error) 22%, transparent);
+      border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
     }
 
     .v-btn-icon {

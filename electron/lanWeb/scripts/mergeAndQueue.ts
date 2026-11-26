@@ -13,10 +13,23 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
       document.getElementById('merge-filename-input').value = firstName + '_merged.mp4';
       renderMergeList();
       document.getElementById('video-merge-modal').style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('video-merge-modal', function() { window.closeVideoMergeModal(true); });
+      }
     };
 
-    window.closeVideoMergeModal = function() {
-      document.getElementById('video-merge-modal').style.display = 'none';
+    window.closeVideoMergeModal = function(fromPopState) {
+      var hideMerge = function() {
+        var modal = document.getElementById('video-merge-modal');
+        if (modal) modal.style.display = 'none';
+      };
+      if (fromPopState === true) {
+        hideMerge();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('video-merge-modal', hideMerge);
+      } else {
+        hideMerge();
+      }
     };
 
     function renderMergeList() {
@@ -96,6 +109,9 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
       selectCompressPreset(2000);
       toggleCompressSaveMode();
       document.getElementById('video-compress-modal').style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('video-compress-modal', function() { window.closeVideoCompressModal(true); });
+      }
     };
 
     window.openBatchCompressModal = function() {
@@ -110,8 +126,18 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
       openVideoCompressModal(encodeURIComponent(videoItems[0].path), videoItems[0].name);
     };
 
-    window.closeVideoCompressModal = function() {
-      document.getElementById('video-compress-modal').style.display = 'none';
+    window.closeVideoCompressModal = function(fromPopState) {
+      var hideCompress = function() {
+        var modal = document.getElementById('video-compress-modal');
+        if (modal) modal.style.display = 'none';
+      };
+      if (fromPopState === true) {
+        hideCompress();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('video-compress-modal', hideCompress);
+      } else {
+        hideCompress();
+      }
     };
 
     window.selectCompressPreset = function(kbps) {
@@ -207,7 +233,7 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
         text.innerText = '已连接';
       } else {
         indicator.classList.add('disconnected');
-        indicator.title = '局域网连接断开，正在尝试自动重连...';
+        indicator.title = '局域网连接断开，正在自动重连';
         text.innerText = '重连中';
       }
     }
@@ -286,7 +312,7 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
       if (!task) return;
 
       var pct = Math.min(100, Math.max(0, Math.round(task.progress || 0)));
-      var text = task.statusText || '正在处理中...';
+      var text = task.statusText || '正在处理';
 
       var percentEl = document.getElementById('task-progress-percent');
       var fillEl = document.getElementById('task-progress-fill');
@@ -398,7 +424,7 @@ export const lanWebMergeAndQueueScripts = `    // Video Merge Modal
       var cancelBtn = document.getElementById('task-cancel-btn');
       if (cancelBtn) {
         cancelBtn.disabled = true;
-        cancelBtn.innerText = '正在取消...';
+        cancelBtn.innerText = '正在取消';
       }
 
       try {

@@ -18,8 +18,15 @@ export const lanWebRemoteScripts = `
       window.location.href = target;
     };
 
-    window.switchMainView = function(viewName) {
+    window.switchMainView = function(viewName, options) {
+      options = options || {};
       state.activeMainView = viewName || 'files';
+      if (typeof window.closeOpenMobileSwipeRow === 'function') {
+        window.closeOpenMobileSwipeRow();
+      }
+      if (typeof window.closeDesktopContextMenu === 'function') {
+        window.closeDesktopContextMenu();
+      }
       var sections = document.querySelectorAll('.lan-panel-section');
       for (var i = 0; i < sections.length; i++) {
         var el = sections[i];
@@ -42,14 +49,36 @@ export const lanWebRemoteScripts = `
       if (state.activeMainView === 'downloads') {
         renderRemoteDownloads();
       }
+      if (!options.fromPopState && typeof pushNavHistory === 'function') {
+        pushNavHistory(state.activeMainView, state.currentResourceId, state.currentPath, {
+          replace: !!options.replaceHistory
+        });
+      }
     };
 
     function updateRemoteWriteVisibility() {
       var allow = !!state.allowEdit;
+      var isMob = typeof isLanMobileMode === 'function' && isLanMobileMode();
       var uploadBtn = document.getElementById('upload-files-btn');
       if (uploadBtn) uploadBtn.style.display = allow ? 'inline-flex' : 'none';
+      var dlSplit = document.getElementById('remote-dl-split');
+      if (dlSplit && dlSplit.classList) dlSplit.classList.toggle('is-readonly', !allow);
+      var panSplit = document.querySelector('.pan-split-grid');
+      if (panSplit && panSplit.classList) panSplit.classList.toggle('is-readonly', !allow);
+
       var dlFormCard = document.getElementById('remote-dl-form-card');
-      if (dlFormCard) dlFormCard.style.display = allow ? 'flex' : 'none';
+      if (dlFormCard) {
+        if (isMob) {
+          dlFormCard.style.display = '';
+          if (!allow) dlFormCard.classList.remove('is-sheet-open');
+        } else {
+          dlFormCard.style.display = allow ? 'flex' : 'none';
+        }
+      }
+      var mobileDlTrigger = document.getElementById('mobile-open-dl-sheet-btn');
+      if (mobileDlTrigger) {
+        mobileDlTrigger.style.display = (isMob && allow) ? 'inline-flex' : 'none';
+      }
       var dlReadonly = document.getElementById('remote-dl-readonly');
       if (dlReadonly) dlReadonly.style.display = allow ? 'none' : 'block';
       var panFormCard = document.getElementById('remote-pan-form-card');
@@ -57,6 +86,60 @@ export const lanWebRemoteScripts = `
       var panReadonly = document.getElementById('remote-pan-readonly');
       if (panReadonly) panReadonly.style.display = allow ? 'none' : 'block';
     }
+
+    window.openMobileDownloadSheet = function() {
+      if (!state.allowEdit) return;
+      var card = document.getElementById('remote-dl-form-card');
+      if (!card) return;
+      card.classList.add('is-sheet-open');
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('dl-sheet', function() { window.closeMobileDownloadSheet(true); });
+      }
+      setTimeout(function() {
+        var inp = document.getElementById('dl-url-input');
+        if (inp) inp.focus();
+      }, 60);
+    };
+
+    window.closeMobileDownloadSheet = function(fromPopState) {
+      var hideSheet = function() {
+        var card = document.getElementById('remote-dl-form-card');
+        if (card) card.classList.remove('is-sheet-open');
+      };
+      if (fromPopState === true) {
+        hideSheet();
+      } else if (typeof closeOverlayViaUi === 'function') {
+        closeOverlayViaUi('dl-sheet', hideSheet);
+      } else {
+        hideSheet();
+      }
+    };
+
+    window.pasteIntoInput = async function(inputId) {
+      var el = document.getElementById(inputId);
+      if (!el) return false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          var text = await navigator.clipboard.readText();
+          if (text && text.trim()) {
+            el.value = text.trim();
+            return true;
+          }
+          showToast('剪贴板为空', 2000);
+          return false;
+        }
+      } catch (err) {}
+      el.focus();
+      showToast('当前环境需手动粘贴，请长按输入框', 3000);
+      return false;
+    };
+
+    window.pasteAndParsePan = async function() {
+      var ok = await window.pasteIntoInput('pan-url-input');
+      if (ok) {
+        window.submitLanPanParse();
+      }
+    };
 
     // -------------------------------------------------------------------------
     // 流式多文件上传（支持多选与桌面拖拽）
@@ -195,12 +278,13 @@ export const lanWebRemoteScripts = `
         });
       }
 
-      // 桌面端拖拽上传
+      // 桌面端拖拽上传（跳过页内文件移动拖拽）
       var dropOverlay = document.getElementById('desktop-drop-overlay');
       if (dropOverlay) {
         var dragDepth = 0;
         window.addEventListener('dragenter', function(e) {
           if (!state.allowEdit || state.activeMainView !== 'files' || !state.currentPath) return;
+          if (state.internalDragPaths && state.internalDragPaths.length > 0) return;
           if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf('Files') !== -1) {
             e.preventDefault();
             dragDepth++;
@@ -208,6 +292,7 @@ export const lanWebRemoteScripts = `
           }
         });
         window.addEventListener('dragover', function(e) {
+          if (state.internalDragPaths && state.internalDragPaths.length > 0) return;
           if (dragDepth > 0) e.preventDefault();
         });
         window.addEventListener('dragleave', function(e) {
@@ -220,6 +305,11 @@ export const lanWebRemoteScripts = `
           }
         });
         window.addEventListener('drop', function(e) {
+          if (state.internalDragPaths && state.internalDragPaths.length > 0) {
+            dragDepth = 0;
+            dropOverlay.classList.remove('is-visible');
+            return;
+          }
           if (dragDepth > 0 || dropOverlay.classList.contains('is-visible')) {
             e.preventDefault();
             dragDepth = 0;
@@ -271,10 +361,33 @@ export const lanWebRemoteScripts = `
       }
     }
 
+    function filterRemoteDownloadTasks(tasks, filterKey) {
+      var list = Array.isArray(tasks) ? tasks : [];
+      if (!filterKey || filterKey === 'all') return list;
+      return list.filter(function(t) {
+        var st = t && t.status;
+        if (filterKey === 'completed') return st === 'completed';
+        if (filterKey === 'error') return st === 'error' || st === 'file_removed' || st === 'file_corrupted';
+        if (filterKey === 'active') {
+          return st === 'downloading' || st === 'resolving' || st === 'converting' || st === 'compressing' || st === 'processing' || st === 'waiting' || st === 'paused';
+        }
+        return true;
+      });
+    }
+
+    window.setRemoteDownloadFilter = function(filterKey) {
+      state.downloadStatusFilter = filterKey || 'all';
+      var tabs = document.querySelectorAll('#remote-dl-filter-tabs .segmented-option');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('active', tabs[i].getAttribute('data-filter') === state.downloadStatusFilter);
+      }
+      renderRemoteDownloads();
+    };
+
     function renderRemoteDownloads() {
       var container = document.getElementById('remote-dl-list');
       if (!container) return;
-      var list = state.remoteDownloads || [];
+      var list = filterRemoteDownloadTasks(state.remoteDownloads, state.downloadStatusFilter || 'all');
       if (list.length === 0) {
         container.innerHTML = '<div class="empty-state" style="padding:36px 16px;">暂无下载任务</div>';
         return;
@@ -302,7 +415,7 @@ export const lanWebRemoteScripts = `
           } else if (!isDone) {
             btnsHtml += '<button class="v-btn v-btn-secondary" style="height:28px; padding:0 10px; font-size:12px;" onclick="controlRemoteDownload(\\'resume\\', \\'' + safeId + '\\')">继续</button>';
           }
-          btnsHtml += '<button class="v-btn v-btn-danger" style="height:28px; padding:0 10px; font-size:12px;" onclick="confirmDeleteRemoteDownload(\\'' + safeId + '\\', \\'' + encodeURIComponent(t.name) + '\\')">删除</button>';
+          btnsHtml += '<button class="v-btn v-btn-danger-soft" style="height:28px; padding:0 10px; font-size:12px;" onclick="confirmDeleteRemoteDownload(\\'' + safeId + '\\', \\'' + encodeURIComponent(t.name) + '\\')">删除</button>';
         }
 
         html += '<div class="remote-dl-item">' +
@@ -378,6 +491,9 @@ export const lanWebRemoteScripts = `
           showToast('已投递到桌面端下载队列');
           if (urlEl) urlEl.value = '';
           if (nameEl) nameEl.value = '';
+          if (typeof window.closeMobileDownloadSheet === 'function') {
+            window.closeMobileDownloadSheet();
+          }
         } else {
           showToast((data && data.error) || '创建下载任务失败', 3000);
         }
@@ -410,7 +526,7 @@ export const lanWebRemoteScripts = `
         title: '删除下载任务',
         message: '确定要删除任务「' + name + '」吗？',
         confirmText: '删除',
-        isDanger: true
+        danger: true
       });
       if (ok) {
         controlRemoteDownload('delete', encodedId, false);
@@ -599,6 +715,9 @@ export const lanWebRemoteScripts = `
       actionModalFooter.innerHTML = '<button class="v-btn v-btn-secondary" onclick="closeActionModal()">取消</button>' +
         '<button id="confirm-pan-save-btn" class="v-btn v-btn-primary" onclick="confirmLanPanSave()">转存到此目录</button>';
       actionModal.style.display = 'flex';
+      if (typeof pushOverlayHistory === 'function') {
+        pushOverlayHistory('action-modal', function() { window.closeActionModal(true); });
+      }
       await loadLanPanFolderList('0');
     };
 
